@@ -99,9 +99,33 @@ export function renderHoy(state: Estado, locked: boolean) {
   `
 }
 
+function atRisk(day: Day) {
+  if (day.sunday || day.couples >= 6) return false
+  if (day.covered === 0) return true
+  return day.at_risk || (day.gaps?.length ?? 0) > 0
+}
+
+function falta(gaps: string[]) {
+  if (gaps.length === 0) return 'Falta una pareja.'
+  if (gaps.length === 1) return `Falta ${gaps[0]}.`
+  const last = gaps[gaps.length - 1]
+  return `Faltan ${gaps.slice(0, -1).join(', ')} y ${last}.`
+}
+
+function dayWhy(day: Day) {
+  if (day.sunday) return 'El domingo no está en riesgo.'
+  if (!atRisk(day)) {
+    if (day.covered === 12) return 'Están los doce.'
+    if (day.couples === 6) return 'Las parejas están cubiertas.'
+    return 'El día está cubierto.'
+  }
+  if (day.covered === 0) return 'Nadie se ha apuntado.'
+  return falta(day.gaps ?? [])
+}
+
 function dayClass(day: Day) {
   if (day.sunday) return 'sunday'
-  if (day.at_risk) return 'risk'
+  if (atRisk(day)) return 'risk'
   if (day.covered === 12) return 'all'
   if (day.couples === 6) return 'pairs'
   return ''
@@ -109,7 +133,7 @@ function dayClass(day: Day) {
 
 function dayMeta(day: Day) {
   if (day.sunday) return '<em>Domingo</em><small>No está en riesgo</small>'
-  if (day.at_risk) return '<em>En riesgo</em>'
+  if (atRisk(day)) return '<em>En riesgo</em>'
   if (day.covered === 12) return '<em class="all"><i class="disk" aria-hidden="true"></i>Todos</em>'
   if (day.couples === 6) return `<em class="pairs"><span class="dots" aria-hidden="true"><i></i><i></i></span>${day.couples} de 6</em><small>Parejas</small>`
   return `<em>${day.covered} de 12</em>`
@@ -120,7 +144,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
     const f = fecha(day.date)
     const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
     return `<li class="${dayClass(day)} ${day.date === selected ? 'selected' : ''}">
-      <button type="button" data-act="select" data-date="${day.date}" ${locked ? 'disabled' : ''}>
+      <button type="button" data-act="select" data-date="${day.date}" ${day.date === selected ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
         <span class="num ${mine}">${f.d}</span>
         <span class="when">${day.sunday ? sun : ''}${f.corto}${f.d === 1 ? ` ${f.mes}` : ''}</span>
         <span class="meta">${dayMeta(day)}</span>
@@ -129,11 +153,14 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
   }).join('')
   const day = state.calendar.find((item) => item.date === selected) ?? state.calendar[0]
   const f = fecha(day.date)
+  const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
+  const why = dayWhy(day)
+  const tone = day.sunday ? 'sunday' : atRisk(day) ? 'risk' : ''
   const side = `
     <aside class="day" data-testid="day">
-      <h2>${f.largo} ${f.d} de ${f.mes}</h2>
-      <p>${day.covered} de 12 · ${day.couples} de 6 parejas</p>
-      <p>${day.sunday ? 'El domingo no está en riesgo.' : day.at_risk ? 'Este día está en riesgo.' : 'El día está cubierto.'}</p>
+      <h2>${heading}</h2>
+      <p class="count">${day.covered} de 12 · ${day.couples} de 6 parejas</p>
+      <p class="why ${tone}" data-testid="risk-why">${esc(why)}</p>
       <button type="button" class="texty" data-act="commit" data-date="${day.date}" ${locked ? 'disabled' : ''}>
         ${day.mine_commitment ? 'Quitar «voy a ir»' : 'Voy a ir'}
       </button>
@@ -165,8 +192,10 @@ export function renderAjustes(state: Estado) {
   return `
     <section class="settings" data-testid="ajustes">
       <h2>Avisos</h2>
-      ${sw('empty_day', 'Si mañana no hay nadie')}
-      ${sw('couple', 'Si mañana tu pareja no está cubierta')}
+      <div class="switches">
+        ${sw('empty_day', 'Si mañana no hay nadie')}
+        ${sw('couple', 'Si mañana tu pareja no está cubierta')}
+      </div>
       <button type="button" class="quiet" data-act="logout">Cerrar sesión</button>
     </section>`
 }

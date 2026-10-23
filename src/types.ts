@@ -12,6 +12,7 @@ export type Day = {
   couples: number
   at_risk: boolean
   sunday: boolean
+  gaps?: string[]
   mine_commitment: boolean
   mine_attendance: boolean
 }

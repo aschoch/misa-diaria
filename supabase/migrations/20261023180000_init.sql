@@ -552,6 +552,14 @@ begin
         )
       ),
       'at_risk', public.dia_en_riesgo(d),
+      'gaps', coalesce((
+        select jsonb_agg(cp.label order by cp.label)
+        from public.couples cp
+        where not exists (
+          select 1 from public.members m
+          where m.couple_id = cp.id and m.active and public.persona_cubre(m.id, d)
+        )
+      ), '[]'::jsonb),
       'sunday', extract(dow from d) = 0,
       'mine_commitment', exists (
         select 1 from public.commitments c where c.member_id = me and c.mass_date = d

@@ -17,7 +17,10 @@ function papers(motif: Pending['motif'], rand: () => number) {
   const count = motif === 'parejas' ? 28 : 32
   const nodes: string[] = []
   for (let i = 0; i < count; i += 1) {
-    const x = Math.round((rand() - 0.5) * 260)
+    const turn = rand() * Math.PI * 2
+    const reach = 28 + rand() * 108
+    const x = Math.round(Math.cos(turn) * reach * 1.15)
+    const y = Math.round(Math.sin(turn) * reach * 0.48)
     const rot = Math.round((rand() - 0.5) * 220)
     const delay = Math.round(rand() * 180)
     const shape = motif === 'hito' && i % 4 === 0
@@ -29,7 +32,7 @@ function papers(motif: Pending['motif'], rand: () => number) {
         ? (i % 2 === 0 ? 'miel' : 'olivo')
         : ['miel', 'vela', 'olivo', 'rosa', 'papel'][i % 5]
     nodes.push(
-      `<span class="paper ${shape} ${tone}" style="--x:${x}px;--r:${rot}deg;--delay:${delay}ms"></span>`,
+      `<span class="paper ${shape} ${tone}" style="--x:${x}px;--y:${y}px;--r:${rot}deg;--delay:${delay}ms"></span>`,
     )
   }
   return nodes.join('')
@@ -57,6 +60,7 @@ export function hideCelebration() {
     node.hidden = true
     node.innerHTML = ''
     node.classList.remove('leaving')
+    document.body.classList.remove('celebrating')
     closing = false
   }, delay)
 }
@@ -68,18 +72,36 @@ export function showCelebration(item: Pending) {
   node.classList.remove('leaving')
   const rand = mulberry32(item.key.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0))
   node.hidden = false
+  document.body.classList.add('celebrating')
   node.innerHTML = `
     <div class="veil" data-act="skip"></div>
-    <div class="toss" aria-hidden="true">${papers(item.motif, rand)}</div>
     <div class="crest">
       <div class="flash" aria-hidden="true"></div>
+      <div class="toss" aria-hidden="true">${papers(item.motif, rand)}</div>
       <p class="celeb-line" data-testid="celeb-line" role="status">${esc(item.line)}</p>
       ${seeds(item.motif)}
     </div>
     <button type="button" class="skip" data-act="skip" aria-label="Saltar la celebración">×</button>
   `
-  requestAnimationFrame(() => punchButtonHole(node))
+  requestAnimationFrame(() => {
+    placeCrest(node)
+    punchButtonHole(node)
+  })
   timer = window.setTimeout(hideCelebration, 1200)
+}
+
+function placeCrest(node: HTMLElement) {
+  const header = document.querySelector<HTMLElement>('.top')
+  const button = document.querySelector<HTMLElement>('[data-testid="go"]')
+  const crest = node.querySelector<HTMLElement>('.crest')
+  if (!header || !button || !crest) return
+  const headerBox = header.getBoundingClientRect()
+  const buttonBox = button.getBoundingClientRect()
+  const height = crest.getBoundingClientRect().height || 120
+  const belowSkip = 60
+  const aboveButton = buttonBox.top - height - 20
+  const inHeader = headerBox.top + 36
+  crest.style.top = `${Math.max(belowSkip, Math.min(inHeader, aboveButton))}px`
 }
 
 function punchButtonHole(node: HTMLElement) {
