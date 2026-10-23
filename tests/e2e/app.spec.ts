@@ -261,11 +261,65 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   const friday = page.getByTestId('calendar').locator('li').nth(0)
   await expect(friday).toContainText('9 de 12')
   await expect(friday).toContainText('5 de 6 parejas')
-  await expect(friday.getByTestId('risk-why')).toHaveText('Falta Pareja 6.')
+  await expect(friday.getByTestId('risk-why')).toHaveText('Falta Pareja 6')
   await expect(friday).toHaveClass(/risk/)
   const narrow = (page.viewportSize()?.width ?? 0) < 800
   if (narrow) await expect(page.locator('.day')).toBeHidden()
   else await expect(page.locator('.day')).toBeVisible()
+  const open = await friday.evaluate((node) => {
+    const why = node.querySelector('.why')
+    const count = node.querySelector('.count')
+    const commit = node.querySelector('.row-commit')
+    const bar = getComputedStyle(node, '::before')
+    const box = commit?.getBoundingClientRect()
+    return {
+      whySize: why ? getComputedStyle(why).fontSize : '',
+      countSize: count ? getComputedStyle(count).fontSize : '',
+      whyColor: why ? getComputedStyle(why).color : '',
+      barWidth: bar.width,
+      commit: commit && box ? {
+        display: getComputedStyle(commit).display,
+        whiteSpace: getComputedStyle(commit).whiteSpace,
+        height: box.height,
+        width: box.width,
+      } : null,
+    }
+  })
+  expect(open.whySize).toBe(open.countSize)
+  expect(open.whySize).toBe('16px')
+  expect(open.whyColor).toBe('rgb(122, 62, 12)')
+  expect(open.barWidth).toBe('4px')
+  if (open.commit && open.commit.display !== 'none') {
+    expect(open.commit.whiteSpace).toBe('nowrap')
+    expect(open.commit.height).toBeLessThan(52)
+    expect(open.commit.width).toBeLessThan(160)
+  }
+  const bars = await page.locator('.days li').evaluateAll((nodes) => nodes.map((node) => ({
+    risk: node.classList.contains('risk'),
+    sunday: node.classList.contains('sunday'),
+    width: getComputedStyle(node, '::before').width,
+    content: getComputedStyle(node, '::before').content,
+  })))
+  for (const row of bars) {
+    if (row.risk && !row.sunday) expect(row.width).toBe('4px')
+    else expect(row.content).toBe('none')
+  }
+  const overlaps = await page.evaluate(async () => {
+    const lis = [...document.querySelectorAll<HTMLElement>('.days li')]
+    const bad: number[] = []
+    for (const li of lis) {
+      li.scrollIntoView({ block: 'center' })
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      for (let i = 1; i < lis.length; i++) {
+        const above = lis[i - 1].getBoundingClientRect()
+        const below = lis[i].getBoundingClientRect()
+        const overlap = above.bottom - below.top
+        if (overlap > 1) bad.push(overlap)
+      }
+    }
+    return bad
+  })
+  expect(overlaps).toEqual([])
 
   await friday.locator('[data-act="select"]').click()
   const ring = await friday.locator('[data-act="select"]').evaluate((node) => {
@@ -290,7 +344,7 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
 
   await page.locator('[data-date="2026-10-27"]').click()
   await expect(row('2026-10-27')).toHaveClass(/risk/)
-  await expect(page.getByTestId('risk-why')).toHaveText('Nadie se ha apuntado.')
+  await expect(page.getByTestId('risk-why')).toHaveText('Nadie se ha apuntado')
   expect(errors).toEqual([])
 })
 
@@ -308,6 +362,13 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
     if (node instanceof HTMLElement) node.blur()
   })
   await save(page, 'calendario.png')
+  await page.locator('[data-act="select"][data-date="2026-10-24"]').click()
+  await page.evaluate(() => {
+    const node = document.activeElement
+    if (node instanceof HTMLElement) node.blur()
+    document.querySelector('[data-date="2026-10-24"]')?.closest('li')?.scrollIntoView({ block: 'center' })
+  })
+  await save(page, 'calendario-dia.png')
   await page.getByRole('link', { name: 'Muro' }).click()
   await page.getByText('Por quienes no pueden salir de casa.').waitFor()
   await save(page, 'muro.png')
@@ -339,4 +400,9 @@ async function save(page: Page, name: string) {
   const bytes = readFileSync(path)
   expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
   expect(bytes.length).toBeGreaterThan(8_000)
+  const view = page.viewportSize()
+  if (view?.width === 390 && view.height === 844) {
+    expect(bytes.readUInt32BE(16)).toBe(390)
+    expect(bytes.readUInt32BE(20)).toBe(844)
+  }
 }
