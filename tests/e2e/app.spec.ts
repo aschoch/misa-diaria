@@ -200,6 +200,38 @@ test('con poco movimiento se queda la cresta y la línea', async ({ page }) => {
   })
   expect(style.animation).toBe('none')
   expect(style.opacity).toBe('1')
+  const layout = await page.evaluate(() => {
+    const line = document.querySelector('[data-testid="celeb-line"]')!.getBoundingClientRect()
+    const header = document.querySelector('.top')!
+    const button = document.querySelector('[data-testid="go"]')!.getBoundingClientRect()
+    const papers = [...document.querySelectorAll('.paper')].map((node) => node.getBoundingClientRect())
+    const ys = papers.map((rect) => rect.top + rect.height / 2)
+    const xs = papers.map((rect) => rect.left + rect.width / 2)
+    const lineMidY = line.top + line.height / 2
+    const lineMidX = line.left + line.width / 2
+    return {
+      headerOpacity: getComputedStyle(header).opacity,
+      lineTop: line.top,
+      lineBottom: line.bottom,
+      buttonTop: button.top,
+      spreadY: Math.max(...ys) - Math.min(...ys),
+      spreadX: Math.max(...xs) - Math.min(...xs),
+      around: papers.filter((rect) => {
+        const y = rect.top + rect.height / 2
+        const x = rect.left + rect.width / 2
+        return Math.abs(y - lineMidY) < 110 && Math.abs(x - lineMidX) < 180
+      }).length,
+      stuck: papers.filter((rect) => rect.bottom < 24).length,
+      count: papers.length,
+    }
+  })
+  expect(Number(layout.headerOpacity)).toBe(0)
+  expect(layout.lineTop).toBeGreaterThan(48)
+  expect(layout.lineBottom).toBeLessThan(layout.buttonTop - 4)
+  expect(layout.spreadY).toBeGreaterThan(60)
+  expect(layout.spreadX).toBeGreaterThan(140)
+  expect(layout.around).toBeGreaterThan(10)
+  expect(layout.stuck).toBeLessThan(layout.count / 5)
   const hit = await page.getByTestId('go').evaluate((node) => {
     const rect = node.getBoundingClientRect()
     const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
@@ -221,8 +253,45 @@ test('en oscuro el botón de vela lleva tinta oscura', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
+  const errors = watchConsole(page)
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  const sheet = page.getByTestId('day')
+  await expect(sheet).toContainText('9 de 12 · 5 de 6 parejas')
+  await expect(sheet.getByTestId('risk-why')).toHaveText('Falta Pareja 6.')
+  const friday = page.getByTestId('calendar').locator('li').nth(0)
+  await expect(friday).toHaveClass(/risk/)
+  const shadow = await friday.evaluate((node) => getComputedStyle(node).boxShadow)
+  expect(shadow).not.toMatch(/42,\s*33,\s*24/)
+
+  const overlap = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="day"]')!.getBoundingClientRect()
+    const days = document.querySelector('[data-testid="calendar"]')!.getBoundingClientRect()
+    const covers = panel.top < days.bottom - 1 && panel.left < days.right - 8 && panel.right > days.left + 8
+    return covers
+  })
+  expect(overlap).toBe(false)
+
+  await scene('cubiertas')
+  await page.reload()
+  const row = (date: string) => page.locator(`[data-testid="calendar"] li:has([data-date="${date}"])`)
+  await page.locator('[data-date="2026-10-26"]').click()
+  await expect(row('2026-10-26')).not.toHaveClass(/risk/)
+  await expect(page.getByTestId('risk-why')).toHaveText('Las parejas están cubiertas.')
+
+  await page.locator('[data-date="2026-10-25"]').click()
+  await expect(row('2026-10-25')).not.toHaveClass(/risk/)
+  await expect(page.getByTestId('risk-why')).toHaveText('El domingo no está en riesgo.')
+
+  await page.locator('[data-date="2026-10-27"]').click()
+  await expect(row('2026-10-27')).toHaveClass(/risk/)
+  await expect(page.getByTestId('risk-why')).toHaveText('Nadie se ha apuntado.')
+  expect(errors).toEqual([])
+})
+
 test('capturas del teléfono', async ({ page, browserName, viewport }) => {
-  test.skip(browserName !== 'chromium' || viewport?.width !== 390)
+  test.skip(browserName !== 'webkit' || viewport?.width !== 390)
   const errors = watchConsole(page)
   mkdirSync(shots, { recursive: true })
   await login(page, 'persona12@example.com')

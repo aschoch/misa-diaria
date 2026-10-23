@@ -24,7 +24,7 @@ export default defineConfig({
   projects: [
     { name: 'chromium-teléfono', use: { ...devices['Desktop Chrome'], viewport: phone, isMobile: true } },
     { name: 'chromium-escritorio', use: { ...devices['Desktop Chrome'], viewport: desk } },
-    { name: 'webkit-teléfono', use: { ...devices['Desktop Safari'], viewport: phone, isMobile: true } },
+    { name: 'webkit-teléfono', use: { ...devices['Desktop Safari'], viewport: phone, deviceScaleFactor: 1, isMobile: true } },
     { name: 'webkit-escritorio', use: { ...devices['Desktop Safari'], viewport: desk } },
   ],
 })

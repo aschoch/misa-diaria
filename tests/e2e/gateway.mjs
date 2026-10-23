@@ -467,6 +467,21 @@ export function startGateway(port = 54321) {
       }
       if (url.pathname === '/test/scene' && req.method === 'POST') {
         const body = await readBody(req)
+        if (body?.name === 'cubiertas') {
+          await admin(async (client) => {
+            await client.query(`select set_config('app.now', $1, false)`, [clock])
+            await client.query(`delete from public.commitments where mass_date = '2026-10-26'`)
+            await client.query(`delete from public.attendance where mass_date = '2026-10-26'`)
+            await client.query(`
+              insert into public.commitments (member_id, mass_date)
+              select ('00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid, '2026-10-26'
+              from generate_series(1, 12) as n
+              where n % 2 = 1
+            `)
+          })
+          json(res, 200, { name: body.name, at: clock })
+          return
+        }
         clock = '2026-10-23T10:00:00Z'
         await admin(async (client) => {
           await client.query(`select set_config('app.now', $1, false)`, [clock])
