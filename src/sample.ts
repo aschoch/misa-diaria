@@ -1,0 +1,62 @@
+import type { Day, Estado } from './types'
+
+const today = '2026-10-23'
+
+function day(date: string, extra: Partial<Day> = {}): Day {
+  return {
+    date,
+    covered: extra.covered ?? 4,
+    couples: extra.couples ?? 3,
+    at_risk: extra.at_risk ?? false,
+    sunday: extra.sunday ?? false,
+    mine_commitment: extra.mine_commitment ?? false,
+    mine_attendance: extra.mine_attendance ?? false,
+  }
+}
+
+export function sampleEstado(): Estado {
+  return {
+    today,
+    clock: '09:40',
+    me: { id: 'm1', display_name: 'Persona 1', couple_id: 'c1', couple_label: 'Pareja 1' },
+    members: [],
+    streaks: { individual: 12, couple: 40, group: 80, ten: 2, total: 318 },
+    risk: 'couple',
+    calendar: [
+      day(today, { covered: 0, couples: 0, at_risk: true }),
+      day('2026-10-24', { covered: 0, couples: 0, at_risk: true }),
+      day('2026-10-25', { covered: 1, couples: 1, sunday: true, mine_commitment: true }),
+      day('2026-10-26', { covered: 3, couples: 2 }),
+      day('2026-10-27', { covered: 12, couples: 6, mine_commitment: true }),
+      day('2026-10-28', { covered: 9, couples: 6 }),
+      day('2026-10-29', { covered: 2, couples: 2 }),
+      day('2026-10-30', { covered: 5, couples: 4 }),
+      day('2026-10-31', { covered: 0, couples: 0, at_risk: true }),
+      day('2026-11-01', { covered: 0, couples: 0, sunday: true }),
+      day('2026-11-02', { covered: 1, couples: 1 }),
+      day('2026-11-03', { covered: 6, couples: 4 }),
+      day('2026-11-04', { covered: 4, couples: 3 }),
+      day('2026-11-05', { covered: 2, couples: 2 }),
+    ],
+    past: [
+      { date: '2026-10-22', sunday: false, mine_attendance: true },
+      { date: '2026-10-21', sunday: false, mine_attendance: false },
+      { date: '2026-10-20', sunday: false, mine_attendance: false },
+      { date: '2026-10-19', sunday: false, mine_attendance: false },
+      { date: '2026-10-18', sunday: true, mine_attendance: false },
+      { date: '2026-10-17', sunday: false, mine_attendance: false },
+    ],
+    intentions: [
+      { id: 'i1', body: 'Por la familia de Persona 3.', display_name: 'Persona 2', mine: false },
+      { id: 'i2', body: 'En acción de gracias.', display_name: 'Persona 1', mine: true },
+    ],
+    prefs: { empty_day: false, couple: false },
+    pending: [
+      { key: 'celeb:hito:tuya:7', line: 'Tú · 7 días seguidos', motif: 'hito', rank: 20, date: today },
+      { key: 'celeb:todos:' + today, line: '¡Hoy habéis ido los doce!', motif: 'todos', rank: 30, date: today },
+      { key: 'celeb:diez:' + today, line: '10 misas hoy', motif: 'diez', rank: 40, date: today },
+      { key: 'celeb:parejas:' + today, line: '¡Todas las parejas han ido hoy!', motif: 'parejas', rank: 50, date: today },
+    ],
+    monday: null,
+  }
+}

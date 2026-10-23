@@ -110,7 +110,7 @@ Una pareja está sin cubrir si ninguno de los dos tiene «Voy a ir» ni «He ido
 
 El domingo nunca está en riesgo. Tampoco se envía nada en domingo, ni siquiera para avisar del lunes. El sábado por la tarde no se avisa del domingo. El aviso del lunes es la línea de dentro de la aplicación, que el domingo ya se puede leer.
 
-Dentro de la aplicación hay una línea en Hoy y en el día del calendario, de lunes a sábado, sin ventana modal. Si el día está vacío: «Nadie se ha apuntado.» Si el hueco es de alguna pareja: «Hay una pareja sin cubrir.» El calendario enseña cuál. No hace falta tener el aviso del móvil encendido para verla.
+Dentro de la aplicación hay una línea en Hoy y en el día del calendario, de lunes a sábado, sin ventana modal. Si el día está vacío: «Nadie se ha apuntado.» Si el hueco es de alguna pareja: «Falta una pareja.» El calendario enseña el recuento, sin nombres. No hace falta tener el aviso del móvil encendido para verla.
 
 Al móvil, una sola Edge Function, `send-evening-reminder`, llamada por `pg_cron` y `pg_net` cada hora en el minuto 5. La función mira la hora de Madrid y solo envía entre las 20:00 y las 21:59, para que el cambio de hora no desplace el aviso y un fallo de una hora no lo borre. La URL es pública: rechaza la clave anónima y los tokens de usuario, y solo acepta un secreto propio del reloj (`CRON_SECRET`), distinto de la clave de servicio. Esa clave de servicio la inyecta Supabase en la función y no se copia al repositorio ni al SQL del reloj.
 
