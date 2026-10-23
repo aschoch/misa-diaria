@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "test:db": "node tests/db/rules.test.mjs"
+    "test:db": "node tests/db/rules.test.mjs",
+    "test:aviso": "node --test tests/aviso/handler.test.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.2.8",
@@ -14,6 +16,7 @@
     "@supabase/supabase-js": "^2.81.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "pg": "^8.16.3",
     "typescript": "^5.9.3",
     "vite": "^7.1.12"

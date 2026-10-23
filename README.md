@@ -9,6 +9,8 @@ En local, con Docker: `supabase start`. Sin Docker, las reglas de la base se pru
 ```bash
 npm install
 npm run test:db
+npm run test:aviso
+npm run test:e2e
 npm run dev
 npm run build
 ```
