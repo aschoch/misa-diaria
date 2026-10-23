@@ -113,7 +113,7 @@ function falta(gaps: string[]) {
 }
 
 function dayWhy(day: Day) {
-  if (day.sunday) return 'El domingo no está en riesgo.'
+  if (day.sunday) return 'Domingo.'
   if (!atRisk(day)) {
     if (day.covered === 12) return 'Están los doce.'
     if (day.couples === 6) return 'Las parejas están cubiertas.'
@@ -131,24 +131,40 @@ function dayClass(day: Day) {
   return ''
 }
 
-function dayMeta(day: Day) {
-  if (day.sunday) return '<em>Domingo</em><small>No está en riesgo</small>'
-  if (atRisk(day)) return '<em>En riesgo</em>'
-  if (day.covered === 12) return '<em class="all"><i class="disk" aria-hidden="true"></i>Todos</em>'
-  if (day.couples === 6) return `<em class="pairs"><span class="dots" aria-hidden="true"><i></i><i></i></span>${day.couples} de 6</em><small>Parejas</small>`
-  return `<em>${day.covered} de 12</em>`
+function counts(day: Day) {
+  return `<span class="count"><em>${day.covered} de 12</em><small>${day.couples} de 6 parejas</small></span>`
+}
+
+function dayMeta(day: Day, open: boolean) {
+  const why = open && !day.sunday
+    ? `<small class="why" data-testid="risk-why">${esc(dayWhy(day))}</small>`
+    : ''
+  if (day.sunday) return `<em>Domingo</em>${counts(day)}`
+  if (atRisk(day)) {
+    return `${counts(day)}${open ? why : '<em class="flag">En riesgo</em>'}`
+  }
+  if (day.covered === 12) return `<em class="all"><i class="disk" aria-hidden="true"></i>Todos</em>${counts(day)}${why}`
+  if (day.couples === 6) {
+    return `<em class="pairs"><span class="dots" aria-hidden="true"><i></i><i></i></span>${day.couples} de 6</em><small>Parejas</small>${counts(day)}${why}`
+  }
+  return `${counts(day)}${why}`
 }
 
 export function renderCalendario(state: Estado, selected: string, locked: boolean) {
   const rows = state.calendar.map((day) => {
     const f = fecha(day.date)
     const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
-    return `<li class="${dayClass(day)} ${day.date === selected ? 'selected' : ''}">
-      <button type="button" data-act="select" data-date="${day.date}" ${day.date === selected ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
+    const open = day.date === selected
+    const commit = open
+      ? `<button type="button" class="row-commit" data-act="commit" data-date="${day.date}" ${locked ? 'disabled' : ''}>${day.mine_commitment ? 'Quitar «voy a ir»' : 'Voy a ir'}</button>`
+      : ''
+    return `<li class="${dayClass(day)} ${open ? 'selected' : ''}">
+      <button type="button" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
         <span class="num ${mine}">${f.d}</span>
         <span class="when">${day.sunday ? sun : ''}${f.corto}${f.d === 1 ? ` ${f.mes}` : ''}</span>
-        <span class="meta">${dayMeta(day)}</span>
+        <span class="meta">${dayMeta(day, open)}</span>
       </button>
+      ${commit}
     </li>`
   }).join('')
   const day = state.calendar.find((item) => item.date === selected) ?? state.calendar[0]
@@ -160,7 +176,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
     <aside class="day" data-testid="day">
       <h2>${heading}</h2>
       <p class="count">${day.covered} de 12 · ${day.couples} de 6 parejas</p>
-      <p class="why ${tone}" data-testid="risk-why">${esc(why)}</p>
+      <p class="why ${tone}">${esc(why)}</p>
       <button type="button" class="texty" data-act="commit" data-date="${day.date}" ${locked ? 'disabled' : ''}>
         ${day.mine_commitment ? 'Quitar «voy a ir»' : 'Voy a ir'}
       </button>
