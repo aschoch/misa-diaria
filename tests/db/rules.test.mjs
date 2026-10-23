@@ -167,6 +167,27 @@ async function main() {
     assert((await one(`select public.dia_en_riesgo('2026-10-18') as r`)).r === false, 'el domingo no está en riesgo')
     assert((await one(`select public.dia_en_riesgo('2026-10-17') as r`)).r === true, 'el sábado vacío está en riesgo')
 
+    await q('savepoint parejas')
+    for (const n of [1, 3, 5, 7, 9, 11]) {
+      await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-23')`, [P(n)])
+    }
+    assert((await one(`select public.dia_en_riesgo('2026-10-23') as r`)).r === false, 'con las seis parejas no está en riesgo')
+    await q('rollback to savepoint parejas')
+
+    await q('savepoint hueco')
+    for (const n of [1, 3, 5, 7, 9]) {
+      await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-23')`, [P(n)])
+    }
+    assert((await one(`select public.dia_en_riesgo('2026-10-23') as r`)).r === true, 'falta una pareja')
+    await q(`select set_config('request.jwt.claim.sub', $1, true)`, [P(1)])
+    await q(`select set_config('app.now', '2026-10-23T10:00:00Z', true)`)
+    const hueco = await one(`select public.estado() as e`)
+    const viernes = hueco.e.calendar.find((day) => day.date === '2026-10-23')
+    assert(viernes.at_risk === true && viernes.gaps.length === 1 && viernes.gaps[0] === 'Pareja 6', 'el calendario nombra a Pareja 6')
+    const domingo = hueco.e.calendar.find((day) => day.date === '2026-10-25')
+    assert(domingo.sunday === true && domingo.at_risk === false, 'el domingo del calendario no está en riesgo')
+    await q('rollback to savepoint hueco')
+
     const friday = '2026-10-23T18:30:00Z'
     const rows = async (when) => (await q(`select member_id::text, body from public.aviso_tarde($1::timestamptz)`, [when])).rows
     assert((await rows('2026-10-18T18:30:00Z')).length === 0, 'el domingo no se avisa')
