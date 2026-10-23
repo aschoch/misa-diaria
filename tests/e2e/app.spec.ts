@@ -144,7 +144,7 @@ test('el domingo no está en riesgo y la fecha es la de Madrid', async ({ page }
   const days = page.getByTestId('calendar').locator('li')
   await expect(days.nth(0)).toHaveClass(/risk/)
   await expect(days.nth(1)).toContainText('Domingo')
-  await expect(days.nth(1)).toContainText('No está en riesgo')
+  await expect(days.nth(1)).not.toContainText(/en riesgo/i)
   await expect(days.nth(1)).not.toHaveClass(/risk/)
 
   await clock('2026-01-10T22:30:00Z')
@@ -156,6 +156,7 @@ test('el domingo no está en riesgo y la fecha es la de Madrid', async ({ page }
   await page.reload()
   await expect(days.nth(0).locator('.num')).toHaveText('11')
   await expect(days.nth(0)).toContainText('Domingo')
+  await expect(days.nth(0)).not.toContainText(/en riesgo/i)
   await expect(days.nth(0)).not.toHaveClass(/risk/)
   expect(errors).toEqual([])
 })
@@ -257,21 +258,22 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
-  const sheet = page.getByTestId('day')
-  await expect(sheet).toContainText('9 de 12 · 5 de 6 parejas')
-  await expect(sheet.getByTestId('risk-why')).toHaveText('Falta Pareja 6.')
   const friday = page.getByTestId('calendar').locator('li').nth(0)
+  await expect(friday).toContainText('9 de 12')
+  await expect(friday).toContainText('5 de 6 parejas')
+  await expect(friday.getByTestId('risk-why')).toHaveText('Falta Pareja 6.')
   await expect(friday).toHaveClass(/risk/)
-  const shadow = await friday.evaluate((node) => getComputedStyle(node).boxShadow)
-  expect(shadow).not.toMatch(/42,\s*33,\s*24/)
+  const narrow = (page.viewportSize()?.width ?? 0) < 800
+  if (narrow) await expect(page.locator('.day')).toBeHidden()
+  else await expect(page.locator('.day')).toBeVisible()
 
-  const overlap = await page.evaluate(() => {
-    const panel = document.querySelector('[data-testid="day"]')!.getBoundingClientRect()
-    const days = document.querySelector('[data-testid="calendar"]')!.getBoundingClientRect()
-    const covers = panel.top < days.bottom - 1 && panel.left < days.right - 8 && panel.right > days.left + 8
-    return covers
+  await friday.locator('[data-act="select"]').click()
+  const ring = await friday.locator('[data-act="select"]').evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { outline: style.outlineStyle, shadow: style.boxShadow }
   })
-  expect(overlap).toBe(false)
+  expect(ring.outline).toBe('none')
+  expect(ring.shadow).toBe('none')
 
   await scene('cubiertas')
   await page.reload()
@@ -282,7 +284,9 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
 
   await page.locator('[data-date="2026-10-25"]').click()
   await expect(row('2026-10-25')).not.toHaveClass(/risk/)
-  await expect(page.getByTestId('risk-why')).toHaveText('El domingo no está en riesgo.')
+  await expect(row('2026-10-25')).toContainText('Domingo')
+  await expect(row('2026-10-25')).not.toContainText(/en riesgo/i)
+  await expect(page.getByTestId('risk-why')).toHaveCount(0)
 
   await page.locator('[data-date="2026-10-27"]').click()
   await expect(row('2026-10-27')).toHaveClass(/risk/)
@@ -299,6 +303,10 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await save(page, 'hoy.png')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
+  await page.evaluate(() => {
+    const node = document.activeElement
+    if (node instanceof HTMLElement) node.blur()
+  })
   await save(page, 'calendario.png')
   await page.getByRole('link', { name: 'Muro' }).click()
   await page.getByText('Por quienes no pueden salir de casa.').waitFor()
