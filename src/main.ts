@@ -111,6 +111,11 @@ function go(route: Route) {
   paint()
 }
 
+app.addEventListener('pointerdown', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLElement>('.days button')
+  if (button) button.dataset.pointer = '1'
+})
+
 app.addEventListener('click', (event) => {
   const link = (event.target as HTMLElement).closest('a[href]')
   if (link instanceof HTMLAnchorElement && link.origin === location.origin) {
@@ -206,8 +211,12 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (!current || locked) return
   if (act === 'select') {
+    const pointer = node.dataset.pointer === '1'
     selected = node.dataset.date ?? selected
     paint()
+    if (!pointer) {
+      document.querySelector<HTMLButtonElement>(`[data-act="select"][data-date="${selected}"]`)?.focus()
+    }
     return
   }
   busy = true
