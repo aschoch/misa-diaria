@@ -106,10 +106,10 @@ function atRisk(day: Day) {
 }
 
 function falta(gaps: string[]) {
-  if (gaps.length === 0) return 'Falta una pareja.'
-  if (gaps.length === 1) return `Falta ${gaps[0]}.`
+  if (gaps.length === 0) return 'Falta una pareja'
+  if (gaps.length === 1) return `Falta ${gaps[0]}`
   const last = gaps[gaps.length - 1]
-  return `Faltan ${gaps.slice(0, -1).join(', ')} y ${last}.`
+  return `Faltan ${gaps.slice(0, -1).join(', ')} y ${last}`
 }
 
 function dayWhy(day: Day) {
@@ -119,7 +119,7 @@ function dayWhy(day: Day) {
     if (day.couples === 6) return 'Las parejas están cubiertas.'
     return 'El día está cubierto.'
   }
-  if (day.covered === 0) return 'Nadie se ha apuntado.'
+  if (day.covered === 0) return 'Nadie se ha apuntado'
   return falta(day.gaps ?? [])
 }
 
@@ -137,7 +137,7 @@ function counts(day: Day) {
 
 function dayMeta(day: Day, open: boolean) {
   const why = open && !day.sunday
-    ? `<small class="why" data-testid="risk-why">${esc(dayWhy(day))}</small>`
+    ? `<span class="why" data-testid="risk-why">${esc(dayWhy(day))}</span>`
     : ''
   if (day.sunday) return `<em>Domingo</em>${counts(day)}`
   if (atRisk(day)) {
