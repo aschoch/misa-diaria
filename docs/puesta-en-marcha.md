@@ -12,7 +12,7 @@ El proyecto de Supabase ya está creado:
 
 `https://kryarzipdpvceocidgyw.supabase.co`
 
-La URL y la clave publicable ya están en el cliente, en `src/api.ts`. No hace falta copiarlas a mano para que la página hable con ese proyecto. No son una clave anónima antigua: la biblioteca usa la clave publicable `sb_publishable_…`.
+La URL y la clave publicable ya están en `.env.production` y en `src/api.ts`. El build de GitHub Pages las lee de ahí. No hace falta copiarlas a mano. No son una clave anónima antigua: la biblioteca usa la clave publicable `sb_publishable_…`.
 
 Lo que sí tienes que hacer tú es aplicar las migraciones, en el orden de sus nombres, y desplegar la función del aviso. Los nombres y los correos reales se cargan aparte, en el panel. No van a Git.
 
