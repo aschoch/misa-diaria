@@ -1,11 +1,10 @@
-const cortos = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
-const largos = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
-const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+import { dates } from './i18n'
 
 export function fecha(iso: string) {
+  const pack = dates()
   const [y, m, d] = iso.split('-').map(Number)
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
-  return { y, m, d, dow, corto: cortos[dow], largo: largos[dow], mes: meses[m - 1] }
+  return { y, m, d, dow, corto: pack.cortos[dow], largo: pack.largos[dow], mes: pack.meses[m - 1] }
 }
 
 export function esc(value: string) {

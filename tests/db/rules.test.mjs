@@ -1,5 +1,5 @@
 import pg from 'pg'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -34,7 +34,10 @@ async function main() {
       select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
     $$;
   `)
-  await client.query(readFileSync(join(root, 'supabase/migrations/20261023180000_init.sql'), 'utf8'))
+  const migrations = readdirSync(join(root, 'supabase/migrations')).filter((name) => name.endsWith('.sql')).sort()
+  for (const name of migrations) {
+    await client.query(readFileSync(join(root, 'supabase/migrations', name), 'utf8'))
+  }
   await client.query(readFileSync(join(root, 'supabase/seed.sql'), 'utf8'))
 
   const q = (text, params) => client.query(text, params)
@@ -183,7 +186,7 @@ async function main() {
     await q(`select set_config('app.now', '2026-10-23T10:00:00Z', true)`)
     const hueco = await one(`select public.estado() as e`)
     const viernes = hueco.e.calendar.find((day) => day.date === '2026-10-23')
-    assert(viernes.at_risk === true && viernes.gaps.length === 1 && viernes.gaps[0] === 'Pareja 6', 'el calendario nombra a Pareja 6')
+    assert(viernes.at_risk === true && viernes.gaps.length === 1 && viernes.gaps[0] === 'Matrimonio 6', 'el calendario nombra al Matrimonio 6')
     const domingo = hueco.e.calendar.find((day) => day.date === '2026-10-25')
     assert(domingo.sunday === true && domingo.at_risk === false, 'el domingo del calendario no está en riesgo')
     await q('rollback to savepoint hueco')
@@ -197,7 +200,7 @@ async function main() {
     await q(`insert into public.notification_prefs (member_id, empty_day, couple) values ($1, true, true), ($2, false, true)`, [P(1), P(11)])
     const evening = await rows(friday)
     assert(evening.length === 1 && evening[0].member_id === P(1), 'el día vacío avisa a quien lo pidió')
-    assert(!evening.some((row) => row.body.includes('pareja')), 'el día vacío no manda también el de pareja')
+    assert(!evening.some((row) => row.body.includes('matrimonio')), 'el día vacío no manda también el del matrimonio')
 
     await q('delete from public.notification_prefs')
     for (const n of [1, 3, 5, 7, 9]) {
@@ -210,7 +213,7 @@ async function main() {
     const couple = await rows(friday)
     const ids = couple.map((row) => row.member_id).sort()
     assert(ids.length === 2 && ids[0] === P(11) && ids[1] === P(12), 'solo la pareja descubierta')
-    assert(couple.every((row) => row.body.includes('pareja')), 'el texto es el de la pareja')
+    assert(couple.every((row) => row.body.includes('matrimonio')), 'el texto es el del matrimonio')
 
     async function asUser(id, fn) {
       await q('savepoint rol')
@@ -274,6 +277,34 @@ async function main() {
       assert(state.e.me.display_name === 'Persona 1', 'estado devuelve a la persona')
       assert(!JSON.stringify(state.e).includes('@example.com'), 'el estado no lleva correos')
       assert(state.e.past.length === 6, 'seis días')
+    })
+
+    await asUser(P(1), async () => {
+      const intention = await one(
+        `insert into public.intentions (member_id, body) values ($1, 'Una frase.') returning id`,
+        [P(1)],
+      )
+      await q(
+        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, 'Primero.')`,
+        [intention.id, P(1)],
+      )
+      await q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '🙏')`,
+        [intention.id, P(1)],
+      )
+      await expectFail(() => q(
+        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, 'Ajeno.')`,
+        [intention.id, P(2)],
+      ))
+      await expectFail(() => q(
+        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, '<b>no</b>')`,
+        [intention.id, P(1)],
+      ))
+      const state = await one(`select public.estado() as e`)
+      const row = state.e.intentions[0]
+      assert(row.id === intention.id, 'la actividad nueva queda arriba')
+      assert(row.comments[0].body === 'Primero.' && row.comments[0].mine === true, 'el comentario es mío')
+      assert(row.reactions[0].emoji === '🙏' && row.reactions[0].mine === true, 'la reacción es mía')
     })
 
     const monday = await one(`select public.resumen_semana('2026-10-26') as r`)

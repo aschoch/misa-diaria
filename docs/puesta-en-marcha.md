@@ -6,30 +6,26 @@ La página será `https://aschoch.github.io/misa-diaria/`. El código es públic
 
 Cuando un paso diga «no lo pegues en GitHub», es en serio. Si se cuela en el repositorio, está a la vista de cualquiera.
 
-## 1. Crear el proyecto de Supabase
+## 1. El proyecto ya existe
 
-1. Entra en [supabase.com](https://supabase.com) con tu cuenta.
-2. Pulsa **New project**. Organización: la tuya. Nombre: `misa-diaria`. Región: una de Europa, la que te quede cerca. Contraseña de la base: invéntala y guárdala en tu gestor de contraseñas. Plan gratuito.
-3. Espera a que el proyecto pase a estar en verde.
+El proyecto de Supabase ya está creado:
 
-Ese proyecto es la base de datos. Sin él, la página abre pero no guarda nada.
+`https://kryarzipdpvceocidgyw.supabase.co`
 
-## 2. Qué copiar, y qué no
+La URL y la clave publicable ya están en el cliente, en `src/api.ts`. No hace falta copiarlas a mano para que la página hable con ese proyecto. No son una clave anónima antigua: la biblioteca usa la clave publicable `sb_publishable_…`.
 
-En el proyecto, abre **Project Settings → API**.
+Lo que sí tienes que hacer tú es aplicar las migraciones, en el orden de sus nombres, y desplegar la función del aviso. Los nombres y los correos reales se cargan aparte, en el panel. No van a Git.
 
-Copia estos dos y dáselos a quien vaya a publicar la página (o guárdalos como secretos de GitHub, paso 5):
-
-| Dónde está | Cómo se llama al publicarla | ¿Puede verse? |
-| --- | --- | --- |
-| Project URL | `VITE_SUPABASE_URL` | Sí. Sale en la página. |
-| anon / public key | `VITE_SUPABASE_ANON_KEY` | Sí. No abre los datos por sí sola. |
+## 2. Qué no copiar
 
 No copies, no pegues en un chat y no metas en GitHub:
 
-- **service_role** (clave de servicio). Abre toda la base.
+- **service_role** (clave de servicio). Abre toda la base. Supabase se la inyecta a la función.
 - La contraseña de la base.
 - La clave privada VAPID (paso 6).
+- `CRON_SECRET`.
+
+La clave publicable y la URL sí pueden verse: no abren los datos por sí solas.
 
 ## 3. El acceso por correo
 
@@ -44,6 +40,20 @@ En **Authentication → URL Configuration**:
 - Redirect URLs, una línea exacta, sin asteriscos: `https://aschoch.github.io/misa-diaria/`
 
 En **Authentication → SMTP**, pon un correo tuyo (el de Supabase de prueba se queda corto en cuanto entráis varios). Host, usuario y contraseña se quedan en ese panel. No van al repositorio.
+
+La plantilla del enlace mágico no elige idioma sola. Pégala tú en **Authentication → Email Templates**, corta, en español primero y en portugués de Portugal después. El cliente manda el idioma en `options.data.locale` (`es` o `pt`). Si más adelante la plantilla puede ramificar, usa `{{ .Data.locale }}`, `{{ .Token }}` y `{{ .ConfirmationURL }}`. Hasta entonces, este texto vale para los dos:
+
+```text
+Misa diaria
+
+Tu código: {{ .Token }}
+Enlace: {{ .ConfirmationURL }}
+
+Missa diária
+
+O teu código: {{ .Token }}
+Ligação: {{ .ConfirmationURL }}
+```
 
 ## 4. Las doce personas
 
@@ -64,7 +74,7 @@ join auth.users u on u.email = v.correo
 where m.id = u.id;
 ```
 
-La semilla del repositorio crea `persona1@example.com` … `persona12@example.com`. Para que el enlace llegue al correo de verdad, en **Authentication → Users** cambia cada correo de prueba por el correo real de esa persona, o bórralos y créalos tú con **Add user**, sin invitar a nadie de fuera. Tienen que seguir siendo doce, emparejados como en `members`. Si te lías, pide ayuda con la pantalla delante: el emparejamiento es Persona 1 con 2 (Pareja 1), 3 con 4 (Pareja 2), y así hasta 11 con 12.
+La semilla del repositorio crea `persona1@example.com` … `persona12@example.com`. Para que el enlace llegue al correo de verdad, en **Authentication → Users** cambia cada correo de prueba por el correo real de esa persona, o bórralos y créalos tú con **Add user**, sin invitar a nadie de fuera. Tienen que seguir siendo doce, en los mismos matrimonios que `members`. Si te lías, pide ayuda con la pantalla delante: van juntos Persona 1 con 2 (Matrimonio 1), 3 con 4 (Matrimonio 2), y así hasta 11 con 12.
 
 Quien no esté en esa lista no entra. La página le dice lo mismo que a los demás: si el correo está en la lista, llegará un mensaje. No dice si el correo existe.
 
@@ -72,9 +82,9 @@ Quien no esté en esa lista no entra. La página le dice lo mismo que a los dem�
 
 1. En el repositorio `aschoch/misa-diaria`, **Settings → Pages**.
 2. Build and deployment: **GitHub Actions**, cuando el flujo de publicación esté en `main`.
-3. **Settings → Secrets and variables → Actions**. Crea:
+3. **Settings → Secrets and variables → Actions**. La URL y la clave publicable ya van en el código. Si quieres sustituirlas al publicar, crea:
    - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
    - `VITE_VAPID_PUBLIC_KEY` (la pública del paso 6; puede esperar si aún no hay avisos)
 4. La dirección pública será `https://aschoch.github.io/misa-diaria/`. Que sea pública no abre la base.
 
@@ -95,7 +105,7 @@ Salen dos claves.
   - `VAPID_SUBJECT` con un `mailto:` tuyo, por ejemplo `mailto:tu-correo@ejemplo.com`
   - `CRON_SECRET`: una frase larga que inventes. También va al SQL del reloj, no a GitHub.
 
-Quien publique la función `send-evening-reminder` la deja en el proyecto. El reloj de cada tarde está en `supabase/snippets/evening-cron.sql`. Ábrelo, sustituye la URL del proyecto y el `CRON_SECRET`, y ejecútalo en el SQL Editor. No guardes esa versión rellena.
+Tú despliegas la función `send-evening-reminder`. El reloj está en `supabase/snippets/evening-cron.sql`: se llama `misa-aviso-tarde` y corre cada hora, en el minuto 5 (`5 * * * *`). La función solo envía entre las 20:00 y las 21:59, hora de Madrid, y nunca en domingo. Ábrelo, pon la URL `https://kryarzipdpvceocidgyw.supabase.co` y el `CRON_SECRET` que hayas inventado, y ejecútalo en el SQL Editor. No guardes esa versión rellena. El secreto viaja en la cabecera `x-cron-secret`. La función también necesita `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`. `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` los pone Supabase; no los copies.
 
 Los avisos nacen apagados. Cada persona los enciende en Ajustes.
 
@@ -124,10 +134,10 @@ Supabase puede pausar un proyecto gratuito que lleve una semana en silencio. Te 
 
 ## Lo que solo puedes hacer tú
 
-1. Crear el proyecto de Supabase en tu cuenta y guardar la contraseña de la base.
-2. Copiar la URL y la clave anónima a los secretos de GitHub. No copiar la clave de servicio.
-3. Apagar el registro de gente nueva, poner la URL del sitio y el SMTP.
-4. Sustituir los doce correos de prueba y los nombres, en el panel, sin subirlos a GitHub.
+1. Guardar la contraseña de la base del proyecto que ya existe.
+2. Aplicar las migraciones y desplegar la función. No copiar la clave de servicio.
+3. Apagar el registro de gente nueva, poner la URL del sitio, el SMTP y la plantilla bilingüe del enlace.
+4. Cargar los doce correos reales y los nombres, en el panel, sin subirlos a GitHub.
 5. Generar las claves VAPID y guardar la privada solo en los secretos de Supabase, junto con `CRON_SECRET` y el `mailto:`.
 6. Activar GitHub Pages.
 7. Instalar la aplicación en tu iPhone desde Safari y en un Android desde Chrome, entrar con el código y probar un aviso.

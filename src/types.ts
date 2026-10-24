@@ -17,6 +17,27 @@ export type Day = {
   mine_attendance: boolean
 }
 
+export type Comment = {
+  id: string
+  body: string
+  display_name: string
+  mine: boolean
+}
+
+export type Reaction = {
+  emoji: '🙏' | '💛' | '🕯️'
+  mine: boolean
+}
+
+export type Intention = {
+  id: string
+  body: string
+  display_name: string
+  mine: boolean
+  comments: Comment[]
+  reactions: Reaction[]
+}
+
 export type Estado = {
   today: string
   clock: string
@@ -26,8 +47,8 @@ export type Estado = {
   risk: 'empty' | 'couple' | null
   calendar: Day[]
   past: { date: string; sunday: boolean; mine_attendance: boolean }[]
-  intentions: { id: string; body: string; display_name: string; mine: boolean }[]
-  prefs: { empty_day: boolean; couple: boolean }
+  intentions: Intention[]
+  prefs: { empty_day: boolean; couple: boolean; locale: 'es' | 'pt' | null }
   pending: Pending[]
   monday: { people: number; couples: number; empty_days: number } | null
 }

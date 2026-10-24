@@ -48,7 +48,7 @@ end
 $seed$;
 
 insert into public.couples (id, label)
-select ('00000000-0000-4000-8001-' || lpad(to_hex(n), 12, '0'))::uuid, 'Pareja ' || n
+select ('00000000-0000-4000-8001-' || lpad(to_hex(n), 12, '0'))::uuid, 'Matrimonio ' || n
 from generate_series(1, 6) as n;
 
 insert into public.members (id, couple_id, display_name)
