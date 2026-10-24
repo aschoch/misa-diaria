@@ -1,8 +1,23 @@
 import { mkdirSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 const gate = 'http://127.0.0.1:54321'
-const shots = '/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/app'
+const storeShots = '/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/app'
+let shots = storeShots
+
+function ensureShots() {
+  try {
+    mkdirSync(shots, { recursive: true })
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : ''
+    if (code !== 'EACCES' && code !== 'EPERM') throw err
+    shots = join(tmpdir(), 'misa-shots')
+    mkdirSync(shots, { recursive: true })
+  }
+}
+
 const outsider = '00000000-0000-4000-8000-0000000000ff'
 
 function reason(text: string) {
@@ -353,7 +368,7 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
 test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)
   const errors = watchConsole(page)
-  mkdirSync(shots, { recursive: true })
+  ensureShots()
   await login(page, 'persona12@example.com')
   await page.getByTestId('go').waitFor()
   await save(page, 'hoy.png')
@@ -390,7 +405,7 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
 test('en portugués se ven las sequências y el hilo', async ({ page, browserName, viewport }) => {
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)
   const errors = watchConsole(page)
-  mkdirSync(shots, { recursive: true })
+  ensureShots()
   await login(page, 'persona12@example.com')
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await page.getByRole('button', { name: 'Português' }).click()
@@ -410,7 +425,7 @@ test('en portugués se ven las sequências y el hilo', async ({ page, browserNam
 test('capturas del muro', async ({ page, browserName, viewport }) => {
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)
   const errors = watchConsole(page)
-  mkdirSync(shots, { recursive: true })
+  ensureShots()
   await scene('muro-es')
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Muro' }).click()
@@ -458,7 +473,7 @@ test('capturas del muro', async ({ page, browserName, viewport }) => {
 
 test('captura del calendario en el escritorio', async ({ page, browserName, viewport }) => {
   test.skip(browserName !== 'chromium' || viewport?.width !== 1280)
-  mkdirSync(shots, { recursive: true })
+  ensureShots()
   await login(page, 'persona12@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('day').waitFor()
