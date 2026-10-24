@@ -136,6 +136,34 @@ function filters(url) {
   return out
 }
 
+async function wallCopy(client, portuguese) {
+  const first = portuguese ? 'Por quem não pode sair de casa.' : 'Por quienes no pueden salir de casa.'
+  const second = portuguese ? 'Pela paz em casa.' : 'Por la paz en casa.'
+  const older = portuguese ? 'Rezamos por eles.' : 'Rezamos por ellos.'
+  const newer = portuguese ? 'Eu também.' : 'Yo también.'
+  await client.query('truncate public.intention_comments, public.intention_reactions, public.intentions')
+  const inserted = await client.query(
+    `insert into public.intentions (member_id, body) values ($1, $2) returning id`,
+    [P(1), first],
+  )
+  await client.query(
+    `insert into public.intentions (member_id, body) values ($1, $2)`,
+    [P(4), second],
+  )
+  const id = inserted.rows[0].id
+  await client.query(`
+    insert into public.intention_comments (intention_id, member_id, body, created_at) values
+      ($1, $2, $3, now() - interval '2 hours'),
+      ($1, $4, $5, now() - interval '25 minutes')
+  `, [id, P(4), older, P(1), newer])
+  await client.query(`
+    insert into public.intention_reactions (intention_id, member_id, emoji) values
+      ($1, $2, '🙏'),
+      ($1, $3, '🙏'),
+      ($1, $3, '💛')
+  `, [id, P(1), P(4)])
+}
+
 async function seedActivity(client) {
   await client.query(`select set_config('app.now', $1, false)`, [clock])
   await client.query(`
@@ -518,6 +546,11 @@ export function startGateway(port = 54321) {
       }
       if (url.pathname === '/test/scene' && req.method === 'POST') {
         const body = await readBody(req)
+        if (body?.name === 'muro-es' || body?.name === 'muro-pt') {
+          await admin((client) => wallCopy(client, body.name === 'muro-pt'))
+          json(res, 200, { name: body.name, at: clock })
+          return
+        }
         if (body?.name === 'cubiertas') {
           await admin(async (client) => {
             await client.query(`select set_config('app.now', $1, false)`, [clock])
