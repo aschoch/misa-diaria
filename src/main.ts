@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, estado, guardarCelebraci
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { href, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route } from './view'
+import { href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -19,8 +19,11 @@ const EMAIL_KEY = 'misa-email'
 let denied = false
 let demo = false
 let busy = false
+let signingIn = false
+let localeEpoch = 0
 let locale: Locale = savedLocale() ?? deviceLocale()
 let openIntention = ''
+let emojiFor = ''
 
 function rememberedEmail() {
   try {
@@ -71,31 +74,37 @@ function paint() {
   }
   if (!selected) selected = current.today
   if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
-  app.innerHTML = renderApp(route, current, selected, locked, offline, openIntention, locale)
+  const intention = intentionFromPath(location.pathname) || openIntention
+  if (emojiFor && !current.intentions.some((item) => item.id === emojiFor)) emojiFor = ''
+  app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor)
   document.title = tx().brand
 }
 
 async function refresh(celebrate = false) {
   const snapshot = sessionStorage.getItem('misa-estado')
+  const epoch = localeEpoch
   try {
     current = await estado()
     denied = false
     offline = ''
     locked = false
-    const saved = current.prefs.locale
-    if (saved === 'es' || saved === 'pt') locale = saved
-    else locale = savedLocale() ?? deviceLocale()
-    rememberLocale(locale)
-    if (!saved) {
-      current.prefs.locale = locale
-      await guardarPreferencias(current.me.id, current.prefs)
+    if (epoch === localeEpoch) {
+      const saved = current.prefs.locale
+      if (saved === 'es' || saved === 'pt') locale = saved
+      else locale = savedLocale() ?? deviceLocale()
+      rememberLocale(locale)
+      if (!saved) {
+        current.prefs.locale = locale
+        await guardarPreferencias(current.me.id, current.prefs)
+      }
     }
+    if (epoch !== localeEpoch) current.prefs.locale = locale
     sessionStorage.setItem('misa-estado', JSON.stringify({ at: current.clock, data: current }))
     paint()
     if (celebrate) await celebratePending(current)
   } catch (error) {
     const code = typeof error === 'object' && error && 'code' in error ? String((error as { code: string }).code) : ''
-    if (code === '42501' || /no eres del grupo/i.test(String(error))) {
+    if (code === '42501' || /no eres del (grupo|curso)/i.test(String(error))) {
       current = null
       denied = true
       paint()
@@ -148,7 +157,7 @@ async function boot() {
       }
       return
     }
-    if (!current) window.setTimeout(() => void refresh(true), 0)
+    if (!current && !signingIn) window.setTimeout(() => void refresh(true), 0)
   })
   if (!import.meta.env.DEV && 'serviceWorker' in navigator) {
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined)
@@ -164,6 +173,15 @@ function go(route: Route) {
 app.addEventListener('pointerdown', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
+})
+
+app.addEventListener('input', (event) => {
+  const node = event.target
+  if (!(node instanceof HTMLInputElement) || node.dataset.act !== 'emoji-input') return
+  const emoji = isEmoji(node.value)
+  if (!emoji) return
+  node.value = ''
+  void actOn('react', node, emoji)
 })
 
 app.addEventListener('keydown', (event) => {
@@ -227,8 +245,14 @@ function bump(id: string) {
   current.intentions.unshift(item)
 }
 
-function isEmoji(value: string): value is '🙏' | '💛' | '🕯️' {
-  return value === '🙏' || value === '💛' || value === '🕯️'
+function isEmoji(value: string) {
+  const text = value.trim()
+  if (!text || text.length > 16 || /[<>]/.test(text)) return ''
+  const parts = typeof Intl.Segmenter === 'function'
+    ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((part) => part.segment)
+    : [...text]
+  if (parts.length !== 1 || !/\p{Extended_Pictographic}/u.test(parts[0])) return ''
+  return parts[0]
 }
 
 function toggleDemoAttendance(date: string) {
@@ -243,6 +267,34 @@ function toggleDemoAttendance(date: string) {
 }
 
 async function actOn(act: string, node: HTMLElement, body = '') {
+  if (act === 'locale') {
+    if (!current || locked) return
+    const next = node.dataset.locale === 'pt' ? 'pt' : 'es'
+    localeEpoch += 1
+    locale = next
+    rememberLocale(next)
+    current.prefs.locale = next
+    paint()
+    if (demo) return
+    try {
+      await guardarPreferencias(current.me.id, { ...current.prefs, locale: next })
+    } catch {
+      offline = tx().saveFail
+      paint()
+    }
+    return
+  }
+  if (act === 'emoji-open') {
+    emojiFor = node.dataset.id ?? ''
+    paint()
+    document.querySelector<HTMLInputElement>('#emoji-field')?.focus()
+    return
+  }
+  if (act === 'emoji-close') {
+    emojiFor = ''
+    paint()
+    return
+  }
   if (busy && act !== 'select') return
   if (act === 'send-link') {
     const next = loginEmail()
@@ -278,6 +330,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       return
     }
     if (!supabase || token.length < 6) return
+    signingIn = true
     busy = true
     try {
       const { error } = await supabase.auth.verifyOtp({ email: next, token, type: 'email' })
@@ -290,6 +343,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       await refresh(true)
     } finally {
       busy = false
+      signingIn = false
     }
     return
   }
@@ -410,8 +464,9 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     }
     if (act === 'react') {
       const intentionId = node.dataset.id ?? ''
-      const emoji = node.dataset.emoji ?? ''
-      if (!isEmoji(emoji)) return
+      const emoji = isEmoji(node.dataset.emoji || body)
+      if (!emoji) return
+      emojiFor = ''
       const item = current.intentions.find((intention) => intention.id === intentionId)
       const mine = item?.reactions.some((reaction) => reaction.emoji === emoji && reaction.mine) ?? false
       if (demo && item) {
@@ -424,22 +479,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       }
       if (mine) await quitarReaccion(current.me.id, intentionId, emoji)
       else await ponerReaccion(current.me.id, intentionId, emoji)
-      openIntention = openIntention || intentionId
       await refresh(false)
-      return
-    }
-    if (act === 'locale') {
-      const next = node.dataset.locale === 'pt' ? 'pt' : 'es'
-      locale = next
-      rememberLocale(next)
-      if (demo) {
-        current.prefs.locale = next
-        paint()
-        return
-      }
-      await guardarPreferencias(current.me.id, { ...current.prefs, locale: next })
-      current.prefs.locale = next
-      paint()
       return
     }
     if (act === 'pref') {

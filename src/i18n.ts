@@ -65,43 +65,39 @@ const copy = {
     sendFail: 'No se ha podido enviar. Prueba otra vez.',
     needEmail: 'Escribe tu correo.',
     badCode: 'Ese código no vale. Pide otro.',
-    denied: 'Esta cuenta no está en el grupo.',
+    denied: 'Esta cuenta no está en el curso.',
     logout: 'Cerrar sesión',
     setup: 'Esta copia todavía no tiene proyecto. Los pasos están en la guía de puesta en marcha.',
     offline: (at: string) => `Sin conexión. Datos de las ${at}.`,
-    openFail: 'No hemos podido abrir el grupo.',
+    openFail: 'No hemos podido abrir el curso.',
     saveFail: 'No se ha guardado. Prueba otra vez.',
     riskEmpty: 'Nadie se ha apuntado.',
-    riskCouple: 'Falta un matrimonio.',
     gone: 'Has ido a Misa',
     go: 'He ido a Misa',
-    yours: 'La tuya',
-    yoursAsk: '¿Has ido tú cada día?',
+    yoursAsk: 'días seguidos que has ido a Misa',
     couple: 'Tu matrimonio',
-    coupleAsk: '¿Ha ido al menos uno de los dos?',
-    group: 'El grupo',
-    groupAsk: '¿Ha ido alguien?',
+    coupleAsk: 'días seguidos que alguno de los dos ha ido a Misa',
+    group: 'El curso',
+    groupAsk: 'días seguidos que ha ido al menos uno del curso',
+    six: 'Cada matrimonio',
+    sixAsk: 'días seguidos que ha ido alguien de cada matrimonio',
     ten: '10 o más',
-    tenAsk: '¿Hay al menos diez?',
-    totalLabel: 'Misas del grupo',
+    tenAsk: 'días seguidos que han ido al menos 10 del curso',
+    totalLabel: 'Misas del curso',
     streaks: 'Rachas',
     week: (people: number, couples: number, empty: number) => `La semana: ${people} de 12 · ${couples} de 6 matrimonios · ${empty} días en cero.`,
     of12: (n: number) => `${n} de 12`,
     of6: (n: number) => `${n} de 6 matrimonios`,
     sunday: 'Domingo',
-    sundayWhy: 'Domingo.',
     riskFlag: 'En riesgo',
-    all: 'Todos',
-    couples: 'Matrimonios',
     commit: 'Voy a ir',
     uncommit: 'Quitar «voy a ir»',
     nobody: 'Nadie se ha apuntado',
-    coveredCouples: 'Los matrimonios están cubiertos.',
-    coveredTwelve: 'Están los doce.',
-    coveredDay: 'El día está cubierto.',
-    faltaNamed: (label: string) => `Falta el ${label}`,
-    faltaSome: (labels: string[]) => `Faltan ${labels.map((label) => `el ${label}`).join(', ').replace(/, el ([^,]+)$/, ' y el $1')}`,
-    faltaOne: 'Falta un matrimonio',
+    committed: 'Alguien se ha apuntado',
+    badgeCouples: 'Alguien de cada matrimonio',
+    badgeTen: '10 misas',
+    badgeAll: 'Todos',
+    backWall: 'Volver al muro',
     intention: 'Una intención',
     intentionHint: 'Una o dos frases.',
     publish: 'Publicar',
@@ -117,13 +113,12 @@ const copy = {
     agoDay: (n: number) => `hace ${n} d`,
     alerts: 'Avisos',
     alertEmpty: 'Si mañana no hay nadie',
-    alertCouple: 'Si mañana tu matrimonio no está cubierto',
     language: 'Idioma',
     spanish: 'Español',
     portuguese: 'Português',
-    pray: 'Rezar',
-    heart: 'Corazón',
-    candle: 'Vela',
+    addReaction: 'Añadir reacción',
+    reactionSheet: 'Una reacción',
+    emojiField: 'Un emoji',
   },
   pt: {
     brand: 'Missa diária',
@@ -140,43 +135,39 @@ const copy = {
     sendFail: 'Não foi possível enviar. Tenta outra vez.',
     needEmail: 'Escreve o teu correio.',
     badCode: 'Esse código não serve. Pede outro.',
-    denied: 'Esta conta não está no grupo.',
+    denied: 'Esta conta não está no curso.',
     logout: 'Fechar sessão',
     setup: 'Esta cópia ainda não tem projeto. Os passos estão no guia de arranque.',
     offline: (at: string) => `Sem ligação. Dados das ${at}.`,
-    openFail: 'Não conseguimos abrir o grupo.',
+    openFail: 'Não conseguimos abrir o curso.',
     saveFail: 'Não ficou guardado. Tenta outra vez.',
     riskEmpty: 'Ninguém se apontou.',
-    riskCouple: 'Falta um matrimónio.',
     gone: 'Foste à Missa',
     go: 'Fui à Missa',
-    yours: 'A tua',
-    yoursAsk: 'Foste tu todos os dias?',
-    couple: 'O teu matrimónio',
-    coupleAsk: 'Foi pelo menos um dos dois?',
-    group: 'O grupo',
-    groupAsk: 'Foi alguém?',
+    yoursAsk: 'dias seguidos em que foste à Missa',
+    couple: 'O teu casal',
+    coupleAsk: 'dias seguidos em que algum dos dois foi à Missa',
+    group: 'O curso',
+    groupAsk: 'dias seguidos em que foi pelo menos um do curso',
+    six: 'Cada casal',
+    sixAsk: 'dias seguidos em que foi alguém de cada casal',
     ten: '10 ou mais',
-    tenAsk: 'Há pelo menos dez?',
-    totalLabel: 'Missas do grupo',
+    tenAsk: 'dias seguidos em que foram pelo menos 10 do curso',
+    totalLabel: 'Missas do curso',
     streaks: 'Sequências',
-    week: (people: number, couples: number, empty: number) => `A semana: ${people} de 12 · ${couples} de 6 matrimónios · ${empty} dias a zero.`,
+    week: (people: number, couples: number, empty: number) => `A semana: ${people} de 12 · ${couples} de 6 casais · ${empty} dias a zero.`,
     of12: (n: number) => `${n} de 12`,
-    of6: (n: number) => `${n} de 6 matrimónios`,
+    of6: (n: number) => `${n} de 6 casais`,
     sunday: 'Domingo',
-    sundayWhy: 'Domingo.',
     riskFlag: 'Em risco',
-    all: 'Todos',
-    couples: 'Matrimónios',
     commit: 'Vou',
     uncommit: 'Tirar o «vou»',
     nobody: 'Ninguém se apontou',
-    coveredCouples: 'Os matrimónios estão cobertos.',
-    coveredTwelve: 'Estão os doze.',
-    coveredDay: 'O dia está coberto.',
-    faltaNamed: (label: string) => `Falta o ${label}`,
-    faltaSome: (labels: string[]) => `Faltam ${labels.map((label) => `o ${label}`).join(', ').replace(/, o ([^,]+)$/, ' e o $1')}`,
-    faltaOne: 'Falta um matrimónio',
+    committed: 'Alguém se apontou',
+    badgeCouples: 'Alguém de cada casal',
+    badgeTen: '10 missas',
+    badgeAll: 'Todos',
+    backWall: 'Voltar ao mural',
     intention: 'Uma intenção',
     intentionHint: 'Uma ou duas frases.',
     publish: 'Publicar',
@@ -192,13 +183,12 @@ const copy = {
     agoDay: (n: number) => `há ${n} d`,
     alerts: 'Avisos',
     alertEmpty: 'Se amanhã não há ninguém',
-    alertCouple: 'Se amanhã o teu matrimónio não estiver coberto',
     language: 'Idioma',
     spanish: 'Español',
     portuguese: 'Português',
-    pray: 'Rezar',
-    heart: 'Coração',
-    candle: 'Vela',
+    addReaction: 'Adicionar reação',
+    reactionSheet: 'Uma reação',
+    emojiField: 'Um emoji',
   },
 } as const
 
@@ -206,24 +196,19 @@ export function tx(): (typeof copy)[Locale] {
   return copy[current]
 }
 
-export function matrimonio(label: string) {
-  if (current === 'pt') return label.replace(/^Matrimonio\b/, 'Matrimónio')
-  return label
-}
-
 export function celebrationLine(item: Pending) {
-  const hito = /^celeb:hito:(tuya|pareja|grupo|diez):(7|30)$/.exec(item.key)
+  const hito = /^celeb:hito:(tuya|pareja|grupo|seis|diez):(7|30)$/.exec(item.key)
   if (hito) {
-    const who = hito[1]
+    const who = hito[1] as 'tuya' | 'pareja' | 'grupo' | 'seis' | 'diez'
     const days = hito[2]
     const name = current === 'pt'
-      ? { tuya: 'Tu', pareja: 'Matrimónio', grupo: 'Grupo', diez: '10 missas' }[who]
-      : { tuya: 'Tú', pareja: 'Matrimonio', grupo: 'Grupo', diez: '10 misas' }[who]
+      ? { tuya: 'Tu', pareja: 'O teu casal', grupo: 'O curso', seis: 'Cada casal', diez: '10 missas' }[who]
+      : { tuya: 'Tú', pareja: 'Tu matrimonio', grupo: 'El curso', seis: 'Cada matrimonio', diez: '10 misas' }[who]
     const tail = current === 'pt' ? 'dias seguidos' : 'días seguidos'
     return `${name} · ${days} ${tail}`
   }
   if (item.motif === 'todos') return current === 'pt' ? 'Hoje foram vocês os doze!' : '¡Hoy habéis ido los doce!'
   if (item.motif === 'diez') return current === 'pt' ? '10 missas hoje' : '10 misas hoy'
-  if (item.motif === 'parejas') return current === 'pt' ? 'Todos os matrimónios foram hoje!' : '¡Todos los matrimonios han ido hoy!'
+  if (item.motif === 'parejas') return current === 'pt' ? 'Os 6 casais' : 'Los 6 matrimonios'
   return item.line
 }

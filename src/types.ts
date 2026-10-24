@@ -10,11 +10,21 @@ export type Day = {
   date: string
   covered: number
   couples: number
+  went: number
+  couples_went: number
+  committed: boolean
   at_risk: boolean
   sunday: boolean
-  gaps?: string[]
   mine_commitment: boolean
   mine_attendance: boolean
+}
+
+export type PastDay = {
+  date: string
+  sunday: boolean
+  mine_attendance: boolean
+  went: number
+  couples_went: number
 }
 
 export type Comment = {
@@ -26,7 +36,7 @@ export type Comment = {
 }
 
 export type Reaction = {
-  emoji: '🙏' | '💛' | '🕯️'
+  emoji: string
   mine: boolean
 }
 
@@ -44,10 +54,10 @@ export type Estado = {
   clock: string
   me: { id: string; display_name: string; couple_id: string; couple_label: string }
   members: { id: string; display_name: string; couple_id: string }[]
-  streaks: { individual: number; couple: number; group: number; ten: number; total: number }
-  risk: 'empty' | 'couple' | null
+  streaks: { individual: number; couple: number; group: number; six: number; ten: number; total: number }
+  risk: 'empty' | null
   calendar: Day[]
-  past: { date: string; sunday: boolean; mine_attendance: boolean }[]
+  past: PastDay[]
   intentions: Intention[]
   prefs: { empty_day: boolean; couple: boolean; locale: 'es' | 'pt' | null }
   pending: Pending[]

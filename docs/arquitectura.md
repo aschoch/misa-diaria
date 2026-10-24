@@ -8,13 +8,13 @@ Se entra con un enlace que llega al correo. No hay contraseñas ni página para 
 
 El proyecto de Supabase ya existe. La guía de clics está en `docs/puesta-en-marcha.md`. Al final de esta nota está lo que solo puedes hacer tú. GitHub Pages se activa cuando el flujo de publicación esté en `main`.
 
-Los avisos al móvil nacen apagados. Hay dos, y cada persona enciende los que quiera: uno si mañana no hay nadie, otro si mañana su matrimonio no está cubierto. Como mucho sale uno, la tarde de antes, y nunca en domingo ni a propósito del domingo. Hoy lo dice siempre, sin nombres y sin intenciones en la pantalla de bloqueo.
+Los avisos al móvil nacen apagados. Hay uno, y cada persona lo enciende si quiere: si mañana no hay nadie. Como mucho sale uno, la tarde de antes, y nunca en domingo ni a propósito del domingo. No nombra a un matrimonio ni a una persona. Hoy lo dice cuando el día está vacío, sin nombres y sin intenciones en la pantalla de bloqueo.
 
-Las rachas van en hora de Madrid. En Hoy la cifra del grupo es grande, con «Misas del grupo» o «Missas do grupo», y debajo van las cuatro bajo el título «Rachas» o «Sequências»: la tuya, la de tu matrimonio, la del grupo y la de días con al menos diez personas. El domingo cuenta. Si ese día la racha falla, se rompe. Lo que no hacemos el domingo es avisar.
+Las rachas van en hora de Madrid. En Hoy la cifra del curso es grande, con «Misas del curso» o «Missas do curso», y debajo van las cinco bajo el título «Rachas» o «Sequências»: la tuya (con tu nombre), la de tu matrimonio, la del curso, la de cada matrimonio y la de días con al menos diez personas. El domingo cuenta. Si ese día la racha falla, se rompe. Lo que no hacemos el domingo es avisar.
 
 Las celebraciones las dibuja Diseño: un tiro de papel de 1,2 segundos y una línea corta que dice el motivo. Se guardan, así que recargar la página no las repite. El día en que se apunta la décima misa se celebra una vez; si ese día habéis ido los doce, es el mismo papel y la misma línea, no otro. Si el móvil pide poco movimiento, se queda la cresta quieta con esa línea.
 
-El grupo vive en un fichero de datos de prueba. No hay pantalla de administración. Para doce personas sería otra cosa que cuidar y que no ibas a usar.
+El curso vive en un fichero de datos de prueba. No hay pantalla de administración. Para doce personas sería otra cosa que cuidar y que no ibas a usar.
 
 ## Decisiones
 
@@ -38,9 +38,9 @@ La lista de redirecciones es exacta: el origen de Pages y el de local. Sin comod
 
 RLS está activo en todas las tablas, también forzado. Hay una función `es_miembro()`: el `auth.uid()` corresponde a un miembro activo. El rol anónimo no tiene políticas. Un usuario autenticado que no esté en `members` tampoco. Los dos fallan al leer y al escribir. Borrar a alguien es desactivarlo en `members` y quitarle la cuenta: un token que aún no haya caducado sigue sin poder leer.
 
-Desde `20261024001955_endurecer_permisos.sql`, `anon` y `authenticated` ya no tienen derechos por defecto sobre las tablas ni las funciones de `public`. Una migración futura tiene que conceder de forma explícita lo que el cliente necesite, y nada más. Crear la tabla o la función no basta.
+Desde `20261024001955_endurecer_permisos.sql`, `anon` y `authenticated` ya no tienen derechos por defecto sobre las tablas ni las funciones de `public`. Una migración futura tiene que conceder de forma explícita lo que el cliente necesite, y nada más. Crear la tabla o la función no basta. `CREATE OR REPLACE` de `estado()` puede devolver `EXECUTE` a `anon`: `20261024160000_curso_casal_y_muro.sql` lo revoca y concede solo lo que la aplicación usa. `anon` no ejecuta nada. `aviso_tarde` sigue solo en `service_role`.
 
-Cada miembro ve al grupo (nombres visibles, matrimonios, compromisos, asistencias e intenciones). No ve correos, ni suscripciones push de otros, ni el registro de envíos. Solo escribe lo suyo: su «voy a ir», su «he ido», sus intenciones, sus comentarios, sus reacciones, su dispositivo, su idioma y sus dos interruptores. Nadie cambia nombres ni matrimonios desde la aplicación. Un tope en la base rechaza un decimotercer miembro activo.
+Cada miembro ve al curso (nombres visibles, matrimonios, compromisos, asistencias e intenciones). No ve correos, ni suscripciones push de otros, ni el registro de envíos. El estado no dice qué matrimonio falta ni quién fue. Solo escribe lo suyo: su «voy a ir», su «he ido», sus intenciones, sus comentarios, sus reacciones, su dispositivo, su idioma y su interruptor. Nadie cambia nombres ni matrimonios desde la aplicación. Un tope en la base rechaza un decimotercer miembro activo.
 
 Las intenciones se guardan y se pintan como texto, con un máximo de 280 caracteres y de 30 por persona. Un comentario tiene como máximo 200 y tampoco admite HTML. El aviso nunca incluye ese texto: la pantalla de bloqueo la ve cualquiera que tenga el teléfono. Un comentario o una reacción actualiza `activity_at` y esa intención sube en la lista. Dentro del hilo, los comentarios van del más antiguo al más nuevo.
 
@@ -53,16 +53,16 @@ Las intenciones se guardan y se pintan como texto, con un máximo de 280 caracte
 | `commitments` | «Voy a ir», una fila por persona y fecha | La propia persona, hoy y 13 días más |
 | `attendance` | «He ido a Misa», una fila por persona y fecha | La propia persona, hoy y los 6 días anteriores |
 | `intentions` | Texto corto, autor y `activity_at` | El autor crea y borra lo suyo |
-| `intention_comments` | Comentario de hasta 200 caracteres, sin `<` ni `>` | El autor, sobre una intención del grupo |
-| `intention_reactions` | Una de 🙏 💛 🕯️ por persona e intención | La propia persona enciende y apaga la suya |
+| `intention_comments` | Comentario de hasta 200 caracteres, sin `<` ni `>` | El autor, sobre una intención del curso |
+| `intention_reactions` | Un emoji no vacío, hasta 16 caracteres, por persona e intención | La propia persona enciende y apaga la suya |
 | `push_subscriptions` | Endpoint y claves del dispositivo | Solo las suyas |
-| `notification_prefs` | Dos síes o noes, los dos en no, y el idioma `es` o `pt` | Solo las suyas |
+| `notification_prefs` | El aviso del día vacío, en no, la columna antigua del matrimonio, y el idioma `es` o `pt` | Solo las suyas |
 | `notification_log` | Persona, fecha y franja ya enviada | Solo la función del aviso |
 | `celebrations` | Persona y clave del evento | La propia persona, solo insertar |
 
-Una persona y un día son una asistencia. «Cualquier Misa» quiere decir que no pedimos hora ni parroquia. Un segundo toque no suma otra misa. Así «diez» significa diez personas, y el contador del grupo es el número de filas.
+Una persona y un día son una asistencia. «Cualquier Misa» quiere decir que no pedimos hora ni parroquia. Un segundo toque no suma otra misa. Así «diez» significa diez personas, y el contador del curso es el número de filas.
 
-Fechas de tipo `date`, siempre el día civil de Europe/Madrid. La función de lectura se llama `estado(p_as_of date)` y devuelve un solo JSON: el día de Madrid, las cuatro rachas, el contador, los 14 días, la ventana de asistencia, las intenciones con sus comentarios y reacciones, el idioma, los dos interruptores, las celebraciones pendientes y, en lunes, el resumen de la semana. El cliente no reimplementa las reglas. El reloj del servidor autoriza; el del teléfono solo pinta. Un reloj mal puesto no alarga los 7 días ni marca el futuro.
+Fechas de tipo `date`, siempre el día civil de Europe/Madrid. La función de lectura se llama `estado()` y devuelve un solo JSON: el día de Madrid, las cinco rachas, el contador, los 14 días con insignias y sin huecos, la ventana de asistencia, las intenciones con sus comentarios y reacciones, el idioma, las preferencias, las celebraciones pendientes y, en lunes, el resumen de la semana. El cliente no reimplementa las reglas. El reloj del servidor autoriza; el del teléfono solo pinta. Un reloj mal puesto no alarga los 7 días ni marca el futuro.
 
 Al cerrar sesión se borra la suscripción push de ese aparato. Si no, un iPad compartido seguiría recibiendo avisos.
 
@@ -82,10 +82,11 @@ Hoy todavía no rompe nada. Si hoy ya cumples, la racha lo incluye. Si aún no, 
 | --- | --- | --- |
 | Tuya | tú tienes asistencia | tú no fuiste |
 | De tu matrimonio | al menos uno de los dos tiene asistencia | no fue ninguno de los dos |
-| Del grupo | al menos una persona tiene asistencia | no fue nadie |
+| Del curso | al menos una persona tiene asistencia | no fue nadie |
+| De cada matrimonio | alguien de cada matrimonio tiene asistencia | algún matrimonio no tuvo a nadie |
 | De diez | hay asistencia de al menos diez personas distintas | hay menos de diez |
 
-El total del grupo es la suma de asistencias, no una racha. En Hoy es una cifra grande. Las cuatro rachas van en una sola lista, en ese orden: la tuya, la de tu matrimonio, la del grupo y la de diez, bajo «Rachas» o «Sequências». No hay pantalla de estadísticas.
+El total del curso es la suma de asistencias, no una racha. En Hoy es una cifra grande. Las cinco rachas van en una sola lista, en ese orden: la tuya, la de tu matrimonio, la del curso, la de cada matrimonio y la de diez, bajo «Rachas» o «Sequências». No hay pantalla de estadísticas. `racha_grupo` sigue siendo el nombre en SQL de la racha del curso. `racha_seis` es la de cada matrimonio. Las insignias del día salen de `marcas_dia`: asistencias distintas, matrimonios con alguien, y si hay algún compromiso.
 
 La ventana de corrección es hoy y los seis días anteriores, medida en el servidor. Dentro, poner o quitar tu asistencia recompone las rachas al momento. El día 8 y el futuro los rechaza la base. «Voy a ir» solo para hoy y los trece días siguientes, y se puede quitar. Un matrimonio con un miembro inactivo deja de tener racha de matrimonio; el histórico de asistencias se queda.
 
@@ -97,9 +98,9 @@ La tabla `celebrations` tiene clave única `(member_id, event_key)`. El cliente 
 
 Disparadores, todos con el día de Madrid en la clave:
 
-- **Matrimonios cubiertos.** Los seis tienen al menos una asistencia ese día. Clave `celeb:parejas:<fecha>`, una por persona. La línea es «¡Todos los matrimonios han ido hoy!» o, en pt-PT, «Todos os matrimónios foram hoje!».
+- **Matrimonios cubiertos.** Los seis tienen al menos una asistencia ese día. Clave `celeb:parejas:<fecha>`, una por persona. La línea es «Los 6 matrimonios» o, en pt-PT, «Os 6 casais». La animación se queda.
 - **Todos han ido.** Las doce personas activas tienen asistencia ese día. Clave `celeb:todos:<fecha>`, una por persona. La línea es «¡Hoy habéis ido los doce!». Sale de «He ido»: un plan que luego se quita no deja un festejo pegado.
-- **Hitos.** La racha tuya, la de matrimonio, la del grupo o la de diez llega a 7 o a 30. Clave `celeb:hito:<tipo>:<umbral>`, con tipo `tuya`, `pareja`, `grupo` o `diez`, sin fecha: el 7 y el 30 salen una vez por persona y por racha. La línea es «7 días seguidos» o «30 días seguidos», y «Tú», «Matrimonio», «Grupo» o «10 misas» si hace falta el nombre. En pt-PT: «Tu», «Matrimónio», «Grupo» o «10 missas», y «dias seguidos».
+- **Hitos.** La racha tuya, la de matrimonio, la del curso, la de cada matrimonio o la de diez llega a 7 o a 30. Clave `celeb:hito:<tipo>:<umbral>`, con tipo `tuya`, `pareja`, `grupo`, `seis` o `diez`, sin fecha: el 7 y el 30 salen una vez por persona y por racha. La línea nombra la racha: «Tú», «Tu matrimonio», «El curso», «Cada matrimonio» o «10 misas». En pt-PT: «Tu», «O teu casal», «O curso», «Cada casal» o «10 missas», y «dias seguidos».
 - **Día con al menos diez.** El día de Madrid en que las asistencias distintas llegan a diez, también si la racha de diez no va por el 7 ni por el 30. Clave `celeb:diez:<fecha>`, una por persona. La línea es «10 misas hoy». Si ese mismo día también se cumple «todos han ido», se guardan las dos claves y hay un solo pase: la línea es la de los doce, salvo que haya un hito, que manda. Si no se llega a doce, el día de la décima misa se celebra igual, una vez.
 
 Si en la misma apertura hay varias claves nuevas, sigue siendo un confeti. El motivo que se enseña es el hito; si no hay hito, «todos»; si no, el día de diez; si no, los matrimonios. Diseño distingue el motivo dentro de la misma pieza.
@@ -110,20 +111,17 @@ Contrato con Diseño: se puede saltar desde el primer instante, dura alrededor d
 
 ### En riesgo y el aviso de la tarde
 
-Un matrimonio está sin cubrir si ninguno de los dos tiene «Voy a ir» ni «He ido» ese día. Un día que no es domingo está en riesgo si nadie tiene ninguno de los dos, o si algún matrimonio está sin cubrir. La asistencia cuenta como cobertura: si no, un día ya cumplido seguiría en riesgo por no haber pulsado el otro botón.
+Una persona cubre el día si tiene «Voy a ir» o «He ido». Un día que no es domingo está en riesgo solo si nadie cubre. De uno a cinco matrimonios cubiertos no es riesgo. `dia_en_riesgo` ya no mira el hueco de un matrimonio. La asistencia cuenta como cobertura.
 
 El domingo nunca está en riesgo. Tampoco se envía nada en domingo, ni siquiera para avisar del lunes. El sábado por la tarde no se avisa del domingo. El aviso del lunes es la línea de dentro de la aplicación, que el domingo ya se puede leer.
 
-Dentro de la aplicación hay una línea en Hoy y en el día del calendario, de lunes a sábado, sin ventana modal. Si el día está vacío: «Nadie se ha apuntado.» Si el hueco es de algún matrimonio, Hoy dice «Falta un matrimonio.», sin nombres. El calendario enseña el recuento y, si falta alguno, cuál: «Falta el Matrimonio 6», sin punto. En pt-PT: «Falta o Matrimónio 6». El domingo no se marca, y un día con los seis matrimonios cubiertos tampoco. No hace falta tener el aviso del móvil encendido para verla.
+Dentro de la aplicación hay una línea en Hoy y en el día del calendario, de lunes a sábado, sin ventana modal, solo cuando no hay nadie cubierto: «Nadie se ha apuntado.» o «En riesgo». El calendario enseña `X de 12`, `Y de 6 matrimonios` y si alguien se ha apuntado. No dice qué matrimonio falta. En pt-PT: «Ninguém se apontou.», «Em risco» y «casais». El domingo no se marca. No hace falta tener el aviso del móvil encendido para verla.
 
 Al móvil, una sola Edge Function, `send-evening-reminder`, llamada por `pg_cron` y `pg_net` cada hora en el minuto 5. La función mira la hora de Madrid y solo envía entre las 20:00 y las 21:59, para que el cambio de hora no desplace el aviso y un fallo de una hora no lo borre. La URL es pública: rechaza la clave publicable y los tokens de usuario, y solo acepta un secreto propio del reloj (`CRON_SECRET`), distinto de la clave de servicio. Esa clave de servicio la inyecta Supabase en la función y no se copia al repositorio ni al SQL del reloj.
 
 Como mucho un envío por persona y fecha, anotado en `notification_log` antes de enviar. Si el envío falla, no hay reintentos en ráfaga: a las doce personas les basta el siguiente paso de la hora, y a la noche siguiente ya es otro día. Un 404 o un 410 del servicio push borra esa suscripción.
 
-A quién, solo si mañana es de lunes a sábado y está en riesgo, y solo el interruptor que toca. Los dos nacen apagados. Como mucho sale uno por persona:
-
-- Si mañana no hay nadie apuntado ni nadie ha ido, un aviso a quien tenga encendido el del día vacío: «Mañana nadie ha dicho que va a Misa.» Ese aviso ya incluye a todos los matrimonios. No se manda otro al matrimonio, aunque su otro interruptor esté encendido.
-- Si el hueco es de algún matrimonio y el día no está vacío, un aviso solo a quien esté en uno de esos matrimonios y tenga encendido el del matrimonio: «Mañana tu matrimonio no se ha apuntado.» En pt-PT: «Amanhã o teu matrimónio não se apontou.» El título del aviso es «Misa diaria» o «Missa diária». Uno, aunque falten varias. Las demás lo ven al abrir la aplicación.
+A quién, solo si mañana es de lunes a sábado y no hay nadie cubierto, y solo quien tenga encendido el aviso. Nace apagado. Como mucho sale uno por persona: «Mañana nadie ha dicho que va a Misa.» En pt-PT: «Amanhã ninguém disse que vai à Missa.» El título es «Misa diaria» o «Missa diária». No se nombra a un matrimonio ni a una persona. La columna `notification_prefs.couple` se queda en la base y la aplicación ya no la enseña ni la usa para enviar.
 
 El texto no lleva nombres, rachas ni intenciones. Caduca a las cuatro horas, para que no aparezca a la mañana siguiente como si fuera nuevo. iPhone: PWA instalada en la pantalla de inicio, iOS 16.4 o posterior. Android: PWA instalada. El permiso del sistema se pide al encender un interruptor en Ajustes, nunca al abrir la aplicación. Sin permiso, la preferencia se guarda y no se envía nada. La aplicación se usa igual con los avisos apagados.
 
@@ -143,7 +141,7 @@ La PWA guarda el cascarón (HTML, CSS, JS) para que el icono abra sin red. Los d
 
 GitHub Pages no puede guardar la sesión en una cookie que el JavaScript no pueda leer. La sesión de Supabase va en `localStorage` de ese origen, con PKCE, refresco automático y intercambio del código al volver del enlace. Después se limpia la URL. No hay contraseñas que robar. El riesgo que queda es un script inyectado, así que no hay JavaScript de terceros, las intenciones no se interpretan como HTML, y una política de contenido en el HTML limita de dónde puede cargarse la página. Cerrar sesión borra la sesión local y la suscripción de ese aparato.
 
-Modo oscuro y poco movimiento salen del sistema. Ajustes tiene dos interruptores, el del día vacío y el de tu matrimonio, los dos apagados. No hay otro para el tema.
+Modo oscuro y poco movimiento salen del sistema. Ajustes tiene un interruptor, el del día vacío, apagado. No hay otro para el tema.
 
 ### Pruebas
 
@@ -153,7 +151,7 @@ Playwright en WebKit y en Chromium, a 390×844 y a 1280×800. La suite falla si 
 - **RLS, la prueba que manda.** Con la clave publicable, y con un usuario de Auth que no está en `members`, leer y escribir asistencia, intenciones y suscripciones falla. El miembro no lee suscripciones de otros ni el registro de envíos, y no escribe la asistencia de otra persona. Esto corre contra Postgres local, además de lo que se vea en el navegador.
 - **Rachas.** Domingo que falla y rompe. Domingo con asistencia y sigue. Hoy sin marca y la racha de ayer sigue en pie. Cruce de medianoche en Madrid, incluido el cambio de hora. Corregir dentro de los 7 días recompone. El día 8 y el futuro se rechazan. Matrimonio con uno solo. Grupo con una persona. Diez personas distintas, y un segundo toque de la misma persona que no suma. El contador coincide con las filas.
 - **Celebraciones.** La primera inserción es la única que anima. Recargar no repite. Un día con diez personas y no doce guarda `celeb:diez:<fecha>` y muestra «10 misas hoy» una vez. Un día con doce guarda también `celeb:todos:<fecha>` y una sola línea. Poco movimiento guarda la fila y deja la cresta quieta con la misma línea. Saltarla no la reprograma. Quitar la asistencia no la borra.
-- **Aviso.** La función pura de «mañana en riesgo», con reloj fijo: domingo no envía, sábado no envía, matrimonio ajeno no recibe el hueco de otro, cada interruptor apagado no recibe el suyo, el día vacío no manda además el de matrimonio, y un segundo paso de la hora no duplica. Sin enviar a un servicio push real en la suite. El push de verdad se comprueba al instalar, en un iPhone y en un Android.
+- **Aviso.** La función pura de «mañana en riesgo», con reloj fijo: domingo no envía, sábado no envía, un día con alguien cubierto no envía aunque falte un matrimonio, el interruptor apagado no recibe nada, el texto no nombra a nadie, y un segundo paso de la hora no duplica. Sin enviar a un servicio push real en la suite. El push de verdad se comprueba al instalar, en un iPhone y en un Android.
 - **Apariencia.** `prefers-color-scheme: dark` y `prefers-reduced-motion: reduce` en los dos motores y los dos tamaños. El botón de hoy se puede pulsar mientras la celebración está fuera.
 
 La semilla de prueba solo usa `@example.com`.
@@ -175,30 +173,30 @@ La guía larga está en `docs/puesta-en-marcha.md`. El proyecto ya existe y la U
 
 ### A Producto
 
-El breve ya incluye la racha de diez, el aviso cuando un matrimonio queda descubierto y el confeti. La arquitectura va con eso: las cuatro rachas en Hoy, el aviso de matrimonio solo a ese matrimonio, y una sola animación.
+El breve incluye la racha de diez, la de cada matrimonio, el aviso solo cuando no hay nadie y el confeti. La arquitectura va con eso: las cinco rachas en Hoy, un aviso que no nombra a nadie, y una sola animación.
 
 El resumen del lunes quedó en una línea, sin correo y sin tarea. Si pide una pantalla, un correo o un cron, sobra.
 
 El aviso de la mañana no entra. Coincido con el breve: la tarde anterior es el aviso, y por la mañana basta la línea de Hoy.
 
-Coincido en que no hay pantalla de administración, en que el domingo rompe la racha y no se avisa, y en que los dos interruptores nacen apagados. El aviso de dentro de la aplicación no se apaga.
+Coincido en que no hay pantalla de administración, en que el domingo rompe la racha y no se avisa, y en que el interruptor nace apagado. El aviso de dentro de la aplicación no se apaga.
 
 «Diez misas» son diez personas, una por día. Un contador libre de «cuántas misas he oído hoy» se infla con un toque de más y la racha de diez deja de significar nada.
 
 «Matrimonios cubiertos» y «todos han ido» miran «He ido». Celebrar «Voy a ir» festeja un plan que se puede quitar, y la celebración no se puede deshacer. El día de la décima misa se celebra una vez aunque no hayáis ido los doce. Si ese día sí habéis ido los doce, es el mismo confeti, no dos.
 
-El hueco de un matrimonio avisa a ese matrimonio, no a las otras diez. El día vacío avisa una vez a quien tenga ese interruptor, y no manda además el de matrimonio. Un aviso por cada matrimonio, o un aviso al grupo entero porque un matrimonio no ha pulsado, es el ruido que hace que se apaguen todos.
+Un día con alguien cubierto no avisa, aunque falte un matrimonio. El día vacío avisa una vez a quien tenga el interruptor, y no nombra a nadie. Avisar porque un matrimonio no ha pulsado es el ruido que hace que se apaguen todos.
 
 ### A Diseño
 
 El confeti es vuestro. El contrato es este: uno solo aunque coincidan varios motivos, saltable desde el primer momento, alrededor de un segundo, sin sonido, sin tapar el botón de hoy, y sin movimiento si el sistema pide poco. Recargar no lo repite. No hay pantalla de celebraciones ni medallero. Si el día llega a diez y también a doce, se ve una vez. Si llega a diez y no a doce, también se ve, una vez.
 
-Hoy enseña el total del grupo en grande y las cuatro rachas en una lista, bajo «Rachas» o «Sequências». El lunes, la línea de tres cifras que recomiendo arriba, no una quinta pantalla. Una pantalla de estadísticas, de matrimonio, de perfil o de resumen es un sitio donde no está el botón.
+Hoy enseña el total del curso en grande y las cinco rachas en una lista, bajo «Rachas» o «Sequências». El lunes, la línea de tres cifras que recomiendo arriba, no una sexta pantalla. Una pantalla de estadísticas, de matrimonio, de perfil o de resumen es un sitio donde no está el botón.
 
-Ajustes son el idioma y los dos interruptores de avisos. El tema y el movimiento vienen del sistema, y los dos esquemas tienen que leerse. El permiso del móvil sale al encender uno de ellos, no de un cartel al entrar, y no se vuelve a pedir en cada visita.
+Ajustes son el idioma y el interruptor del día vacío. El tema y el movimiento vienen del sistema, y los dos esquemas tienen que leerse. El permiso del móvil sale al encenderlo, no de un cartel al entrar, y no se vuelve a pedir en cada visita.
 
 Sin red, los botones se ven apagados y se dice que no hay conexión. Un interruptor que parece guardado y no lo está rompe la racha en silencio.
 
-La pantalla de bloqueo no lleva nombres ni el texto del muro. El manifiesto y el título de la página dicen «Misa diaria» y ningún nombre del grupo. El repositorio es público.
+La pantalla de bloqueo no lleva nombres ni el texto del muro. El manifiesto y el título de la página dicen «Misa diaria» y ningún nombre del curso. El repositorio es público.
 
 El icono del iPhone hay que explicarlo una vez, en corto: sin él no llegan los avisos, y el código del correo se escribe dentro de la aplicación, no en Safari.
