@@ -6,11 +6,10 @@
 
 No se reabre:
 
-- Cuatro rachas: la tuya, la de tu matrimonio, la del grupo y los días con al menos 10 misas.
-- Celebración animada, con una línea corta que dice el motivo: cada matrimonio cubierto, los doce, los hitos de racha, y el día en que se apunta la misa número 10.
-- Día en riesgo, de lunes a sábado: nadie cubierto, o tu matrimonio descubierto. El domingo nunca.
-- La racha individual y la de matrimonio, las dos.
-- En la interfaz se dice «matrimonio», nunca «pareja». En pt-PT, «matrimónio». El título de las cuatro rachas es «Rachas» o «Sequências».
+- Cinco rachas: la tuya (con tu nombre), la de tu matrimonio, la del curso, la de cada matrimonio y los días con al menos 10 misas.
+- Celebración animada, con una línea corta que dice el motivo: los 6 matrimonios, los doce, los hitos de racha, y el día en que se apunta la misa número 10.
+- Día en riesgo, de lunes a sábado, solo si no hay nadie cubierto. De uno a cinco matrimonios cubiertos no es riesgo. El domingo nunca. No se nombra a nadie.
+- En la interfaz se dice «matrimonio» en español y «casal» en pt-PT. Nunca «pareja». Nunca «grupo»: se dice «curso». El título de las rachas es «Rachas» o «Sequências».
 
 ## Resumen del lunes: sí, una línea
 
@@ -32,9 +31,9 @@ Una pieza de Diseño: tiro de papel, 1,2 segundos, sin sonido y sin librería. C
 
 La línea, según el motivo:
 
-- «¡Todos los matrimonios han ido hoy!» En pt-PT: «Todos os matrimónios foram hoje!»
+- «Los 6 matrimonios» En pt-PT: «Os 6 casais»
 - «¡Hoy habéis ido los doce!» En pt-PT: «Hoje foram vocês os doze!»
-- «7 días seguidos» o «30 días seguidos». Si hace falta decir de quién es la racha, como mucho dos palabras más («Tú», «Matrimonio», «Grupo» o «10 misas»). En pt-PT: «Tu», «Matrimónio», «Grupo» o «10 missas», y «dias seguidos».
+- «7 días seguidos» o «30 días seguidos». Si hace falta decir de quién es la racha: «Tú», «Tu matrimonio», «El curso», «Cada matrimonio» o «10 misas». En pt-PT: «Tu», «O teu casal», «O curso», «Cada casal» o «10 missas», y «dias seguidos».
 - «10 misas hoy» En pt-PT: «10 missas hoje»
 
 Si coinciden varios, un solo pase y una sola línea, en este orden: hito, luego todos, el día de las 10, los matrimonios. Las otras claves se guardan y no se reproducen después.
@@ -47,7 +46,7 @@ En oscuro, el texto del botón vela es `#2A2118` sobre `#F0A06A`. La línea de l
 
 ## Seis días
 
-Siguen en Hoy, no en otra pantalla. Orden al abrir: riesgo, botón, la cifra grande del grupo, el título «Rachas» o «Sequências», las cuatro rachas, la línea del lunes si toca, y debajo los seis días. Si no caben, se desplaza. El servidor autoriza hoy y los seis días civiles anteriores en Europe/Madrid. El domingo dentro de esa ventana se puede corregir y no se pinta en riesgo.
+Siguen en Hoy, no en otra pantalla. Orden al abrir: riesgo, botón, la cifra grande del curso, el título «Rachas» o «Sequências», las cinco rachas, la línea del lunes si toca, y debajo los seis días. Si no caben, se desplaza. El servidor autoriza hoy y los seis días civiles anteriores en Europe/Madrid. El domingo dentro de esa ventana se puede corregir y no se pinta en riesgo. En un día cumplido pueden verse las tres insignias.
 
 ## Aviso de la mañana: no
 
@@ -57,8 +56,18 @@ Los tres coinciden. El aviso útil es el de la tarde anterior, cuando aún se pu
 
 Corrección del 23 de octubre. Cada persona elige español o portugués de Portugal en Ajustes. Si el idioma del teléfono empieza por `pt`, el primer arranque es pt-PT. La elección se guarda. El enlace mágico lleva `locale`. Si la plantilla de Supabase no puede ramificar, el correo es corto: español primero, pt-PT después.
 
-El Muro sigue siendo una lista. Al pulsar una intención se abre su hilo ahí mismo: las reacciones 🙏 💛 🕯️, y un comentario de hasta 200 caracteres, sin HTML. Cada cual borra solo lo suyo. Lo más reciente sube la intención. Dentro del hilo, lo antiguo va primero. No hay otra pantalla.
+El Muro sigue siendo una lista, sin comentarios ni formulario. Cada tarjeta muestra autor, texto, las reacciones que ya existen y el recuento. Pulsarla abre esa intención en su vista, con vuelta al muro, sin una quinta pestaña. Ahí están los comentarios, de hasta 200 caracteres y sin HTML, y el formulario. Añadir una reacción abre una hoja con una rejilla y un campo nativo: vale cualquier emoji. Cada cual borra solo lo suyo. Lo más reciente sube la intención. Dentro de la vista, lo antiguo va primero.
 
 ## Ya acordado, y no rediscutido
 
-Cuatro pantallas: Hoy, Calendario, Muro, Ajustes. Los doce y los matrimonios viven en un SQL de semilla, sin pantalla de administración. El aviso del móvil nace apagado, con dos interruptores, y como mucho sale uno al día. Se entra con un enlace al correo y un código de seis cifras. La URL del proyecto y la clave publicable van en el cliente. La clave de servicio, la VAPID privada y `CRON_SECRET`, no.
+Cuatro pantallas: Hoy, Calendario, Muro, Ajustes. Los doce y los matrimonios viven en un SQL de semilla, sin pantalla de administración. El aviso del móvil nace apagado, con un interruptor (si mañana no hay nadie), y como mucho sale uno al día. No nombra a nadie. Se entra con un enlace al correo y un código de seis cifras. La URL del proyecto y la clave publicable van en el cliente. La clave de servicio, la VAPID privada y `CRON_SECRET`, no.
+
+## 24 de octubre de 2026
+
+Alfredo probó la aplicación publicada y cambió el producto. Si una frase de más arriba dice lo contrario, manda este apartado.
+
+No se vigila a los matrimonios ni a las personas. Nunca se muestra quién fue, quién se apuntó ni qué matrimonio falta. Se muestra si alguien se ha apuntado ese día, `X de 12`, y `Y de 6 matrimonios` (en pt-PT, `Y de 6 casais`). Un día que no es domingo está «En riesgo» o «Em risco» solo cuando no hay nadie cubierto. El aviso de la tarde avisa solo en ese caso, y no nombra a un matrimonio ni a una persona.
+
+La celebración cuando los seis tienen al menos a una persona se queda, con la animación. La línea es «Los 6 matrimonios» o «Os 6 casais». Al lado de las rachas que ya había, hay una de días seguidos en los que fue alguien de cada matrimonio: «Cada matrimonio» o «Cada casal».
+
+En Hoy el orden es el nombre de la persona, «Tu matrimonio» o «O teu casal», «El curso» u «O curso», «Cada matrimonio» o «Cada casal», y «10 o más» o «10 ou mais». En portugués de Portugal se dice casal, nunca matrimónio, y curso, nunca grupo.

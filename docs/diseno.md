@@ -53,7 +53,7 @@ Tinta oscura sobre la vela `#F0A06A` da 7,5:1. Blanco sobre esa vela se queda en
 
 ## Tipo
 
-- Fraunces, peso 560, para el título de pantalla, la cifra grande de «Misas del grupo» y las cuatro cifras de racha. Números en cifra moderna, no elzeviriana.
+- Fraunces, peso 560, para el título de pantalla, la cifra grande de «Misas del curso», las cinco cifras de racha y las insignias del día. Números en cifra moderna, no elzeviriana.
 - Atkinson Hyperlegible, 400 y 700, para todo lo demás. Lleva las tildes y la eñe.
 - Escala: 13 px secundario, 15–16 px cuerpo, 12 px la etiqueta de un día, 28 px la cifra, 32 px el título.
 - Interlineado 1,35 en el cuerpo. Mayúsculas de frase. Nada de versalitas.
@@ -64,9 +64,9 @@ Escala de 4: 4, 8, 12, 16, 20, 24, 32. Margen de pantalla 20 px. Radio 14 px en 
 
 ## Las cuatro pantallas
 
-![Hoy: el botón, las cuatro rachas y el viernes en riesgo](/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/mockups/hoy.png)
+![Hoy: el botón, las cinco rachas y los días pasados](/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/mockups/hoy.png)
 
-**Hoy** abre con la línea de riesgo, si la hay, y el botón «He ido a Misa» («Fui à Missa» en portugués). Debajo, la cifra grande del grupo, en Fraunces, con «Misas del grupo» o «Missas do grupo». Luego el título «Rachas» o «Sequências» y una sola lista: la tuya, tu matrimonio, el grupo, 10 o más. No es una quinta racha. Luego, los seis días anteriores, para corregir. El domingo 18 se puede apuntar y no lleva ámbar.
+**Hoy** abre con la línea de riesgo, si la hay, y el botón «He ido a Misa» («Fui à Missa» en portugués). Debajo, la cifra grande del curso, en Fraunces, con «Misas del curso» o «Missas do curso». Luego el título «Rachas» o «Sequências» y una sola lista: tu nombre, tu matrimonio, el curso, cada matrimonio, 10 o más. Luego, los seis días anteriores, para corregir. Un día cumplido puede llevar hasta tres insignias. El domingo 18 se puede apuntar y no lleva ámbar. La línea de riesgo solo sale si no hay nadie cubierto.
 
 ![Calendario de 14 días: compromiso, cobertura, matrimonios y un domingo que no está en riesgo](/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/mockups/calendario.png)
 
@@ -74,11 +74,11 @@ Escala de 4: 4, 8, 12, 16, 20, 24, 32. Margen de pantalla 20 px. Radio 14 px en 
 
 ![Muro de intenciones](/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/mockups/muro-de-intenciones.png)
 
-**Muro**: una lista. Una o dos frases, con tu nombre. Tú borras la tuya. Al pulsarla se abre el hilo en la misma pantalla: 🙏 💛 🕯️, cada cual la suya, y comentarios cortos de hasta 200 caracteres, sin HTML. Lo nuevo sube la intención. En el hilo, lo antiguo va primero.
+**Muro**: una lista. Una o dos frases, con tu nombre. Tú borras la tuya desde la vista de esa intención. La lista no enseña comentarios ni el formulario. Cada tarjeta lleva las pastillas de los emojis que ya tienen reacciones, un botón para añadir, y el recuento. Pulsar la tarjeta o el recuento abre la intención, con vuelta al muro, sin una quinta pestaña. Añadir abre una hoja: rejilla cálida y un campo para cualquier emoji del teclado. No se sugieren tres emojis a cero.
 
 ![Ajustes, con los dos avisos apagados](/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/mockups/ajustes-de-avisos.png)
 
-**Ajustes** son el idioma (Español o Português) y dos interruptores, los dos apagados.
+**Ajustes** son el idioma (Español o Português) y un interruptor, apagado: si mañana no hay nadie.
 
 ![El mismo calendario en el ordenador](/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/mockups/calendario-escritorio.png)
 
@@ -90,17 +90,18 @@ Una persona cubre el día si ha marcado «Voy a ir» o «He ido». Las rachas so
 
 El predicado, y no solo el color:
 
-`en riesgo = no es domingo y (no hay nadie cubierto, o algún matrimonio no tiene a ninguno de los dos)`
+`en riesgo = no es domingo y no hay nadie cubierto`
 
 | Estado | Qué se ve | Qué no se ve |
 | --- | --- | --- |
-| Alguien, sin más | La cifra en tinta | Sin barra |
-| Todos los matrimonios, no los doce | «6 de 6» en rosa, dos puntos, etiqueta «Matrimonios» | Sin barra |
-| Los doce | «12 de 12» en miel, un disco, etiqueta «Todos» | Sin barra |
-| En riesgo | Barra de arcilla de 4 px y las palabras «En riesgo». La fila sigue en papel | No se rellena el día de ámbar |
+| Alguien cubierto | `X de 12` y `Y de 6 matrimonios`. Si alguien se apuntó, «Alguien se ha apuntado» | Sin barra, sin nombres |
+| Alguien de cada matrimonio | La insignia «Alguien de cada matrimonio» | Sin barra por eso |
+| 10 misas | La insignia «10 misas» | Sin barra por eso |
+| Los doce | La insignia «Todos» | Sin barra por eso |
+| En riesgo | Barra de arcilla de 4 px y «En riesgo», o «Nadie se ha apuntado» al abrir el día | No se rellena el día de ámbar. No se dice qué matrimonio falta |
 | Domingo | Fila de miel, un sol, la palabra «Domingo» | Nunca «En riesgo», aunque sea 0 de 12 |
 
-El sábado 24 está a 0 de 12 y en riesgo. El domingo 1 de noviembre también está a 0 y no lo está. El domingo 25 tiene a una persona, cuenta para las rachas, y la frase es «No está en riesgo». El martes 27, con los doce comprometidos, dice «Todos». El miércoles 28, con los seis matrimonios y no los doce, dice «Matrimonios».
+Un día con uno a cinco matrimonios cubiertos no está en riesgo. El domingo 1 de noviembre puede estar a 0 y no lo está. Las insignias salen del «he ido», en lino y Fraunces, también en la tira de días pasados. En portugués: «Alguém de cada casal», «10 missas», «Todos», «Em risco», «Ninguém se apontou».
 
 La barra es estrecha a propósito. Dentro de 14 días muchos días pueden estar vacíos: si cada uno se rellena de ámbar, el horizonte grita y el aviso deja de verse.
 
@@ -108,16 +109,17 @@ La barra es estrecha a propósito. Dentro de 14 días muchos días pueden estar 
 
 En Hoy, en este orden, una sola lista:
 
-1. **La tuya.** ¿Has ido tú cada día? Meta 1.
+1. **Tu nombre.** ¿Has ido tú cada día? Subtítulo: «días seguidos que has ido a Misa». Meta 1.
 2. **Tu matrimonio.** ¿Ha ido al menos uno de los dos? Puede ser más larga que la de cada uno si os releváis. Meta 2.
-3. **El grupo.** ¿Ha ido alguien? Meta 3.
-4. **10 o más.** ¿Ese día hay al menos 10 «he ido»? Se rompe con 9 o menos. El domingo cuenta igual: si hay menos de 10, la racha se rompe, y aun así no avisamos.
+3. **El curso.** ¿Ha ido alguien? Meta 3.
+4. **Cada matrimonio.** ¿Ha ido alguien de cada uno? En portugués, «Cada casal».
+5. **10 o más.** ¿Ese día hay al menos 10 «he ido»? Se rompe con 9 o menos. El domingo cuenta igual: si hay menos de 10, la racha se rompe, y aun así no avisamos.
 
-No hay una lista de las doce rachas personales. Las dos primeras líneas ya son la tuya y la de tu matrimonio. Un ranking sería la pantalla de estadísticas que no entra.
+No hay una lista de las doce rachas personales. Un ranking sería la pantalla de estadísticas que no entra.
 
-Hitos: 7 y 30, en las cuatro, una vez cada uno. Ni el 8 ni el 31.
+Hitos: 7 y 30, en las cinco, una vez cada uno. Ni el 8 ni el 31.
 
-Hoy y los seis días anteriores recomponen las cuatro rachas.
+Hoy y los seis días anteriores recomponen las cinco rachas.
 
 ## Celebración
 
@@ -129,13 +131,13 @@ La línea, una sola, según el motivo que manda:
 
 | Motivo | Línea |
 | --- | --- |
-| Cada matrimonio cubierto | ¡Todos los matrimonios han ido hoy! |
+| Cada matrimonio cubierto | Los 6 matrimonios |
 | Todos han ido | ¡Hoy habéis ido los doce! |
 | Hito de 7 | 7 días seguidos |
 | Hito de 30 | 30 días seguidos |
 | Día con al menos 10 misas | 10 misas hoy |
 
-Si el hito puede ser el tuyo, el de tu matrimonio, el del grupo o el de 10 misas, se añaden como mucho dos palabras para que no sean iguales: «Tú», «Matrimonio», «Grupo» o «10 misas». Por ejemplo, «Tú · 7 días seguidos» o «Grupo · 30 días seguidos». No más texto.
+Si el hito puede ser el tuyo, el de tu matrimonio, el del curso, el de cada matrimonio o el de 10 misas, el nombre va delante: «Tú», «Tu matrimonio», «El curso», «Cada matrimonio» o «10 misas». Por ejemplo, «Tú · 7 días seguidos» o «El curso · 30 días seguidos». En portugués, «O teu casal», «O curso», «Cada casal». No más texto.
 
 Si coinciden varios, hay **una** animación y **una** línea, en este orden: hito, todos, el día de las 10, los matrimonios. Las otras claves se guardan y no salen después.
 
@@ -153,7 +155,7 @@ Claves, por persona:
 
 - `celeb:parejas:{fecha}` al cubrirse el último matrimonio
 - `celeb:todos:{fecha}` cuando la persona 12 marca «he ido»
-- `celeb:hito:{tuya|pareja|grupo|diez}:{7|30}`
+- `celeb:hito:{tuya|pareja|grupo|seis|diez}:{7|30}`
 - `celeb:diez:{fecha}` cuando se apunta la misa número 10 y la racha de esos días sigue
 
 Abrir la app no la repite.
@@ -175,12 +177,7 @@ Quien lo pide en el sistema no ve el recorrido ni el giro. Ve este mismo fotogra
 
 Dentro de la app el riesgo no se apaga: es la línea de Hoy y el día marcado en el calendario.
 
-En el móvil, solo si tú enciendes uno de los dos, y vienen apagados. El sistema no pregunta al abrir. Pregunta cuando un interruptor pasa de no a sí. Como mucho un aviso al día, la tarde anterior, de lunes a sábado:
-
-- mañana no hay nadie cubierto;
-- mañana tu matrimonio no está cubierto, y solo a vosotros dos.
-
-Si no hay nadie, ese es el único: no se manda también el del matrimonio. El domingo no se avisa. La línea de hoy no añade un aviso de buena mañana.
+En el móvil, solo si tú enciendes el aviso, y viene apagado. El sistema no pregunta al abrir. Pregunta cuando el interruptor pasa de no a sí. Como mucho un aviso al día, la tarde anterior, de lunes a sábado, y solo si mañana no hay nadie cubierto. No nombra a un matrimonio ni a una persona. El domingo no se avisa. La línea de hoy no añade un aviso de buena mañana.
 
 **Resumen del lunes: sí, una línea.** Solo el lunes, debajo del contador y encima de los seis días, en color suave. Tres cifras, sin tarjeta y sin correo: «La semana: 9 de 12 · 5 de 6 matrimonios · 0 días en cero.»
 
@@ -196,14 +193,14 @@ Si no hay nadie, ese es el único: no se manda también el del matrimonio. El do
 - No listar las doce rachas. La tuya y la de tu matrimonio, en ese orden, ya están. Un ranking es otra pantalla.
 - No soltar confeti al marcar un «he ido» cualquiera. Ese toque es un relleno breve. La fiesta es escasa: matrimonios, todos, hito, día de 10.
 - No rellenar de ámbar el día entero. En 14 días vacíos, una barra de 4 px se lee; una celda roja grita.
-- No nombrar al matrimonio de otro en el aviso del móvil. En Hoy la línea dice «Falta un matrimonio.», sin nombres. El calendario enseña el recuento y, si falta uno, «Falta el Matrimonio 6», sin punto.
+- No nombrar a un matrimonio ni a una persona, ni en Hoy ni en el aviso. La línea, si el día está vacío, dice «Nadie se ha apuntado». El calendario enseña el recuento y si alguien se ha apuntado. De uno a cinco matrimonios cubiertos no es «En riesgo».
 
 ### A ingeniería
 
 - No disparar la pieza en el render porque el estado ya es verdad. Hace falta la clave, por persona y suceso. Si coinciden varios, un solo play, en el orden hito, todos, día de 10, matrimonios. Las otras claves se escriben aunque no se vean.
 - 1,2 s, menos de 40 papeles, colores de esta paleta, sin rebote y sin librería genérica. Un confeti de arcoíris con otra duración no es esta pieza. Un parpadeo de 300 ms tampoco.
 - `prefers-reduced-motion`: el mismo fotograma, con la misma línea. No una frase sola, ni un `animation: none` que borre el motivo o el texto. Hay que probarlo como criterio, no como ajuste final. El botón de Hoy sigue recibiendo el toque.
-- El permiso del sistema llega al encender un interruptor, nunca en el primer render, y no se reintenta en bucle. Los dos nacen en no. Un envío al día. El domingo se excluye en la consulta, no solo en la copia.
+- El permiso del sistema llega al encender el interruptor, nunca en el primer render, y no se reintenta en bucle. Nace en no. Un envío al día, solo si no hay nadie cubierto. El domingo se excluye en la consulta, no solo en la copia.
 - Cobertura y riesgo usan «voy a ir» o «he ido». Las rachas usan solo «he ido». Mezclarlos en la misma pregunta rompe el sábado y la racha a la vez.
 - Dianas de 44 px. Si el día 14 no cabe, scroll. No se baja la fila.
 - En oscuro, el botón de vela lleva tinta `#2A2118`. Blanco encima no llega a 3:1.

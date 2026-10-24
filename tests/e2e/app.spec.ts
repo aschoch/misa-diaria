@@ -21,10 +21,14 @@ function ensureShots() {
 const outsider = '00000000-0000-4000-8000-0000000000ff'
 
 function reason(text: string) {
-  return text === '¡Todos los matrimonios han ido hoy!'
+  return text === 'Los 6 matrimonios'
     || text === '¡Hoy habéis ido los doce!'
     || text === '10 misas hoy'
-    || /^(Tú|Matrimonio|Grupo|10 misas) · (7|30) días seguidos$/.test(text)
+    || /^(Tú|Tu matrimonio|El curso|Cada matrimonio|10 misas) · (7|30) días seguidos$/.test(text)
+}
+
+function shotHere(browserName: string, viewport: { width: number; height: number } | null) {
+  return browserName === 'webkit' && viewport?.width === 390
 }
 
 async function reset(at?: string) {
@@ -96,7 +100,7 @@ test.beforeEach(async ({ page }) => {
   await page.context().clearCookies()
 })
 
-test('un miembro entra con el código y ve el grupo', async ({ page }) => {
+test('un miembro entra con el código y ve el curso', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/misa-diaria/')
   await page.getByLabel('Tu correo').fill('nadie@example.com')
@@ -106,12 +110,24 @@ test('un miembro entra con el código y ve el grupo', async ({ page }) => {
   await page.goto('/misa-diaria/')
   await login(page, 'persona1@example.com')
   await expect(page.getByRole('heading', { name: 'Hoy' })).toBeVisible()
-  await expect(page.getByTestId('total')).toContainText('Misas del grupo')
+  await expect(page.getByTestId('total')).toContainText('Misas del curso')
   await expect(page.getByRole('heading', { name: 'Rachas' })).toBeVisible()
+  await expect(page.getByTestId('streak-individual')).toContainText('Persona 1')
+  await expect(page.getByTestId('streak-individual')).toContainText('días seguidos que has ido a Misa')
+  await expect(page.getByTestId('streak-couple')).toContainText('Tu matrimonio')
+  await expect(page.getByTestId('streak-group')).toContainText('El curso')
+  await expect(page.getByTestId('streak-six')).toContainText('Cada matrimonio')
+  await expect(page.getByTestId('streak-ten')).toContainText('10 o más')
+  await expect(page.getByTestId('past').locator('li').first()).toContainText('Alguien de cada matrimonio')
+  await expect(page.getByTestId('past').locator('li').first()).toContainText('10 misas')
   await expect(page.getByTestId('go')).toBeVisible()
+  await expect(page.locator('nav a')).toHaveCount(4)
   await page.getByRole('link', { name: 'Muro' }).click()
   await expect(page.getByText('Por quienes no pueden salir de casa.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Eliminar' })).toHaveCount(0)
+  await page.getByRole('link', { name: /Por quienes no pueden salir de casa/ }).click()
   await expect(page.getByRole('button', { name: 'Eliminar' })).toBeVisible()
+  await expect(page.locator('nav a')).toHaveCount(4)
   expect(errors).toEqual([])
 })
 
@@ -151,10 +167,10 @@ test('un segundo envío no dice que salió y deja entrar el código', async ({ p
   expect(unexpected).toEqual([])
 })
 
-test('quien no es del grupo no lee ni escribe', async ({ page }) => {
+test('quien no es del curso no lee ni escribe', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'fuera@example.com')
-  await expect(page.getByTestId('denied')).toContainText('Esta cuenta no está en el grupo.')
+  await expect(page.getByTestId('denied')).toContainText('Esta cuenta no está en el curso.')
 
   const token = await tokenOf(page)
   const result = await page.evaluate(async ({ gate, token, outsider }) => {
@@ -312,12 +328,20 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   const friday = page.getByTestId('calendar').locator('li').nth(0)
   await expect(friday).toContainText('9 de 12')
   await expect(friday).toContainText('5 de 6 matrimonios')
-  await expect(friday.getByTestId('risk-why')).toHaveText('Falta el Matrimonio 6')
-  await expect(friday).toHaveClass(/risk/)
+  await expect(friday.getByTestId('risk-why')).toHaveCount(0)
+  await expect(friday).not.toHaveClass(/risk/)
+  await expect(friday).not.toContainText(/Falta/)
+  const saturday = page.locator('[data-testid="calendar"] li:has([data-date="2026-10-24"])')
+  await expect(saturday).toContainText('Alguien se ha apuntado')
+  await expect(saturday).not.toHaveClass(/risk/)
   const narrow = (page.viewportSize()?.width ?? 0) < 800
   if (narrow) await expect(page.locator('.day')).toBeHidden()
   else await expect(page.locator('.day')).toBeVisible()
-  const open = await friday.evaluate((node) => {
+  await page.locator('[data-date="2026-10-27"]').click()
+  const empty = page.locator('[data-testid="calendar"] li:has([data-date="2026-10-27"])')
+  await expect(empty).toHaveClass(/risk/)
+  await expect(empty.getByTestId('risk-why')).toHaveText('Nadie se ha apuntado')
+  const open = await empty.evaluate((node) => {
     const why = node.querySelector('.why')
     const count = node.querySelector('.count')
     const commit = node.querySelector('.row-commit')
@@ -385,7 +409,9 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   const row = (date: string) => page.locator(`[data-testid="calendar"] li:has([data-date="${date}"])`)
   await page.locator('[data-date="2026-10-26"]').click()
   await expect(row('2026-10-26')).not.toHaveClass(/risk/)
-  await expect(page.getByTestId('risk-why')).toHaveText('Los matrimonios están cubiertos.')
+  await expect(row('2026-10-26')).toContainText('6 de 6 matrimonios')
+  await expect(page.getByTestId('risk-why')).toHaveCount(0)
+  await expect(page.getByText(/Falta/)).toHaveCount(0)
 
   await page.locator('[data-date="2026-10-25"]').click()
   await expect(row('2026-10-25')).not.toHaveClass(/risk/)
@@ -445,44 +471,65 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   expect(errors).toEqual([])
 })
 
-test('en portugués se ven las sequências y el hilo', async ({ page, browserName, viewport }) => {
-  test.skip(browserName !== 'webkit' || viewport?.width !== 390)
+test('en portugués se ven las sequências y el calendario', async ({ page, browserName, viewport }) => {
   const errors = watchConsole(page)
-  ensureShots()
+  const shoot = shotHere(browserName, viewport)
+  if (shoot) ensureShots()
   await login(page, 'persona12@example.com')
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await page.getByRole('button', { name: 'Português' }).click()
   await expect(page.getByRole('heading', { name: 'Definições' })).toBeVisible()
   await page.getByRole('link', { name: 'Hoje' }).click()
   await expect(page.getByRole('heading', { name: 'Sequências' })).toBeVisible()
-  await expect(page.getByTestId('total')).toContainText('Missas do grupo')
+  await expect(page.getByTestId('total')).toContainText('Missas do curso')
   await expect(page.getByTestId('go')).toHaveText('Fui à Missa')
-  await expect(page.getByTestId('risk')).toHaveText('Falta um matrimónio.')
-  await save(page, 'hoy-pt.png')
+  await expect(page.getByTestId('risk')).toHaveCount(0)
+  await expect(page.getByTestId('streak-individual')).toContainText('Persona 12')
+  await expect(page.getByTestId('streak-individual')).toContainText('dias seguidos em que foste à Missa')
+  await expect(page.getByTestId('streak-couple')).toContainText('O teu casal')
+  await expect(page.getByTestId('streak-couple')).toContainText('dias seguidos em que algum dos dois foi à Missa')
+  await expect(page.getByTestId('streak-group')).toContainText('O curso')
+  await expect(page.getByTestId('streak-six')).toContainText('Cada casal')
+  await expect(page.getByTestId('streak-six')).toContainText('dias seguidos em que foi alguém de cada casal')
+  await expect(page.getByTestId('streak-ten')).toContainText('10 ou mais')
+  await expect(page.getByTestId('past').locator('li').first()).toContainText('Alguém de cada casal')
+  await expect(page.getByTestId('past').locator('li').first()).toContainText('10 missas')
+  await expect(page.getByText(/matrimónio|matrimónio|Falta/)).toHaveCount(0)
+  if (shoot) await save(page, 'hoy-pt.png')
+  await page.getByRole('link', { name: 'Calendário' }).click()
+  await expect(page.getByTestId('calendar')).toContainText('de 6 casais')
+  await expect(page.getByText(/Falta|matrimónio/)).toHaveCount(0)
+  if (shoot) await save(page, 'calendario-pt.png')
   await page.getByRole('link', { name: 'Definições' }).click()
   await expect(page.getByRole('button', { name: 'Português' })).toHaveAttribute('aria-pressed', 'true')
-  await save(page, 'ajustes-pt.png')
+  if (shoot) await save(page, 'ajustes-pt.png')
   expect(errors).toEqual([])
 })
 
-test('capturas del muro', async ({ page, browserName, viewport }) => {
-  test.skip(browserName !== 'webkit' || viewport?.width !== 390)
+test('el muro abre la intención y las reacciones', async ({ page, browserName, viewport }) => {
   const errors = watchConsole(page)
-  ensureShots()
+  const shoot = shotHere(browserName, viewport)
+  if (shoot) ensureShots()
   await scene('muro-es')
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Muro' }).click()
-  await expect(page.getByRole('button', { name: '2 comentarios' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Comentar' }).first()).toBeVisible()
-  const react = page.getByRole('button', { name: 'Rezar, 2' })
+  await expect(page.locator('nav a')).toHaveCount(4)
+  await expect(page.getByRole('link', { name: '2 comentarios' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Comentar' })).toHaveCount(0)
+  await expect(page.locator('.reply')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '🕯️' })).toHaveCount(0)
+  const react = page.getByRole('button', { name: '🙏, 2' })
   await expect(react).toHaveClass(/on/)
   const box = await react.boundingBox()
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
   expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
-  await save(page, 'muro-es.png')
-  await page.getByRole('button', { name: '2 comentarios' }).click()
+  if (shoot) await save(page, 'muro-es.png')
+  await page.getByRole('link', { name: '2 comentarios' }).click()
+  await expect(page).toHaveURL(/\/muro\/[0-9a-f-]{36}$/i)
   await expect(page.getByTestId('thread')).toBeVisible()
+  await expect(page.locator('.reply')).toBeVisible()
   await expect(page.getByText('hace 2 h')).toBeVisible()
+  await expect(page.locator('nav a')).toHaveCount(4)
   const link = page.getByTestId('thread').locator('.comments .text-link')
   const paint = await link.evaluate((node) => {
     const style = getComputedStyle(node)
@@ -496,21 +543,34 @@ test('capturas del muro', async ({ page, browserName, viewport }) => {
     return nodes[1].getBoundingClientRect().top - nodes[0].getBoundingClientRect().bottom
   })
   expect(gap).toBeGreaterThanOrEqual(16)
-  await save(page, 'muro-hilo-es.png')
+  if (shoot) await save(page, 'muro-detalle-es.png')
+  await page.getByRole('link', { name: 'Volver al muro' }).click()
+  await expect(page.locator('.reply')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Añadir reacción' }).first().click()
+  await expect(page.getByTestId('emoji-sheet')).toBeVisible()
+  await expect(page.getByRole('button', { name: '🕯️' })).toBeVisible()
+  if (shoot) await save(page, 'muro-emoji-es.png')
+  await page.getByLabel('Un emoji').fill('🌿')
+  await expect(page.getByRole('button', { name: '🌿, 1' })).toBeVisible()
+  await expect(page.getByTestId('emoji-sheet')).toHaveCount(0)
 
   await scene('muro-pt')
-  await page.reload()
+  await page.goto('/misa-diaria/')
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await page.getByRole('button', { name: 'Português' }).click()
   await page.getByRole('link', { name: 'Mural' }).click()
   await expect(page.getByText('Por quem não pode sair de casa.')).toBeVisible()
   await expect(page.getByText('Por quienes no pueden salir de casa.')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '2 comentários' })).toBeVisible()
-  await save(page, 'muro-pt.png')
-  await page.getByRole('button', { name: '2 comentários' }).click()
+  await expect(page.getByRole('link', { name: '2 comentários' })).toBeVisible()
+  await expect(page.locator('.reply')).toHaveCount(0)
+  if (shoot) await save(page, 'muro-pt.png')
+  await page.getByRole('link', { name: '2 comentários' }).click()
   await expect(page.getByText('há 2 h')).toBeVisible()
   await expect(page.getByTestId('thread').locator('.comments .text-link')).toHaveText('Apagar')
-  await save(page, 'muro-hilo-pt.png')
+  if (shoot) await save(page, 'muro-detalle-pt.png')
+  await page.getByRole('button', { name: 'Adicionar reação' }).first().click()
+  await expect(page.getByTestId('emoji-sheet')).toBeVisible()
+  if (shoot) await save(page, 'muro-emoji-pt.png')
   expect(errors).toEqual([])
 })
 

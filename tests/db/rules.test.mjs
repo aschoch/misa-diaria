@@ -132,7 +132,7 @@ async function main() {
       await attend(P(2), '2026-10-20')
       assert((await one(`select public.racha_pareja($1, '2026-10-20') as n`, [P(1)])).n === 1, 'la pareja cuenta con uno')
       assert((await one(`select public.racha_individual($1, '2026-10-20') as n`, [P(1)])).n === 0, 'la individual no hereda')
-      assert((await one(`select public.racha_grupo('2026-10-20') as n`)).n === 1, 'el grupo cuenta con una persona')
+      assert((await one(`select public.racha_grupo('2026-10-20') as n`)).n === 1, 'el curso cuenta con una persona')
     })
 
     await at('2026-10-20T10:00:00Z', async () => {
@@ -142,6 +142,9 @@ async function main() {
       await attend(P(10), '2026-10-20')
       assert((await one(`select public.racha_diez('2026-10-20') as n`)).n === 1, 'diez personas, un toque no suma')
       assert((await one(`select count(*)::int as n from public.attendance where mass_date = '2026-10-20'`)).n === 10, 'el contador es de filas')
+      assert((await one(`select public.racha_seis('2026-10-20') as n`)).n === 0, 'diez personas no cubren los seis matrimonios')
+      await attend(P(11), '2026-10-20')
+      assert((await one(`select public.racha_seis('2026-10-20') as n`)).n === 1, 'alguien de cada matrimonio cuenta')
     })
 
     const pendingLine = async (member, asOf) => {
@@ -167,6 +170,7 @@ async function main() {
       const pending = await pendingLine(P(1), '2026-10-20')
       assert(pending[0].line === '¡Hoy habéis ido los doce!', 'si coinciden, manda todos')
       assert(pending.some((item) => item.key === 'celeb:diez:2026-10-20'), 'la clave de diez se guarda')
+      assert(pending.some((item) => item.key === 'celeb:parejas:2026-10-20' && item.line === 'Los 6 matrimonios'), 'los seis matrimonios se celebran')
     })
 
     await at('2026-10-25T10:00:00Z', async () => {
@@ -190,12 +194,17 @@ async function main() {
     for (const n of [1, 3, 5, 7, 9]) {
       await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-23')`, [P(n)])
     }
-    assert((await one(`select public.dia_en_riesgo('2026-10-23') as r`)).r === true, 'falta una pareja')
+    assert((await one(`select public.dia_en_riesgo('2026-10-23') as r`)).r === false, 'cinco matrimonios no ponen el día en riesgo')
     await q(`select set_config('request.jwt.claim.sub', $1, true)`, [P(1)])
     await q(`select set_config('app.now', '2026-10-23T10:00:00Z', true)`)
     const hueco = await one(`select public.estado() as e`)
     const viernes = hueco.e.calendar.find((day) => day.date === '2026-10-23')
-    assert(viernes.at_risk === true && viernes.gaps.length === 1 && viernes.gaps[0] === 'Matrimonio 6', 'el calendario nombra al Matrimonio 6')
+    assert(viernes.at_risk === false && viernes.covered === 5 && viernes.couples === 5, 'el calendario cuenta sin nombrar')
+    assert(viernes.committed === true && viernes.gaps === undefined, 'no dice qué matrimonio falta')
+    assert(hueco.e.risk === null, 'hoy con gente no está en riesgo')
+    const vacio = hueco.e.calendar.find((day) => day.date === '2026-10-26')
+    assert(vacio.at_risk === true && vacio.covered === 0 && vacio.committed === false, 'el día vacío sí está en riesgo')
+    assert(typeof hueco.e.streaks.six === 'number', 'la racha de los seis viene en el estado')
     const domingo = hueco.e.calendar.find((day) => day.date === '2026-10-25')
     assert(domingo.sunday === true && domingo.at_risk === false, 'el domingo del calendario no está en riesgo')
     await q('rollback to savepoint hueco')
@@ -209,7 +218,10 @@ async function main() {
     await q(`insert into public.notification_prefs (member_id, empty_day, couple) values ($1, true, true), ($2, false, true)`, [P(1), P(11)])
     const evening = await rows(friday)
     assert(evening.length === 1 && evening[0].member_id === P(1), 'el día vacío avisa a quien lo pidió')
-    assert(!evening.some((row) => row.body.includes('matrimonio')), 'el día vacío no manda también el del matrimonio')
+    assert(evening[0].body === 'Mañana nadie ha dicho que va a Misa.', 'el aviso no nombra a nadie')
+    await q(`update public.notification_prefs set locale = 'pt' where member_id = $1`, [P(1)])
+    const eveningPt = await rows(friday)
+    assert(eveningPt[0].body === 'Amanhã ninguém disse que vai à Missa.', 'el aviso en portugués tampoco nombra')
 
     await q('delete from public.notification_prefs')
     for (const n of [1, 3, 5, 7, 9]) {
@@ -220,9 +232,7 @@ async function main() {
       [P(1), P(11), P(12)],
     )
     const couple = await rows(friday)
-    const ids = couple.map((row) => row.member_id).sort()
-    assert(ids.length === 2 && ids[0] === P(11) && ids[1] === P(12), 'solo la pareja descubierta')
-    assert(couple.every((row) => row.body.includes('matrimonio')), 'el texto es el del matrimonio')
+    assert(couple.length === 0, 'con alguien cubierto no se avisa')
 
     async function asUser(id, fn) {
       await q('savepoint rol')
@@ -265,6 +275,9 @@ async function main() {
       `insert into public.attendance (member_id, mass_date) values ($1, '2026-10-23')`,
       [P(1)],
     ))
+    await expectFail(() => q(`select public.estado()`))
+    await expectFail(() => q(`select public.racha_seis('2026-10-23')`))
+    await expectFail(() => q(`select public.marcas_dia('2026-10-23')`))
     await q('rollback to savepoint anon')
 
     await asUser(P(1), async () => {
@@ -315,6 +328,18 @@ async function main() {
       assert(row.comments[0].body === 'Primero.' && row.comments[0].mine === true, 'el comentario es mío')
       assert(typeof row.comments[0].created_at === 'string', 'el comentario trae su hora')
       assert(row.reactions[0].emoji === '🙏' && row.reactions[0].mine === true, 'la reacción es mía')
+      await q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '✨')`,
+        [intention.id, P(1)],
+      )
+      await expectFail(() => q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '')`,
+        [intention.id, P(1)],
+      ))
+      await expectFail(() => q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '   ')`,
+        [intention.id, P(1)],
+      ))
     })
 
     const monday = await one(`select public.resumen_semana('2026-10-26') as r`)
