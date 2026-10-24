@@ -1,6 +1,7 @@
 -- Ejecutar una vez en el SQL Editor, con tus valores.
 -- No guardes esta versión rellena en el repositorio.
--- Sustituye TU-PROYECTO y TU-CRON-SECRET.
+-- La URL del proyecto es https://kryarzipdpvceocidgyw.supabase.co
+-- Sustituye TU-PROYECTO y TU-CRON-SECRET. No guardes el secreto.
 
 select vault.create_secret('https://TU-PROYECTO.supabase.co', 'project_url');
 select vault.create_secret('TU-CRON-SECRET', 'cron_secret');
