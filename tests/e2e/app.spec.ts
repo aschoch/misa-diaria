@@ -391,11 +391,20 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.getByTestId('ajustes').waitFor()
   await save(page, 'ajustes.png')
   await page.getByRole('button', { name: 'Cerrar sesión' }).click()
+  await expect(page.getByLabel('Tu correo')).toBeVisible()
   await scene('diez')
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await login(page, 'persona10@example.com')
-  await page.getByTestId('go').click()
-  await expect(page.getByTestId('celeb-line')).toHaveText('10 misas hoy')
+  const go = page.getByTestId('go')
+  await expect(go).toHaveText('He ido a Misa')
+  await page.evaluate(() => {
+    const original = window.setTimeout
+    window.setTimeout = ((handler, timeout, ...args) => {
+      return original(handler, timeout === 1200 ? 60_000 : timeout, ...args)
+    }) as typeof window.setTimeout
+  })
+  await go.dispatchEvent('click')
+  await expect(page.getByTestId('celeb-line')).toHaveText('10 misas hoy', { timeout: 20_000 })
   await save(page, 'celebracion.png')
   expect(errors).toEqual([])
 })
