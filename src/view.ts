@@ -44,11 +44,18 @@ export function hrefIntention(id: string) {
   return `${basePath()}/muro/${id}`
 }
 
-function shell(route: Route, body: string, offline = '') {
+// La marca del encabezado y de Hoy. Se sustituye entera; public/icono.svg es el mismo emblema enmarcado.
+export function brandMark() {
+  return `<svg class="brand-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path fill="#9C3F1C" d="M9.6 41.05h28.8c.4 1.85-5.6 3.45-14.4 3.45S9.2 42.9 9.6 41.05z"/><path fill="#2A2118" d="M12.2 37.7h23.6l2.5 3.6H9.7z"/><path fill="#2A2118" d="M20.9 35.9h6.2l.5 2.2h-7.2z"/><circle cx="24" cy="34.35" r="4.05" fill="#2A2118"/><path fill="#9C3F1C" d="M20.05 33.25h7.9v2.45h-7.9z"/><path fill="#2A2118" d="M8.7 19.6c-.55 7 4.3 12 15.3 12.8 11-.8 15.85-5.8 15.3-12.8-5 2-10.1 2.9-15.3 2.9s-10.3-.9-15.3-2.9z"/><path fill="#9C3F1C" d="M12.8 20.7c-.15 5 3.3 8.6 11.2 9.2 7.9-.6 11.35-4.2 11.2-9.2-3.6 1.45-7.3 2.1-11.2 2.1s-7.6-.65-11.2-2.1z"/><path fill="#FFF9F2" d="M14.2 23.6c.2 2.4 1.5 4.3 2.2 4.6-.9-.2-2.5-2.3-2.7-4.8.15-.1.35.05.5.2z"/><path fill="#2A2118" d="M7.70 17.55C7.70 15.81 15.00 14.40 24.00 14.40C33.00 14.40 40.30 15.81 40.30 17.55C40.30 19.29 33.00 20.70 24.00 20.70C15.00 20.70 7.70 19.29 7.70 17.55Z"/><path fill="#9C3F1C" d="M12.50 17.70C12.50 16.90 17.65 16.25 24.00 16.25C30.35 16.25 35.50 16.90 35.50 17.70C35.50 18.50 30.35 19.15 24.00 19.15C17.65 19.15 12.50 18.50 12.50 17.70Z"/><ellipse cx="14.4" cy="15.85" rx="2.9" ry="1.15" fill="#FFF9F2"/><circle cx="24" cy="6.85" r="4.85" fill="#F0C56A"/><circle cx="24" cy="6.85" r="4.85" fill="none" stroke="#9C3F1C" stroke-width="2.45"/></svg>`
+}
+
+function shell(route: Route, body: string, offline = '', refreshing = false) {
   const copy = tx()
+  const pull = refreshing ? '<span class="pull" data-testid="refreshing"></span>' : ''
   return `
     <header class="top">
-      <div class="arch" aria-hidden="true"></div>
+      ${pull}
+      ${brandMark()}
       <p class="mark">${copy.brand}</p>
       <h1>${copy[titles[route]]}</h1>
     </header>
@@ -64,11 +71,10 @@ function nav(route: Route) {
     <a href="${href(key)}" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
       ${icon}<span>${label}</span>
     </a>`
-  return `<nav>${item('hoy', copy.hoy, door)}${item('calendario', copy.calendario, cal)}${item('muro', copy.muro, note)}${item('ajustes', copy.ajustes, gear)}</nav>`
+  return `<nav>${item('hoy', copy.hoy, brandMark())}${item('calendario', copy.calendario, cal)}${item('muro', copy.muro, note)}${item('ajustes', copy.ajustes, gear)}</nav>`
 }
 
 const sun = '<svg class="sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M13 3l-1.4 1.4M4.4 11.6 3 13"/></svg>'
-const door = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V9a6 6 0 0 1 12 0v11"/><circle cx="12" cy="14" r="1.2"/></svg>'
 const cal = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>'
 const note = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9l3 3v13H6z"/><path d="M15 4v4h4"/></svg>'
 const gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>'
@@ -130,6 +136,7 @@ export function renderHoy(state: Estado, locked: boolean) {
     <p class="group-total" data-testid="total"><b>${state.streaks.total}</b><span>${copy.totalLabel}</span></p>
     ${streaks(state)}
     ${monday(state)}
+    <h2 class="streak-title">${copy.recentDays}</h2>
     <ul class="past" data-testid="past">${past}</ul>
   `
 }
@@ -252,7 +259,7 @@ function detail(item: Intention, locked: boolean) {
       <p>${esc(comment.body)}</p>
     </li>`).join('')
   return `
-    <a class="back" href="${href('muro')}">${copy.backWall}</a>
+    <a class="back" data-act="back-wall" href="${href('muro')}"><span aria-hidden="true">←</span>${copy.backWall}</a>
     <article data-testid="thread">
       <header>
         <strong>${esc(item.display_name)}</strong>
@@ -324,7 +331,7 @@ export function renderAjustes(state: Estado, locale: Locale) {
     </section>`
 }
 
-export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '') {
+export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '', refreshing = false) {
   const body = route === 'calendario'
     ? renderCalendario(state, selected, locked)
     : route === 'muro'
@@ -333,14 +340,14 @@ export function renderApp(route: Route, state: Estado, selected: string, locked:
         ? renderAjustes(state, locale)
         : renderHoy(state, locked)
   const banner = offline ? `<p class="offline">${esc(offline)}</p>` : ''
-  return shell(route, body, banner)
+  return shell(route, body, banner, refreshing)
 }
 
 export function renderLogin(message: string, email: string, code: string) {
   const copy = tx()
   return `
     <header class="top">
-      <div class="arch" aria-hidden="true"></div>
+      ${brandMark()}
       <h1>${copy.brand}</h1>
     </header>
     <main class="login" data-testid="login">
@@ -357,14 +364,14 @@ export function renderLogin(message: string, email: string, code: string) {
 export function renderSetup() {
   const copy = tx()
   return `
-    <header class="top"><div class="arch" aria-hidden="true"></div><h1>${copy.brand}</h1></header>
+    <header class="top">${brandMark()}<h1>${copy.brand}</h1></header>
     <main class="login"><p>${copy.setup}</p></main>`
 }
 
 export function renderDenied() {
   const copy = tx()
   return `
-    <header class="top"><div class="arch" aria-hidden="true"></div><h1>${copy.brand}</h1></header>
+    <header class="top">${brandMark()}<h1>${copy.brand}</h1></header>
     <main class="login" data-testid="denied"><p>${copy.denied}</p>
       <button type="button" data-act="logout">${copy.logout}</button></main>`
 }

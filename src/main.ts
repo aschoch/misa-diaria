@@ -24,6 +24,9 @@ let localeEpoch = 0
 let locale: Locale = savedLocale() ?? deviceLocale()
 let openIntention = ''
 let emojiFor = ''
+let depth = 0
+let pulling = false
+let gesture: { x: number; y: number; scroll: number; sheet: boolean; id: number } | null = null
 
 function rememberedEmail() {
   try {
@@ -76,7 +79,7 @@ function paint() {
   if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
   const intention = intentionFromPath(location.pathname) || openIntention
   if (emojiFor && !current.intentions.some((item) => item.id === emojiFor)) emojiFor = ''
-  app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor)
+  app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling)
   document.title = tx().brand
 }
 
@@ -164,15 +167,93 @@ async function boot() {
   }
 }
 
-function go(route: Route) {
-  const next = href(route)
-  if (location.pathname !== next) history.pushState({}, '', next)
+function syncRoute() {
+  openIntention = intentionFromPath(location.pathname)
+  emojiFor = ''
+}
+
+function pushRoute(pathname: string) {
+  if (location.pathname === pathname) return
+  history.pushState({}, '', pathname)
+  depth += 1
+}
+
+function backToWall() {
+  hideCelebration()
+  openIntention = ''
+  emojiFor = ''
+  pushRoute(href('muro'))
   paint()
 }
 
+function go(route: Route) {
+  pushRoute(href(route))
+  syncRoute()
+  paint()
+}
+
+async function pullRefresh() {
+  if (pulling || busy || demo || !current) return
+  pulling = true
+  paint()
+  try {
+    await refresh(false)
+  } finally {
+    pulling = false
+    paint()
+  }
+}
+
 app.addEventListener('pointerdown', (event) => {
-  const button = (event.target as HTMLElement).closest<HTMLElement>('.days button')
+  const target = event.target
+  if (!(target instanceof Element)) return
+  const button = target.closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
+  if (target.closest('input, textarea, select, [contenteditable="true"]')) return
+  gesture = {
+    x: event.clientX,
+    y: event.clientY,
+    scroll: window.scrollY,
+    sheet: Boolean(target.closest('.sheet')),
+    id: event.pointerId,
+  }
+})
+
+app.addEventListener('pointerup', (event) => {
+  if (!gesture || gesture.id !== event.pointerId) return
+  const start = gesture
+  gesture = null
+  const dx = event.clientX - start.x
+  const dy = event.clientY - start.y
+  const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
+  const downDetail = dy > 70 && dy > Math.abs(dx) * 1.5
+  const downRefresh = dy > 80 && dy > Math.abs(dx) * 1.5
+  const onDetail = Boolean(intentionFromPath(location.pathname))
+  if (start.sheet && emojiFor && downDetail) {
+    emojiFor = ''
+    paint()
+    return
+  }
+  if (onDetail && horizontal) {
+    backToWall()
+    return
+  }
+  if (onDetail && start.scroll <= 8 && downDetail) {
+    backToWall()
+    return
+  }
+  const route = routeFromPath(location.pathname)
+  const top = route === 'calendario' || route === 'muro' || route === 'ajustes'
+  if (!onDetail && top && start.x <= 36 && horizontal) {
+    if (depth > 0) history.back()
+    else go('hoy')
+    return
+  }
+  if (!onDetail && !emojiFor && !start.sheet && start.scroll <= 4 && downRefresh) void pullRefresh()
+})
+
+app.addEventListener('pointercancel', (event) => {
+  if (gesture?.id === event.pointerId) gesture = null
 })
 
 app.addEventListener('input', (event) => {
@@ -195,11 +276,18 @@ app.addEventListener('keydown', (event) => {
 })
 
 app.addEventListener('click', (event) => {
+  const acted = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
+  if (acted?.dataset.act === 'back-wall') {
+    event.preventDefault()
+    backToWall()
+    return
+  }
   const link = (event.target as HTMLElement).closest('a[href]')
   if (link instanceof HTMLAnchorElement && link.origin === location.origin) {
     event.preventDefault()
     hideCelebration()
-    history.pushState({}, '', link.pathname)
+    pushRoute(link.pathname)
+    syncRoute()
     paint()
     return
   }
@@ -226,7 +314,11 @@ document.querySelector('#celeb')?.addEventListener('click', (event) => {
   if (node) hideCelebration()
 })
 
-window.addEventListener('popstate', () => paint())
+window.addEventListener('popstate', () => {
+  depth = Math.max(0, depth - 1)
+  syncRoute()
+  paint()
+})
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') hideCelebration()
 })
@@ -267,6 +359,10 @@ function toggleDemoAttendance(date: string) {
 }
 
 async function actOn(act: string, node: HTMLElement, body = '') {
+  if (act === 'back-wall') {
+    backToWall()
+    return
+  }
   if (act === 'locale') {
     if (!current || locked) return
     const next = node.dataset.locale === 'pt' ? 'pt' : 'es'
@@ -417,12 +513,19 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     }
     if (act === 'delete') {
       const id = node.dataset.id ?? ''
+      const open = intentionFromPath(location.pathname) === id || openIntention === id
       if (demo) {
         current.intentions = current.intentions.filter((item) => item.id !== id)
-        paint()
+        if (open) backToWall()
+        else paint()
         return
       }
       await borrarIntencion(id)
+      if (open) {
+        openIntention = ''
+        emojiFor = ''
+        pushRoute(href('muro'))
+      }
       await refresh(false)
       return
     }
