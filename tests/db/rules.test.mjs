@@ -304,6 +304,7 @@ async function main() {
       const row = state.e.intentions[0]
       assert(row.id === intention.id, 'la actividad nueva queda arriba')
       assert(row.comments[0].body === 'Primero.' && row.comments[0].mine === true, 'el comentario es mío')
+      assert(typeof row.comments[0].created_at === 'string', 'el comentario trae su hora')
       assert(row.reactions[0].emoji === '🙏' && row.reactions[0].mine === true, 'la reacción es mía')
     })
 

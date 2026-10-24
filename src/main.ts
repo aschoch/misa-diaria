@@ -319,7 +319,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       if (demo) {
         const item = current.intentions.find((intention) => intention.id === intentionId)
         if (item) {
-          item.comments.push({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true })
+          item.comments.push({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, created_at: new Date().toISOString() })
           bump(intentionId)
         }
         openIntention = intentionId

@@ -1,5 +1,5 @@
 import type { Day, Estado, Intention } from './types'
-import { esc, fecha } from './format'
+import { esc, fecha, hace } from './format'
 import { matrimonio, tx, type Locale } from './i18n'
 
 export type Route = 'hoy' | 'calendario' | 'muro' | 'ajustes'
@@ -209,22 +209,31 @@ function thread(item: Intention, open: boolean, locked: boolean) {
   const counts = emojis.map((emoji) => {
     const rows = item.reactions.filter((reaction) => reaction.emoji === emoji)
     const mine = rows.some((reaction) => reaction.mine)
-    return `<button type="button" class="react ${mine ? 'on' : ''}" data-act="react" data-id="${item.id}" data-emoji="${emoji}" aria-pressed="${mine}" aria-label="${reactionName(emoji)}" ${locked ? 'disabled' : ''}><span aria-hidden="true">${emoji}</span>${rows.length ? `<b>${rows.length}</b>` : ''}</button>`
+    return `<button type="button" class="react ${mine ? 'on' : ''}" data-act="react" data-id="${item.id}" data-emoji="${emoji}" aria-pressed="${mine}" aria-label="${reactionName(emoji)}, ${rows.length}" ${locked ? 'disabled' : ''}><span aria-hidden="true">${emoji}</span><b>${rows.length}</b></button>`
   }).join('')
   const comments = item.comments.map((comment) => `
     <li>
-      <strong>${esc(comment.display_name)}</strong>
+      <div class="comment-line">
+        <strong>${esc(comment.display_name)}</strong>
+        <span class="ago">${esc(hace(comment.created_at))}</span>
+        ${comment.mine ? `<button type="button" class="text-link" data-act="delete-comment" data-id="${comment.id}">${copy.delete}</button>` : ''}
+      </div>
       <p>${esc(comment.body)}</p>
-      ${comment.mine ? `<button type="button" data-act="delete-comment" data-id="${comment.id}">${copy.delete}</button>` : ''}
     </li>`).join('')
+  const foot = open ? '' : `
+    <p class="thread-foot">
+      <button type="button" class="text-link" data-act="thread" data-id="${item.id}">${copy.commentsCount(item.comments.length)}</button>
+      <button type="button" class="text-link" data-act="thread" data-id="${item.id}">${copy.commentIn}</button>
+    </p>`
   return `
     <article class="${open ? 'open' : ''}" ${open ? 'data-testid="thread"' : ''}>
       <header>
         <button type="button" class="thread" data-act="thread" data-id="${item.id}" aria-expanded="${open}"><strong>${esc(item.display_name)}</strong></button>
-        ${item.mine ? `<button type="button" data-act="delete" data-id="${item.id}">${copy.delete}</button>` : ''}
+        ${item.mine ? `<button type="button" class="text-link" data-act="delete" data-id="${item.id}">${copy.delete}</button>` : ''}
       </header>
       <p>${esc(item.body)}</p>
       <div class="reacts">${counts}</div>
+      ${foot}
       ${open ? `
         <ol class="comments">${comments}</ol>
         <form class="reply" data-act="comment" data-id="${item.id}">

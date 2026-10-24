@@ -444,7 +444,7 @@ p.risk {
 
 .notes article:first-child { border-top: 0; }
 
-.notes header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.notes header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .thread {
   min-height: 44px;
   border: 0;
@@ -454,25 +454,52 @@ p.risk {
   cursor: pointer;
   font: inherit;
 }
-.reacts { display: flex; gap: 4px; margin-top: 8px; }
+.reacts { display: flex; gap: 8px; margin-top: 12px; }
 .react {
   min-width: 44px;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border: 0;
-  border-radius: 14px;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--linea);
+  border-radius: 999px;
   background: transparent;
   cursor: pointer;
 }
-.react.on { background: var(--arcilla-suave); }
-.react b { font-weight: 700; font-size: 13px; }
-.comments { list-style: none; margin: 8px 0 0; padding: 0; }
-.comments li { padding: 8px 0; border-top: 1px solid var(--linea); }
-.comments p { margin: 2px 0 0; }
-.comments button, .reply button { min-height: 44px; }
+.react.on { background: var(--arcilla-suave); border-color: transparent; }
+.react b { font-weight: 700; font-size: 13px; font-variant-numeric: lining-nums; }
+.notes .thread-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 0;
+}
+.comments { list-style: none; display: flex; flex-direction: column; gap: 20px; margin: 20px 0 0; padding: 0; }
+.comments li { padding: 0; }
+.comment-line { display: flex; align-items: baseline; gap: 8px; }
+.comment-line strong { font-size: 16px; }
+.comment-line .ago { color: var(--suave); font-size: 13px; }
+.comment-line .text-link { margin-left: auto; }
+.comments p { margin: 4px 0 0; }
+.text-link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  min-height: 0;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--suave);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.reply button { min-height: 44px; }
 .reply { display: grid; gap: 8px; margin-top: 8px; }
 .reply label { font-size: 13px; color: var(--suave); }
 .reply textarea {
@@ -501,7 +528,7 @@ p.risk {
   cursor: pointer;
 }
 .lang button[aria-pressed="true"] { border-color: var(--vela); color: var(--vela); font-weight: 700; }
-.notes header button {
+.notes header button:not(.text-link) {
   min-width: 44px;
   min-height: 44px;
   border: 0;

@@ -22,6 +22,7 @@ export type Comment = {
   body: string
   display_name: string
   mine: boolean
+  created_at?: string
 }
 
 export type Reaction = {
