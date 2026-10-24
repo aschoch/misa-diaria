@@ -36,7 +36,16 @@ async function main() {
   `)
   const migrations = readdirSync(join(root, 'supabase/migrations')).filter((name) => name.endsWith('.sql')).sort()
   for (const name of migrations) {
-    await client.query(readFileSync(join(root, 'supabase/migrations', name), 'utf8'))
+    const sql = readFileSync(join(root, 'supabase/migrations', name), 'utf8')
+    try {
+      await client.query(sql)
+    } catch (err) {
+      const missing = name === '20261024002113_activar_cron_net.sql'
+        && /pg_cron|pg_net/.test(err.message)
+        && /not available|could not open extension control file/.test(err.message)
+      if (!missing) throw err
+      console.error(`${name} no se aplica en esta base (${err.message}). Es para producción.`)
+    }
   }
   await client.query(readFileSync(join(root, 'supabase/seed.sql'), 'utf8'))
 
