@@ -263,11 +263,9 @@ test('en oscuro el botón de vela lleva tinta oscura', async ({ page }) => {
   const errors = watchConsole(page)
   await page.emulateMedia({ colorScheme: 'dark' })
   await login(page, 'persona12@example.com')
-  const colors = await page.getByTestId('go').evaluate((node) => {
-    const style = getComputedStyle(node)
-    return { color: style.color, background: style.backgroundColor }
-  })
-  expect(colors).toEqual({ color: 'rgb(42, 33, 24)', background: 'rgb(240, 160, 106)' })
+  const go = page.getByTestId('go')
+  await expect(go).toHaveCSS('color', 'rgb(42, 33, 24)')
+  await expect(go).toHaveCSS('background-color', 'rgb(240, 160, 106)')
   expect(errors).toEqual([])
 })
 
