@@ -14,6 +14,7 @@ const dbUrl = adminUrl.replace(/\/[^/]*$/, '/misa_e2e')
 
 let clock = '2026-10-23T10:00:00Z'
 const inbox = new Map()
+const otpTries = new Map()
 
 function json(res, status, body) {
   const payload = body === undefined ? '' : JSON.stringify(body)
@@ -470,6 +471,12 @@ async function handleAuth(req, res, url) {
   if (url.pathname === '/auth/v1/otp' && req.method === 'POST') {
     const body = await readBody(req)
     const email = String(body?.email ?? '').trim().toLowerCase()
+    const tries = (otpTries.get(email) ?? 0) + 1
+    otpTries.set(email, tries)
+    if (tries > 1) {
+      json(res, 429, { error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' })
+      return
+    }
     const user = await admin(async (client) => (await client.query(
       'select id::text, email from auth.users where email = $1',
       [email],
@@ -549,6 +556,7 @@ export function startGateway(port = 54321) {
         const body = await readBody(req)
         clock = body?.at ?? '2026-10-23T10:00:00Z'
         inbox.clear()
+        otpTries.clear()
         await admin(seedActivity)
         json(res, 200, { at: clock })
         return
