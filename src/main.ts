@@ -13,14 +13,48 @@ let current: Estado | null = null
 let selected = ''
 let offline = ''
 let locked = false
-let email = ''
-let codeAsked = false
 let loginMessage = ''
+let pendingCode = ''
+const EMAIL_KEY = 'misa-email'
 let denied = false
 let demo = false
 let busy = false
 let locale: Locale = savedLocale() ?? deviceLocale()
 let openIntention = ''
+
+function rememberedEmail() {
+  try {
+    return (localStorage.getItem(EMAIL_KEY) ?? '').trim().toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+function rememberEmail(value: string) {
+  const email = value.trim().toLowerCase()
+  if (!email) return rememberedEmail()
+  try { localStorage.setItem(EMAIL_KEY, email) } catch { /* el correo sigue en el campo */ }
+  return email
+}
+
+function loginEmail() {
+  const typed = document.querySelector<HTMLInputElement>('#email')?.value ?? ''
+  return rememberEmail(typed)
+}
+
+function keepLoginDraft() {
+  const emailInput = document.querySelector<HTMLInputElement>('#email')
+  const codeInput = document.querySelector<HTMLInputElement>('#code')
+  if (emailInput?.value.trim()) rememberEmail(emailInput.value)
+  if (codeInput?.value) pendingCode = codeInput.value
+}
+
+function rateLimited(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const item = error as { status?: number; code?: string; message?: string }
+  const text = `${item.code ?? ''} ${item.message ?? ''}`.toLowerCase()
+  return item.status === 429 || text.includes('rate limit') || text.includes('rate_limit') || text.includes('too many')
+}
 
 function paint() {
   setLocale(locale)
@@ -31,7 +65,8 @@ function paint() {
     return
   }
   if (!current) {
-    app.innerHTML = denied ? renderDenied() : renderLogin(loginMessage, codeAsked)
+    if (!denied) keepLoginDraft()
+    app.innerHTML = denied ? renderDenied() : renderLogin(loginMessage, rememberedEmail(), pendingCode)
     return
   }
   if (!selected) selected = current.today
@@ -131,6 +166,16 @@ app.addEventListener('pointerdown', (event) => {
   if (button) button.dataset.pointer = '1'
 })
 
+app.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) return
+  if (target.id !== 'email' && target.id !== 'code') return
+  event.preventDefault()
+  const code = document.querySelector<HTMLInputElement>('#code')?.value.trim() ?? ''
+  void actOn(target.id === 'code' || code.length >= 6 ? 'verify' : 'send-link', target)
+})
+
 app.addEventListener('click', (event) => {
   const link = (event.target as HTMLElement).closest('a[href]')
   if (link instanceof HTMLAnchorElement && link.origin === location.origin) {
@@ -200,37 +245,58 @@ function toggleDemoAttendance(date: string) {
 async function actOn(act: string, node: HTMLElement, body = '') {
   if (busy && act !== 'select') return
   if (act === 'send-link') {
-    email = (document.querySelector<HTMLInputElement>('#email')?.value ?? '').trim()
-    codeAsked = true
-    loginMessage = tx().loginHint
-    paint()
-    if (!email || !supabase) return
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: `${location.origin}${import.meta.env.BASE_URL}`,
-        data: { locale },
-      },
-    })
-    if (error) loginMessage = tx().loginHint
-    paint()
-    return
-  }
-  if (act === 'verify') {
-    const token = document.querySelector<HTMLInputElement>('#code')?.value.trim() ?? ''
-    if (!supabase || !email || token.length < 6) return
-    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
-    if (error) {
-      loginMessage = tx().badCode
+    const next = loginEmail()
+    if (!next) {
+      loginMessage = tx().needEmail
       paint()
       return
     }
-    await refresh(true)
+    if (!supabase) return
+    busy = true
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: next,
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: `${location.origin}${import.meta.env.BASE_URL}`,
+          data: { locale },
+        },
+      })
+      loginMessage = error ? (rateLimited(error) ? tx().rateLimit : tx().sendFail) : tx().loginHint
+      paint()
+    } finally {
+      busy = false
+    }
+    return
+  }
+  if (act === 'verify') {
+    const token = (document.querySelector<HTMLInputElement>('#code')?.value ?? '').trim()
+    const next = loginEmail()
+    if (!next) {
+      loginMessage = tx().needEmail
+      paint()
+      return
+    }
+    if (!supabase || token.length < 6) return
+    busy = true
+    try {
+      const { error } = await supabase.auth.verifyOtp({ email: next, token, type: 'email' })
+      if (error) {
+        loginMessage = tx().badCode
+        paint()
+        return
+      }
+      pendingCode = ''
+      await refresh(true)
+    } finally {
+      busy = false
+    }
     return
   }
   if (act === 'logout') {
     hideCelebration()
+    pendingCode = ''
+    loginMessage = ''
     if (demo) {
       current = null
       demo = false

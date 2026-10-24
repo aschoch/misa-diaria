@@ -293,7 +293,7 @@ export function renderApp(route: Route, state: Estado, selected: string, locked:
   return shell(route, body, banner)
 }
 
-export function renderLogin(message: string, codeAsked: boolean) {
+export function renderLogin(message: string, email: string, code: string) {
   const copy = tx()
   return `
     <header class="top">
@@ -302,14 +302,12 @@ export function renderLogin(message: string, codeAsked: boolean) {
     </header>
     <main class="login" data-testid="login">
       <label for="email">${copy.email}</label>
-      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" />
+      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" value="${esc(email)}" />
       <button type="button" data-act="send-link">${copy.sendLink}</button>
-      <p class="hint">${esc(message)}</p>
-      ${codeAsked ? `
-        <label for="code">${copy.code}</label>
-        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
-        <button type="button" data-act="verify">${copy.enter}</button>
-      ` : ''}
+      ${message ? `<p class="hint">${esc(message)}</p>` : ''}
+      <label for="code">${copy.code}</label>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" value="${esc(code)}" />
+      <button type="button" data-act="verify">${copy.enter}</button>
     </main>`
 }
 
