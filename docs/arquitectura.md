@@ -38,6 +38,8 @@ La lista de redirecciones es exacta: el origen de Pages y el de local. Sin comod
 
 RLS está activo en todas las tablas, también forzado. Hay una función `es_miembro()`: el `auth.uid()` corresponde a un miembro activo. El rol anónimo no tiene políticas. Un usuario autenticado que no esté en `members` tampoco. Los dos fallan al leer y al escribir. Borrar a alguien es desactivarlo en `members` y quitarle la cuenta: un token que aún no haya caducado sigue sin poder leer.
 
+Desde `20261024001955_endurecer_permisos.sql`, `anon` y `authenticated` ya no tienen derechos por defecto sobre las tablas ni las funciones de `public`. Una migración futura tiene que conceder de forma explícita lo que el cliente necesite, y nada más. Crear la tabla o la función no basta.
+
 Cada miembro ve al grupo (nombres visibles, matrimonios, compromisos, asistencias e intenciones). No ve correos, ni suscripciones push de otros, ni el registro de envíos. Solo escribe lo suyo: su «voy a ir», su «he ido», sus intenciones, sus comentarios, sus reacciones, su dispositivo, su idioma y sus dos interruptores. Nadie cambia nombres ni matrimonios desde la aplicación. Un tope en la base rechaza un decimotercer miembro activo.
 
 Las intenciones se guardan y se pintan como texto, con un máximo de 280 caracteres y de 30 por persona. Un comentario tiene como máximo 200 y tampoco admite HTML. El aviso nunca incluye ese texto: la pantalla de bloqueo la ve cualquiera que tenga el teléfono. Un comentario o una reacción actualiza `activity_at` y esa intención sube en la lista. Dentro del hilo, los comentarios van del más antiguo al más nuevo.
