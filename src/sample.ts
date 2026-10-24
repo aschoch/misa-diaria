@@ -18,7 +18,7 @@ export function sampleEstado(): Estado {
   return {
     today,
     clock: '09:40',
-    me: { id: 'm1', display_name: 'Persona 1', couple_id: 'c1', couple_label: 'Pareja 1' },
+    me: { id: 'm1', display_name: 'Persona 1', couple_id: 'c1', couple_label: 'Matrimonio 1' },
     members: [],
     streaks: { individual: 12, couple: 40, group: 80, ten: 2, total: 318 },
     risk: 'couple',
@@ -47,15 +47,15 @@ export function sampleEstado(): Estado {
       { date: '2026-10-17', sunday: false, mine_attendance: false },
     ],
     intentions: [
-      { id: 'i1', body: 'Por la familia de Persona 3.', display_name: 'Persona 2', mine: false },
-      { id: 'i2', body: 'En acción de gracias.', display_name: 'Persona 1', mine: true },
+      { id: 'i1', body: 'Por la familia de Persona 3.', display_name: 'Persona 2', mine: false, comments: [], reactions: [] },
+      { id: 'i2', body: 'En acción de gracias.', display_name: 'Persona 1', mine: true, comments: [], reactions: [] },
     ],
-    prefs: { empty_day: false, couple: false },
+    prefs: { empty_day: false, couple: false, locale: null },
     pending: [
       { key: 'celeb:hito:tuya:7', line: 'Tú · 7 días seguidos', motif: 'hito', rank: 20, date: today },
       { key: 'celeb:todos:' + today, line: '¡Hoy habéis ido los doce!', motif: 'todos', rank: 30, date: today },
       { key: 'celeb:diez:' + today, line: '10 misas hoy', motif: 'diez', rank: 40, date: today },
-      { key: 'celeb:parejas:' + today, line: '¡Todas las parejas han ido hoy!', motif: 'parejas', rank: 50, date: today },
+      { key: 'celeb:parejas:' + today, line: '¡Todos los matrimonios han ido hoy!', motif: 'parejas', rank: 50, date: today },
     ],
     monday: null,
   }

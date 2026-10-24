@@ -2,8 +2,9 @@ import '@fontsource-variable/fraunces/wght.css'
 import '@fontsource/atkinson-hyperlegible/400.css'
 import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
-import { borrarIntencion, configured, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, publicarIntencion, salir, supabase, suscribirPush } from './api'
+import { borrarComentario, borrarIntencion, configured, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
+import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
 import { href, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route } from './view'
 
@@ -18,8 +19,12 @@ let loginMessage = ''
 let denied = false
 let demo = false
 let busy = false
+let locale: Locale = savedLocale() ?? deviceLocale()
+let openIntention = ''
 
 function paint() {
+  setLocale(locale)
+  document.documentElement.lang = locale === 'pt' ? 'pt-PT' : 'es'
   const route = routeFromPath(location.pathname)
   if (!configured && !demo) {
     app.innerHTML = renderSetup()
@@ -30,8 +35,9 @@ function paint() {
     return
   }
   if (!selected) selected = current.today
-  app.innerHTML = renderApp(route, current, selected, locked, offline)
-  document.title = 'Misa diaria'
+  if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
+  app.innerHTML = renderApp(route, current, selected, locked, offline, openIntention, locale)
+  document.title = tx().brand
 }
 
 async function refresh(celebrate = false) {
@@ -41,6 +47,14 @@ async function refresh(celebrate = false) {
     denied = false
     offline = ''
     locked = false
+    const saved = current.prefs.locale
+    if (saved === 'es' || saved === 'pt') locale = saved
+    else locale = savedLocale() ?? deviceLocale()
+    rememberLocale(locale)
+    if (!saved) {
+      current.prefs.locale = locale
+      await guardarPreferencias(current.me.id, current.prefs)
+    }
     sessionStorage.setItem('misa-estado', JSON.stringify({ at: current.clock, data: current }))
     paint()
     if (celebrate) await celebratePending(current)
@@ -55,12 +69,12 @@ async function refresh(celebrate = false) {
     if (snapshot) {
       const saved = JSON.parse(snapshot) as { at: string; data: Estado }
       current = saved.data
-      offline = `Sin conexión. Datos de las ${saved.at}.`
+      offline = tx().offline(saved.at)
       locked = true
       paint()
       return
     }
-    loginMessage = 'No hemos podido abrir el grupo.'
+    loginMessage = tx().openFail
     current = null
     paint()
   }
@@ -68,8 +82,9 @@ async function refresh(celebrate = false) {
 
 async function celebratePending(state: Estado) {
   if (!state.pending.length) return
-  const inserted = await guardarCelebraciones(state.me.id, state.pending.map((item) => item.key))
-  const winner = elegir(state.pending, inserted)
+  const pending = state.pending.map((item) => ({ ...item, line: celebrationLine(item) }))
+  const inserted = await guardarCelebraciones(state.me.id, pending.map((item) => item.key))
+  const winner = elegir(pending, inserted)
   if (winner) showCelebration(winner)
 }
 
@@ -126,7 +141,7 @@ app.addEventListener('click', (event) => {
     return
   }
   const node = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
-  if (!node) return
+  if (!node || node instanceof HTMLFormElement) return
   const act = node.dataset.act
   if (act === 'skip') {
     hideCelebration()
@@ -140,7 +155,7 @@ app.addEventListener('submit', (event) => {
   if (!(form instanceof HTMLFormElement)) return
   event.preventDefault()
   const body = (form.elements.namedItem('body') as HTMLTextAreaElement | null)?.value ?? ''
-  void actOn('publish', form, body)
+  void actOn(form.dataset.act === 'comment' ? 'comment' : 'publish', form, body)
 })
 
 document.querySelector('#celeb')?.addEventListener('click', (event) => {
@@ -152,6 +167,24 @@ window.addEventListener('popstate', () => paint())
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') hideCelebration()
 })
+
+function plain(value: string, max: number) {
+  const text = value.trim()
+  if (!text || text.length > max || /[<>]/.test(text)) return ''
+  return text
+}
+
+function bump(id: string) {
+  if (!current) return
+  const index = current.intentions.findIndex((item) => item.id === id)
+  if (index <= 0) return
+  const [item] = current.intentions.splice(index, 1)
+  current.intentions.unshift(item)
+}
+
+function isEmoji(value: string): value is '🙏' | '💛' | '🕯️' {
+  return value === '🙏' || value === '💛' || value === '🕯️'
+}
 
 function toggleDemoAttendance(date: string) {
   if (!current) return
@@ -169,7 +202,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'send-link') {
     email = (document.querySelector<HTMLInputElement>('#email')?.value ?? '').trim()
     codeAsked = true
-    loginMessage = 'Si tu correo está en la lista, te llegará un mensaje.'
+    loginMessage = tx().loginHint
     paint()
     if (!email || !supabase) return
     const { error } = await supabase.auth.signInWithOtp({
@@ -177,9 +210,10 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       options: {
         shouldCreateUser: false,
         emailRedirectTo: `${location.origin}${import.meta.env.BASE_URL}`,
+        data: { locale },
       },
     })
-    if (error) loginMessage = 'Si tu correo está en la lista, te llegará un mensaje.'
+    if (error) loginMessage = tx().loginHint
     paint()
     return
   }
@@ -188,7 +222,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (!supabase || !email || token.length < 6) return
     const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
     if (error) {
-      loginMessage = 'Ese código no vale. Pide otro.'
+      loginMessage = tx().badCode
       paint()
       return
     }
@@ -250,10 +284,10 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       return
     }
     if (act === 'publish') {
-      const text = body.trim()
+      const text = plain(body, 280)
       if (!text) return
       if (demo) {
-        current.intentions.unshift({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true })
+        current.intentions.unshift({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, comments: [], reactions: [] })
         paint()
         return
       }
@@ -270,6 +304,76 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       }
       await borrarIntencion(id)
       await refresh(false)
+      return
+    }
+    if (act === 'thread') {
+      const id = node.dataset.id ?? ''
+      openIntention = openIntention === id ? '' : id
+      paint()
+      return
+    }
+    if (act === 'comment') {
+      const text = plain(body, 200)
+      const intentionId = node.dataset.id ?? ''
+      if (!text || !intentionId) return
+      if (demo) {
+        const item = current.intentions.find((intention) => intention.id === intentionId)
+        if (item) {
+          item.comments.push({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true })
+          bump(intentionId)
+        }
+        openIntention = intentionId
+        paint()
+        return
+      }
+      await publicarComentario(current.me.id, intentionId, text)
+      openIntention = intentionId
+      await refresh(false)
+      return
+    }
+    if (act === 'delete-comment') {
+      const id = node.dataset.id ?? ''
+      if (demo) {
+        for (const item of current.intentions) item.comments = item.comments.filter((comment) => comment.id !== id)
+        paint()
+        return
+      }
+      await borrarComentario(id)
+      await refresh(false)
+      return
+    }
+    if (act === 'react') {
+      const intentionId = node.dataset.id ?? ''
+      const emoji = node.dataset.emoji ?? ''
+      if (!isEmoji(emoji)) return
+      const item = current.intentions.find((intention) => intention.id === intentionId)
+      const mine = item?.reactions.some((reaction) => reaction.emoji === emoji && reaction.mine) ?? false
+      if (demo && item) {
+        item.reactions = mine
+          ? item.reactions.filter((reaction) => !(reaction.emoji === emoji && reaction.mine))
+          : [...item.reactions, { emoji, mine: true }]
+        bump(intentionId)
+        paint()
+        return
+      }
+      if (mine) await quitarReaccion(current.me.id, intentionId, emoji)
+      else await ponerReaccion(current.me.id, intentionId, emoji)
+      openIntention = openIntention || intentionId
+      await refresh(false)
+      return
+    }
+    if (act === 'locale') {
+      const next = node.dataset.locale === 'pt' ? 'pt' : 'es'
+      locale = next
+      rememberLocale(next)
+      if (demo) {
+        current.prefs.locale = next
+        paint()
+        return
+      }
+      await guardarPreferencias(current.me.id, { ...current.prefs, locale: next })
+      current.prefs.locale = next
+      paint()
       return
     }
     if (act === 'pref') {
@@ -290,7 +394,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       await refresh(false)
     }
   } catch {
-    offline = 'No se ha guardado. Prueba otra vez.'
+    offline = tx().saveFail
     paint()
   } finally {
     busy = false

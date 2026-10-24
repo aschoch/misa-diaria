@@ -175,7 +175,36 @@ p.risk {
   font-style: normal;
 }
 
-.total, .monday {
+.group-total {
+  margin: 18px 0 0;
+  text-align: center;
+}
+
+.group-total b {
+  display: block;
+  font-family: "Fraunces Variable", serif;
+  font-weight: 560;
+  font-size: 64px;
+  line-height: 0.95;
+  font-variant-numeric: lining-nums;
+  letter-spacing: -0.03em;
+}
+
+.group-total span {
+  display: block;
+  margin-top: 4px;
+  color: var(--suave);
+  font-size: 16px;
+}
+
+.streak-title {
+  margin: 22px 4px 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--suave);
+}
+
+.monday {
   margin: 8px 4px;
   color: var(--suave);
   font-size: 13px;
@@ -416,6 +445,62 @@ p.risk {
 .notes article:first-child { border-top: 0; }
 
 .notes header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.thread {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.reacts { display: flex; gap: 4px; margin-top: 8px; }
+.react {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.react.on { background: var(--arcilla-suave); }
+.react b { font-weight: 700; font-size: 13px; }
+.comments { list-style: none; margin: 8px 0 0; padding: 0; }
+.comments li { padding: 8px 0; border-top: 1px solid var(--linea); }
+.comments p { margin: 2px 0 0; }
+.comments button, .reply button { min-height: 44px; }
+.reply { display: grid; gap: 8px; margin-top: 8px; }
+.reply label { font-size: 13px; color: var(--suave); }
+.reply textarea {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--linea);
+  border-radius: 14px;
+  background: var(--papel);
+  padding: 12px;
+}
+.reply button {
+  border: 0;
+  border-radius: 14px;
+  background: var(--vela);
+  color: var(--sobre-vela);
+  font-weight: 700;
+  cursor: pointer;
+}
+.lang { display: flex; gap: 8px; }
+.lang button {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid var(--linea);
+  border-radius: 14px;
+  background: var(--papel);
+  cursor: pointer;
+}
+.lang button[aria-pressed="true"] { border-color: var(--vela); color: var(--vela); font-weight: 700; }
 .notes header button {
   min-width: 44px;
   min-height: 44px;

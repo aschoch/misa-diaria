@@ -1,13 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Estado } from './types'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
+const PRODUCTION_URL = 'https://kryarzipdpvceocidgyw.supabase.co'
+const PRODUCTION_KEY = 'sb_publishable_C-xlRIF09NLWIi9Sf-7kdA__ZTp6f_z'
 
-export const configured = Boolean(url && anon)
+const url = import.meta.env.VITE_SUPABASE_URL || PRODUCTION_URL
+const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  || import.meta.env.VITE_SUPABASE_ANON_KEY
+  || PRODUCTION_KEY
+
+export const configured = Boolean(url && key)
 
 export const supabase: SupabaseClient | null = configured
-  ? createClient(url, anon, {
+  ? createClient(url, key, {
       auth: {
         flowType: 'pkce',
         detectSessionInUrl: true,
@@ -54,11 +59,43 @@ export async function borrarIntencion(id: string) {
   if (error) throw error
 }
 
-export async function guardarPreferencias(memberId: string, prefs: { empty_day: boolean; couple: boolean }) {
+export async function publicarComentario(memberId: string, intentionId: string, body: string) {
+  const { error } = await supabase!.from('intention_comments').insert({
+    member_id: memberId,
+    intention_id: intentionId,
+    body,
+  })
+  if (error) throw error
+}
+
+export async function borrarComentario(id: string) {
+  const { error } = await supabase!.from('intention_comments').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function ponerReaccion(memberId: string, intentionId: string, emoji: string) {
+  const { error } = await supabase!.from('intention_reactions').insert({
+    member_id: memberId,
+    intention_id: intentionId,
+    emoji,
+  })
+  if (error) throw error
+}
+
+export async function quitarReaccion(memberId: string, intentionId: string, emoji: string) {
+  const { error } = await supabase!.from('intention_reactions').delete()
+    .eq('member_id', memberId)
+    .eq('intention_id', intentionId)
+    .eq('emoji', emoji)
+  if (error) throw error
+}
+
+export async function guardarPreferencias(memberId: string, prefs: { empty_day: boolean; couple: boolean; locale: 'es' | 'pt' | null }) {
   const { error } = await supabase!.from('notification_prefs').upsert({
     member_id: memberId,
     empty_day: prefs.empty_day,
     couple: prefs.couple,
+    locale: prefs.locale,
     updated_at: new Date().toISOString(),
   })
   if (error) throw error
