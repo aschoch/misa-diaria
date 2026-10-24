@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
@@ -139,7 +139,8 @@ function filters(url) {
 async function seedActivity(client) {
   await client.query(`select set_config('app.now', $1, false)`, [clock])
   await client.query(`
-    truncate public.attendance, public.commitments, public.intentions,
+    truncate public.intention_comments, public.intention_reactions,
+      public.attendance, public.commitments, public.intentions,
       public.celebrations, public.notification_prefs, public.notification_log,
       public.push_subscriptions
   `)
@@ -216,7 +217,10 @@ export async function prepareDatabase() {
     $$;
   `)
   await client.query(`select set_config('app.now', $1, false)`, [clock])
-  await client.query(readFileSync(join(root, 'supabase/migrations/20261023180000_init.sql'), 'utf8'))
+  const migrations = readdirSync(join(root, 'supabase/migrations')).filter((name) => name.endsWith('.sql')).sort()
+  for (const name of migrations) {
+    await client.query(readFileSync(join(root, 'supabase/migrations', name), 'utf8'))
+  }
   await client.query(readFileSync(join(root, 'supabase/seed.sql'), 'utf8'))
   await client.query(
     `insert into auth.users (id, email) values ($1, 'fuera@example.com') on conflict do nothing`,
@@ -314,16 +318,63 @@ async function handleRest(req, res, url) {
       return
     }
 
+    if (url.pathname === '/rest/v1/intention_comments' && req.method === 'POST') {
+      const body = await readBody(req)
+      await asRole(header, (client) => client.query(
+        'insert into public.intention_comments (member_id, intention_id, body) values ($1, $2, $3)',
+        [body.member_id, body.intention_id, body.body],
+      ))
+      empty(res, 201)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/intention_comments' && req.method === 'DELETE') {
+      const query = filters(url)
+      await asRole(header, (client) => client.query(
+        'delete from public.intention_comments where id = $1',
+        [query.id],
+      ))
+      empty(res, 204)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/intention_reactions' && req.method === 'POST') {
+      const body = await readBody(req)
+      await asRole(header, (client) => client.query(
+        'insert into public.intention_reactions (member_id, intention_id, emoji) values ($1, $2, $3)',
+        [body.member_id, body.intention_id, body.emoji],
+      ))
+      empty(res, 201)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/intention_reactions' && req.method === 'DELETE') {
+      const query = filters(url)
+      await asRole(header, (client) => client.query(
+        'delete from public.intention_reactions where member_id = $1 and intention_id = $2 and emoji = $3',
+        [query.member_id, query.intention_id, query.emoji],
+      ))
+      empty(res, 204)
+      return
+    }
+
     if (url.pathname === '/rest/v1/notification_prefs' && req.method === 'POST') {
       const body = await readBody(req)
       await asRole(header, (client) => client.query(`
-        insert into public.notification_prefs (member_id, empty_day, couple, updated_at)
-        values ($1, $2, $3, coalesce($4::timestamptz, now()))
+        insert into public.notification_prefs (member_id, empty_day, couple, locale, updated_at)
+        values ($1, $2, $3, $4, coalesce($5::timestamptz, now()))
         on conflict (member_id) do update
           set empty_day = excluded.empty_day,
               couple = excluded.couple,
+              locale = excluded.locale,
               updated_at = excluded.updated_at
-      `, [body.member_id, body.empty_day, body.couple, body.updated_at ?? null]))
+      `, [
+        body.member_id,
+        body.empty_day,
+        body.couple,
+        body.locale === 'pt' || body.locale === 'es' ? body.locale : null,
+        body.updated_at ?? null,
+      ]))
       empty(res, 201)
       return
     }

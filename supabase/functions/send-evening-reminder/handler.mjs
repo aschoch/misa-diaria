@@ -21,7 +21,7 @@ export async function handleReminder(request, deps) {
     if (!subs.length) continue
     let failures = 0
     for (const sub of subs) {
-      const result = await deps.send(sub, row.body)
+      const result = await deps.send(sub, row.body, row.title)
       if (result.status === 404 || result.status === 410) await deps.dropSubscription(sub.endpoint)
       if (result.status >= 400) failures += 1
       else sent += 1

@@ -95,14 +95,20 @@ test('si un dispositivo recibió el aviso, no se suelta la anotación', async ()
 })
 
 test('el registro no lleva correo, endpoint ni intención', async () => {
+  const seen = []
   const box = deps({
-    due: async () => [{ member_id: 'm1', body: 'Mañana tu pareja no se ha apuntado.' }],
+    due: async () => [{ member_id: 'm1', body: 'Mañana tu matrimonio no se ha apuntado.', title: 'Misa diaria' }],
+    send: async (item, body, title) => {
+      seen.push([item.endpoint, body, title])
+      return { status: 201 }
+    },
   })
   await handleReminder(post(), box)
   const logged = JSON.stringify(box.calls.find((call) => call[0] === 'log'))
   assert.equal(logged.includes('@'), false)
   assert.equal(logged.includes('push.example'), false)
   assert.equal(logged.includes('intenc'), false)
+  assert.deepEqual(seen, [[sub.endpoint, 'Mañana tu matrimonio no se ha apuntado.', 'Misa diaria']])
 })
 
 test('la función publicada no trae secretos', () => {

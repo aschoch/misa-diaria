@@ -10,12 +10,13 @@ if (ready) webpush.setVapidDetails(subject, publicKey, privateKey)
 const send = async (
   sub: { endpoint: string; p256dh: string; auth_secret: string },
   body: string,
+  title = 'Misa diaria',
 ) => {
   if (!ready) return { status: 500 }
   try {
     await webpush.sendNotification(
       { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_secret } },
-      JSON.stringify({ title: 'Misa diaria', body }),
+      JSON.stringify({ title, body }),
       { TTL: 60 * 60 * 4 },
     )
     return { status: 201 }

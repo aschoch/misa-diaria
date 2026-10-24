@@ -13,6 +13,7 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   use: {
     baseURL: 'http://127.0.0.1:5173',
+    locale: 'es-ES',
     trace: 'off',
   },
   webServer: {
