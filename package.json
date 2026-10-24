@@ -1,0 +1,11 @@
+{
+  "name": "misa-diaria",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:db": "node tests/db/rules.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.16.3"
+  }
+}
