@@ -44,11 +44,18 @@ export function hrefIntention(id: string) {
   return `${basePath()}/muro/${id}`
 }
 
-function shell(route: Route, body: string, offline = '') {
+// La marca del encabezado, de Hoy y de public/icono.svg. Se sustituye entera.
+export function brandMark() {
+  return `<svg class="brand-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M13.7 34.9V22.1a10.3 10.3 0 0 1 20.6 0v12.8" fill="none" stroke="var(--vela)" stroke-width="2.25" stroke-linecap="round"/><circle cx="24" cy="25.1" r="1.7" fill="var(--olivo)"/></svg>`
+}
+
+function shell(route: Route, body: string, offline = '', refreshing = false) {
   const copy = tx()
+  const pull = refreshing ? '<span class="pull" data-testid="refreshing"></span>' : ''
   return `
     <header class="top">
-      <div class="arch" aria-hidden="true"></div>
+      ${pull}
+      ${brandMark()}
       <p class="mark">${copy.brand}</p>
       <h1>${copy[titles[route]]}</h1>
     </header>
@@ -64,11 +71,10 @@ function nav(route: Route) {
     <a href="${href(key)}" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
       ${icon}<span>${label}</span>
     </a>`
-  return `<nav>${item('hoy', copy.hoy, door)}${item('calendario', copy.calendario, cal)}${item('muro', copy.muro, note)}${item('ajustes', copy.ajustes, gear)}</nav>`
+  return `<nav>${item('hoy', copy.hoy, brandMark())}${item('calendario', copy.calendario, cal)}${item('muro', copy.muro, note)}${item('ajustes', copy.ajustes, gear)}</nav>`
 }
 
 const sun = '<svg class="sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M13 3l-1.4 1.4M4.4 11.6 3 13"/></svg>'
-const door = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V9a6 6 0 0 1 12 0v11"/><circle cx="12" cy="14" r="1.2"/></svg>'
 const cal = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>'
 const note = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9l3 3v13H6z"/><path d="M15 4v4h4"/></svg>'
 const gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>'
@@ -130,6 +136,7 @@ export function renderHoy(state: Estado, locked: boolean) {
     <p class="group-total" data-testid="total"><b>${state.streaks.total}</b><span>${copy.totalLabel}</span></p>
     ${streaks(state)}
     ${monday(state)}
+    <h2 class="streak-title">${copy.recentDays}</h2>
     <ul class="past" data-testid="past">${past}</ul>
   `
 }
@@ -252,7 +259,7 @@ function detail(item: Intention, locked: boolean) {
       <p>${esc(comment.body)}</p>
     </li>`).join('')
   return `
-    <a class="back" href="${href('muro')}">${copy.backWall}</a>
+    <a class="back" data-act="back-wall" href="${href('muro')}"><span aria-hidden="true">←</span>${copy.backWall}</a>
     <article data-testid="thread">
       <header>
         <strong>${esc(item.display_name)}</strong>
@@ -324,7 +331,7 @@ export function renderAjustes(state: Estado, locale: Locale) {
     </section>`
 }
 
-export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '') {
+export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '', refreshing = false) {
   const body = route === 'calendario'
     ? renderCalendario(state, selected, locked)
     : route === 'muro'
@@ -333,14 +340,14 @@ export function renderApp(route: Route, state: Estado, selected: string, locked:
         ? renderAjustes(state, locale)
         : renderHoy(state, locked)
   const banner = offline ? `<p class="offline">${esc(offline)}</p>` : ''
-  return shell(route, body, banner)
+  return shell(route, body, banner, refreshing)
 }
 
 export function renderLogin(message: string, email: string, code: string) {
   const copy = tx()
   return `
     <header class="top">
-      <div class="arch" aria-hidden="true"></div>
+      ${brandMark()}
       <h1>${copy.brand}</h1>
     </header>
     <main class="login" data-testid="login">
@@ -357,14 +364,14 @@ export function renderLogin(message: string, email: string, code: string) {
 export function renderSetup() {
   const copy = tx()
   return `
-    <header class="top"><div class="arch" aria-hidden="true"></div><h1>${copy.brand}</h1></header>
+    <header class="top">${brandMark()}<h1>${copy.brand}</h1></header>
     <main class="login"><p>${copy.setup}</p></main>`
 }
 
 export function renderDenied() {
   const copy = tx()
   return `
-    <header class="top"><div class="arch" aria-hidden="true"></div><h1>${copy.brand}</h1></header>
+    <header class="top">${brandMark()}<h1>${copy.brand}</h1></header>
     <main class="login" data-testid="denied"><p>${copy.denied}</p>
       <button type="button" data-act="logout">${copy.logout}</button></main>`
 }
