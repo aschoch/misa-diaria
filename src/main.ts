@@ -19,6 +19,8 @@ const EMAIL_KEY = 'misa-email'
 let denied = false
 let demo = false
 let busy = false
+let signingIn = false
+let localeEpoch = 0
 let locale: Locale = savedLocale() ?? deviceLocale()
 let openIntention = ''
 
@@ -77,19 +79,24 @@ function paint() {
 
 async function refresh(celebrate = false) {
   const snapshot = sessionStorage.getItem('misa-estado')
+  const epoch = localeEpoch
   try {
     current = await estado()
     denied = false
     offline = ''
     locked = false
-    const saved = current.prefs.locale
-    if (saved === 'es' || saved === 'pt') locale = saved
-    else locale = savedLocale() ?? deviceLocale()
-    rememberLocale(locale)
-    if (!saved) {
-      current.prefs.locale = locale
-      await guardarPreferencias(current.me.id, current.prefs)
+    // Un refresh ya pedido no debe pintar el idioma anterior si acabas de cambiarlo.
+    if (epoch === localeEpoch) {
+      const saved = current.prefs.locale
+      if (saved === 'es' || saved === 'pt') locale = saved
+      else locale = savedLocale() ?? deviceLocale()
+      rememberLocale(locale)
+      if (!saved) {
+        current.prefs.locale = locale
+        await guardarPreferencias(current.me.id, current.prefs)
+      }
     }
+    if (epoch !== localeEpoch) current.prefs.locale = locale
     sessionStorage.setItem('misa-estado', JSON.stringify({ at: current.clock, data: current }))
     paint()
     if (celebrate) await celebratePending(current)
@@ -148,7 +155,8 @@ async function boot() {
       }
       return
     }
-    if (!current) window.setTimeout(() => void refresh(true), 0)
+    // verify ya refresca. Otro refresh deja la página usable con busy activo y el clic del idioma se pierde.
+    if (!current && !signingIn) window.setTimeout(() => void refresh(true), 0)
   })
   if (!import.meta.env.DEV && 'serviceWorker' in navigator) {
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined)
@@ -243,6 +251,24 @@ function toggleDemoAttendance(date: string) {
 }
 
 async function actOn(act: string, node: HTMLElement, body = '') {
+  if (act === 'locale') {
+    // El título cambia al pulsar, aunque el acceso siga ocupado.
+    if (!current || locked) return
+    const next = node.dataset.locale === 'pt' ? 'pt' : 'es'
+    localeEpoch += 1
+    locale = next
+    rememberLocale(next)
+    current.prefs.locale = next
+    paint()
+    if (demo) return
+    try {
+      await guardarPreferencias(current.me.id, { ...current.prefs, locale: next })
+    } catch {
+      offline = tx().saveFail
+      paint()
+    }
+    return
+  }
   if (busy && act !== 'select') return
   if (act === 'send-link') {
     const next = loginEmail()
@@ -278,6 +304,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       return
     }
     if (!supabase || token.length < 6) return
+    signingIn = true
     busy = true
     try {
       const { error } = await supabase.auth.verifyOtp({ email: next, token, type: 'email' })
@@ -290,6 +317,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       await refresh(true)
     } finally {
       busy = false
+      signingIn = false
     }
     return
   }
@@ -426,20 +454,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       else await ponerReaccion(current.me.id, intentionId, emoji)
       openIntention = openIntention || intentionId
       await refresh(false)
-      return
-    }
-    if (act === 'locale') {
-      const next = node.dataset.locale === 'pt' ? 'pt' : 'es'
-      locale = next
-      rememberLocale(next)
-      if (demo) {
-        current.prefs.locale = next
-        paint()
-        return
-      }
-      await guardarPreferencias(current.me.id, { ...current.prefs, locale: next })
-      current.prefs.locale = next
-      paint()
       return
     }
     if (act === 'pref') {
