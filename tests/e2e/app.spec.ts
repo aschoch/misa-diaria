@@ -443,6 +443,40 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) => {
+  const errors = watchConsole(page)
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await expect(page.locator('[data-act="select"][data-date="2026-10-23"]')).toContainText('vie')
+  const select = page.locator('.days li button[data-act="select"]').first()
+  await expect(select).toHaveCSS('appearance', 'none')
+  await expect(select).toHaveCSS('min-height', '54px')
+  const bar = await page.locator('.days li.risk').first().evaluate((node) => getComputedStyle(node, '::before').zIndex)
+  expect(bar).toBe('2')
+
+  await page.getByRole('link', { name: 'Hoy' }).click()
+  await page.getByTestId('streak-individual').click()
+  const week = page.locator('[data-testid="streak-calendar"] [data-current="true"] .weekdays span')
+  await expect(week).toHaveText(['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'])
+  const cells = page.locator('[data-testid="streak-calendar"] [data-current="true"] .month-grid > *')
+  await expect(cells.nth(2)).toHaveClass(/empty/)
+  await expect(cells.nth(3)).toHaveText('1')
+  await expect(page.locator('.streak-back')).toHaveCSS('z-index', '60')
+  await expect(page.locator('.streak-pop header b')).toHaveCSS('color', 'rgb(156, 63, 28)')
+  await page.getByRole('button', { name: 'Cerrar' }).click()
+
+  await page.getByRole('link', { name: 'Ajustes' }).click()
+  await expect(page.getByRole('heading', { name: 'Contraseña' })).toHaveCount(1)
+  await expect(page.locator('label[for="new-password"]')).toHaveCount(0)
+  await expect(page.getByLabel('Contraseña')).toHaveAttribute('id', 'new-password')
+
+  await page.getByRole('button', { name: 'Português' }).click()
+  await page.getByRole('link', { name: 'Hoje' }).click()
+  await page.getByTestId('streak-individual').click()
+  await expect(page.locator('[data-current="true"] .weekdays span')).toHaveText(['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'])
+  expect(errors).toEqual([])
+})
+
 test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   test.setTimeout(90_000)
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)

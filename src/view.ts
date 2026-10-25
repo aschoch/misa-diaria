@@ -231,7 +231,9 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
   const history = new Map((state.history ?? []).map((day) => [day.date, day]))
   const first = new Date(Date.UTC(year, month, 1)).getUTCDay()
   const total = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
-  const blanks = Array.from({ length: first }, () => '<span class="cell empty"></span>').join('')
+  const lead = (first + 6) % 7
+  const blanks = Array.from({ length: lead }, () => '<span class="cell empty"></span>').join('')
+  const weekdays = [...pack.cortos.slice(1), pack.cortos[0]]
   const cells = Array.from({ length: total }, (_, index) => {
     const day = index + 1
     const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -252,7 +254,7 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
   }).join('')
   return `<section class="month" data-month="${year}-${month}" ${current ? 'data-current="true"' : ''}>
     <h3>${pack.meses[month]} ${year}</h3>
-    <div class="weekdays">${pack.cortos.map((name) => `<span>${name}</span>`).join('')}</div>
+    <div class="weekdays">${weekdays.map((name) => `<span>${name}</span>`).join('')}</div>
     <div class="month-grid">${blanks}${cells}</div>
   </section>`
 }
@@ -522,10 +524,9 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
         ${lang('es', copy.spanish)}
         ${lang('pt', copy.portuguese)}
       </div>
-      <h2>${copy.password}</h2>
+      <h2 id="password-title">${copy.password}</h2>
       <form class="stack" data-act="save-password">
-        <label for="new-password">${copy.password}</label>
-        <input id="new-password" name="password" type="password" minlength="6" autocomplete="new-password" />
+        <input id="new-password" name="password" type="password" minlength="6" autocomplete="new-password" aria-labelledby="password-title" />
         <button type="submit">${copy.savePassword}</button>
       </form>
       ${ui.passwordSaved ? `<p class="hint" data-testid="password-saved">${copy.passwordSaved}</p>` : ''}
