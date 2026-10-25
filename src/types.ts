@@ -27,6 +27,14 @@ export type PastDay = {
   couples_went: number
 }
 
+export type HistoryDay = {
+  date: string
+  went: number
+  couples_went: number
+  mine_attendance: boolean
+  couple_attendance: boolean
+}
+
 export type Comment = {
   id: string
   body: string
@@ -58,6 +66,7 @@ export type Estado = {
   risk: 'empty' | null
   calendar: Day[]
   past: PastDay[]
+  history: HistoryDay[]
   intentions: Intention[]
   prefs: { empty_day: boolean; couple: boolean; locale: 'es' | 'pt' | null }
   pending: Pending[]

@@ -21,7 +21,7 @@ function json(res, status, body) {
   res.writeHead(status, {
     'access-control-allow-origin': '*',
     'access-control-allow-headers': '*',
-    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
     'content-type': 'application/json',
     'content-length': Buffer.byteLength(payload),
   })
@@ -32,7 +32,7 @@ function empty(res, status) {
   res.writeHead(status, {
     'access-control-allow-origin': '*',
     'access-control-allow-headers': '*',
-    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
   })
   res.end()
 }
@@ -171,7 +171,7 @@ async function seedActivity(client) {
     truncate public.intention_comments, public.intention_reactions,
       public.attendance, public.commitments, public.intentions,
       public.celebrations, public.notification_prefs, public.notification_log,
-      public.push_subscriptions
+      public.push_subscriptions, public.feedback
   `)
   await client.query(`
     insert into public.attendance (member_id, mass_date)
@@ -346,6 +346,17 @@ async function handleRest(req, res, url) {
       return
     }
 
+    if (url.pathname === '/rest/v1/intentions' && req.method === 'PATCH') {
+      const body = await readBody(req)
+      const query = filters(url)
+      await asRole(header, (client) => client.query(
+        'update public.intentions set body = $2 where id = $1',
+        [query.id, body.body],
+      ))
+      empty(res, 204)
+      return
+    }
+
     if (url.pathname === '/rest/v1/intentions' && req.method === 'DELETE') {
       const query = filters(url)
       await asRole(header, (client) => client.query(
@@ -363,6 +374,17 @@ async function handleRest(req, res, url) {
         [body.member_id, body.intention_id, body.body],
       ))
       empty(res, 201)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/intention_comments' && req.method === 'PATCH') {
+      const body = await readBody(req)
+      const query = filters(url)
+      await asRole(header, (client) => client.query(
+        'update public.intention_comments set body = $2 where id = $1',
+        [query.id, body.body],
+      ))
+      empty(res, 204)
       return
     }
 
@@ -437,6 +459,16 @@ async function handleRest(req, res, url) {
       return
     }
 
+    if (url.pathname === '/rest/v1/feedback' && req.method === 'POST') {
+      const body = await readBody(req)
+      await asRole(header, (client) => client.query(
+        'insert into public.feedback (member_id, body) values ($1, $2)',
+        [body.member_id, body.body],
+      ))
+      empty(res, 201)
+      return
+    }
+
     if (url.pathname === '/rest/v1/push_subscriptions' && req.method === 'POST') {
       const body = await readBody(req)
       await asRole(header, (client) => client.query(`
@@ -499,6 +531,37 @@ async function handleAuth(req, res, url) {
     }
     inbox.delete(email)
     json(res, 200, session(user))
+    return
+  }
+
+  if (url.pathname === '/auth/v1/token' && req.method === 'POST') {
+    const body = await readBody(req)
+    const email = String(body?.email ?? '').trim().toLowerCase()
+    const password = String(body?.password ?? '')
+    const user = await admin(async (client) => (await client.query(
+      'select id::text, email from auth.users where email = $1',
+      [email],
+    )).rows[0])
+    if (!user || password.length < 6) {
+      json(res, 400, { msg: 'Invalid login credentials', error_code: 'invalid_credentials' })
+      return
+    }
+    json(res, 200, session(user))
+    return
+  }
+
+  if (url.pathname === '/auth/v1/user' && req.method === 'PUT') {
+    const id = userFromAuth(req.headers.authorization)
+    const body = await readBody(req)
+    if (!id || String(body?.password ?? '').length < 6) {
+      json(res, 422, { msg: 'Password should be at least 6 characters', error_code: 'weak_password' })
+      return
+    }
+    const user = await admin(async (client) => (await client.query(
+      'select id::text, email from auth.users where id = $1',
+      [id],
+    )).rows[0])
+    json(res, 200, user ? session(user).user : {})
     return
   }
 

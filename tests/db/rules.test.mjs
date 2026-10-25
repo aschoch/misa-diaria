@@ -178,6 +178,16 @@ async function main() {
       const pending = await pendingLine(P(1), '2026-10-25')
       assert(pending.some((item) => item.key === 'celeb:hito:tuya:7' && item.line === 'Tú · 7 días seguidos'), 'hito 7')
       assert(!pending.some((item) => item.key === 'celeb:hito:tuya:8'), 'el día 8 no es hito')
+      assert(!pending.some((item) => String(item.key).includes('hito:diez')), 'siete días de una persona no celebran el diez')
+    })
+
+    await at('2026-10-25T10:00:00Z', async () => {
+      for (let day = 19; day <= 25; day += 1) {
+        for (let n = 1; n <= 10; n += 1) await attend(P(n), `2026-10-${String(day).padStart(2, '0')}`)
+      }
+      const pending = await pendingLine(P(1), '2026-10-25')
+      assert(pending.some((item) => item.key === 'celeb:diez:2026-10-25'), 'el día de diez sigue')
+      assert(!pending.some((item) => String(item.key).includes('hito:diez')), 'la racha de diez no se celebra')
     })
 
     assert((await one(`select public.dia_en_riesgo('2026-10-18') as r`)).r === false, 'el domingo no está en riesgo')
@@ -275,8 +285,13 @@ async function main() {
       `insert into public.attendance (member_id, mass_date) values ($1, '2026-10-23')`,
       [P(1)],
     ))
-    await expectFail(() => q(`select public.estado()`))
-    await expectFail(() => q(`select public.racha_seis('2026-10-23')`))
+      await expectFail(() => q(`select public.estado()`))
+      await expectFail(() => q(`select * from public.feedback`))
+      await expectFail(() => q(
+        `insert into public.feedback (member_id, body) values ($1, 'No.')`,
+        [P(1)],
+      ))
+      await expectFail(() => q(`select public.racha_seis('2026-10-23')`))
     await expectFail(() => q(`select public.marcas_dia('2026-10-23')`))
     await q('rollback to savepoint anon')
 
@@ -299,6 +314,12 @@ async function main() {
       assert(state.e.me.display_name === 'Persona 1', 'estado devuelve a la persona')
       assert(!JSON.stringify(state.e).includes('@example.com'), 'el estado no lleva correos')
       assert(state.e.past.length === 6, 'seis días')
+      assert(Array.isArray(state.e.history), 'el historial es una lista')
+      const dia = state.e.history.find((item) => item.date === '2026-10-23')
+      assert(dia && dia.mine_attendance === true, 'el historial marca mi misa')
+      assert(typeof dia.went === 'number' && typeof dia.couples_went === 'number', 'el historial cuenta')
+      assert(typeof dia.couple_attendance === 'boolean', 'el historial dice si fue el matrimonio')
+      assert(!JSON.stringify(dia).includes('Persona'), 'el historial no nombra a nadie')
     })
 
     await asUser(P(1), async () => {
@@ -340,6 +361,32 @@ async function main() {
         `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '   ')`,
         [intention.id, P(1)],
       ))
+    })
+
+    const ajena = await one(
+      `insert into public.intentions (member_id, body) values ($1, 'Ajena.') returning id`,
+      [P(4)],
+    )
+    await asUser(P(1), async () => {
+      const mine = await one(
+        `insert into public.intentions (member_id, body) values ($1, 'La mía.') returning id`,
+        [P(1)],
+      )
+      const comment = await one(
+        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, 'Nota.') returning id`,
+        [mine.id, P(1)],
+      )
+      await q(`update public.intentions set body = 'Revisada.' where id = $1`, [mine.id])
+      await q(`update public.intention_comments set body = 'Nota nueva.' where id = $1`, [comment.id])
+      assert((await one(`select body from public.intentions where id = $1`, [mine.id])).body === 'Revisada.', 'edita su intención')
+      assert((await one(`select body from public.intention_comments where id = $1`, [comment.id])).body === 'Nota nueva.', 'edita su comentario')
+      await q(`update public.intentions set body = 'Robada.' where id = $1`, [ajena.id])
+      assert((await one(`select body from public.intentions where id = $1`, [ajena.id])).body === 'Ajena.', 'no edita la intención de otro')
+      await q(`insert into public.feedback (member_id, body) values ($1, 'Una nota.')`, [P(1)])
+      await expectFail(() => q(`insert into public.feedback (member_id, body) values ($1, 'Ajena.')`, [P(2)]))
+      await expectFail(() => q(`insert into public.feedback (member_id, body) values ($1, '   ')`, [P(1)]))
+      await q(`select set_config('request.jwt.claim.sub', $1, true)`, [P(2)])
+      assert((await one(`select count(*)::int as n from public.feedback`)).n === 1, 'cualquier miembro lee el feedback')
     })
 
     const monday = await one(`select public.resumen_semana('2026-10-26') as r`)

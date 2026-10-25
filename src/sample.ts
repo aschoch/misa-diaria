@@ -1,4 +1,4 @@
-import type { Day, Estado } from './types'
+import type { Day, Estado, HistoryDay } from './types'
 
 const today = '2026-10-23'
 
@@ -49,6 +49,12 @@ export function sampleEstado(): Estado {
       { date: '2026-10-18', sunday: true, mine_attendance: false, went: 0, couples_went: 0 },
       { date: '2026-10-17', sunday: false, mine_attendance: false, went: 0, couples_went: 0 },
     ],
+    history: [
+      { date: '2026-10-20', went: 12, couples_went: 6, mine_attendance: false, couple_attendance: true },
+      { date: '2026-10-21', went: 6, couples_went: 4, mine_attendance: false, couple_attendance: false },
+      { date: '2026-10-22', went: 11, couples_went: 6, mine_attendance: true, couple_attendance: true },
+      { date: '2026-10-23', went: 9, couples_went: 5, mine_attendance: false, couple_attendance: true },
+    ] satisfies HistoryDay[],
     intentions: [
       { id: 'i1', body: 'Por la familia de Persona 3.', display_name: 'Persona 2', mine: false, comments: [], reactions: [] },
       { id: 'i2', body: 'En acción de gracias.', display_name: 'Persona 1', mine: true, comments: [], reactions: [] },

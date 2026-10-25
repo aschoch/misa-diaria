@@ -2,11 +2,11 @@ import '@fontsource-variable/fraunces/wght.css'
 import '@fontsource/atkinson-hyperlegible/400.css'
 import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
-import { borrarComentario, borrarIntencion, configured, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush } from './api'
+import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route } from './view'
+import { emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -26,7 +26,16 @@ let openIntention = ''
 let emojiFor = ''
 let depth = 0
 let pulling = false
-let gesture: { x: number; y: number; scroll: number; sheet: boolean; id: number } | null = null
+let gesture: { x: number; y: number; scroll: number; sheet: boolean; id: number; row: HTMLElement | null } | null = null
+let streakMode: StreakMode = ''
+let monthsBefore = 1
+let monthsAfter = 1
+let streakAlign = false
+let historyDate = ''
+let editing: { kind: 'intention' | 'comment'; id: string } | null = null
+let emojiQuery = ''
+let passwordSaved = false
+let feedbackSaved = false
 
 function rememberedEmail() {
   try {
@@ -66,6 +75,10 @@ function paint() {
   setLocale(locale)
   document.documentElement.lang = locale === 'pt' ? 'pt-PT' : 'es'
   const route = routeFromPath(location.pathname)
+  if (route !== 'hoy') {
+    streakMode = ''
+    historyDate = ''
+  }
   if (!configured && !demo) {
     app.innerHTML = renderSetup()
     return
@@ -79,8 +92,26 @@ function paint() {
   if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
   const intention = intentionFromPath(location.pathname) || openIntention
   if (emojiFor && !current.intentions.some((item) => item.id === emojiFor)) emojiFor = ''
-  app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling)
+  app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling, {
+    streak: streakMode,
+    monthsBefore,
+    monthsAfter,
+    historyDate,
+    editing,
+    emojiQuery,
+    passwordSaved,
+    feedbackSaved,
+  })
   document.title = tx().brand
+  if (streakAlign) alignStreak()
+}
+
+function alignStreak() {
+  const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+  const currentMonth = scroller?.querySelector<HTMLElement>('[data-current="true"]')
+  if (!scroller || !currentMonth) return
+  scroller.scrollTop = currentMonth.offsetTop
+  streakAlign = false
 }
 
 async function refresh(celebrate = false) {
@@ -210,13 +241,45 @@ app.addEventListener('pointerdown', (event) => {
   const button = target.closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
   if (target.closest('input, textarea, select, [contenteditable="true"]')) return
+  const row = target.closest('.days li.swipeable')
   gesture = {
     x: event.clientX,
     y: event.clientY,
     scroll: window.scrollY,
     sheet: Boolean(target.closest('.sheet')),
     id: event.pointerId,
+    row: row instanceof HTMLElement ? row : null,
   }
+})
+
+app.addEventListener('pointermove', (event) => {
+  if (!gesture || gesture.id !== event.pointerId || !gesture.row || gesture.x <= 36) return
+  const dx = event.clientX - gesture.x
+  const dy = event.clientY - gesture.y
+  const row = gesture.row
+  const face = row.querySelector<HTMLElement>('.swipe-face')
+  if (!face) return
+  if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+    face.style.transform = ''
+    row.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
+    gesture.row = null
+    return
+  }
+  if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy) * 1.5) return
+  const committed = row.dataset.committed === 'true'
+  row.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
+  if (dx > 0) {
+    row.classList.add('swiping-right')
+    face.style.transform = `translateX(${Math.min(dx, 148)}px)`
+    return
+  }
+  if (committed) {
+    row.classList.add('swiping-left')
+    face.style.transform = `translateX(${Math.max(dx, -168)}px)`
+    return
+  }
+  row.classList.add('swiping-muted')
+  face.style.transform = `translateX(${dx * 0.25}px)`
 })
 
 app.addEventListener('pointerup', (event) => {
@@ -225,6 +288,19 @@ app.addEventListener('pointerup', (event) => {
   gesture = null
   const dx = event.clientX - start.x
   const dy = event.clientY - start.y
+  if (start.row && start.x > 36) {
+    const face = start.row.querySelector<HTMLElement>('.swipe-face')
+    if (face) face.style.transform = ''
+    start.row.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
+    const across = Math.abs(dx) > Math.abs(dy) * 1.5
+    if (across) {
+      const date = start.row.dataset.date ?? ''
+      const committed = start.row.dataset.committed === 'true'
+      if (dx >= 64 && !committed) void setCommitment(date, true)
+      else if (dx <= -64 && committed) void setCommitment(date, false)
+      return
+    }
+  }
   const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
   const downDetail = dy > 70 && dy > Math.abs(dx) * 1.5
   const downRefresh = dy > 80 && dy > Math.abs(dx) * 1.5
@@ -253,12 +329,53 @@ app.addEventListener('pointerup', (event) => {
 })
 
 app.addEventListener('pointercancel', (event) => {
-  if (gesture?.id === event.pointerId) gesture = null
+  if (gesture?.id !== event.pointerId) return
+  const row = gesture.row
+  gesture = null
+  const face = row?.querySelector<HTMLElement>('.swipe-face')
+  if (face) face.style.transform = ''
+  row?.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
 })
+
+app.addEventListener('scroll', (event) => {
+  const scroller = event.target
+  if (!(scroller instanceof HTMLElement) || scroller.dataset.testid !== 'month-scroll' || !streakMode) return
+  const nearTop = scroller.scrollTop < 48
+  const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48
+  if (nearTop && monthsBefore < 36) {
+    const before = scroller.scrollHeight
+    const top = scroller.scrollTop
+    monthsBefore += 1
+    paint()
+    const next = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+    if (next) next.scrollTop = top + (next.scrollHeight - before)
+    return
+  }
+  if (nearBottom && monthsAfter < 24) {
+    const top = scroller.scrollTop
+    monthsAfter += 1
+    paint()
+    const next = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+    if (next) next.scrollTop = top
+  }
+}, true)
 
 app.addEventListener('input', (event) => {
   const node = event.target
-  if (!(node instanceof HTMLInputElement) || node.dataset.act !== 'emoji-input') return
+  if (!(node instanceof HTMLInputElement)) return
+  if (node.dataset.act === 'emoji-search') {
+    const emoji = isEmoji(node.value)
+    if (emoji) {
+      emojiQuery = ''
+      void actOn('react', node, emoji)
+      return
+    }
+    emojiQuery = node.value
+    const grid = document.querySelector('.sheet-grid')
+    if (grid) grid.innerHTML = emojiGrid(node.dataset.id ?? '', emojiQuery)
+    return
+  }
+  if (node.dataset.act !== 'emoji-input') return
   const emoji = isEmoji(node.value)
   if (!emoji) return
   node.value = ''
@@ -269,6 +386,11 @@ app.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return
   const target = event.target
   if (!(target instanceof HTMLInputElement)) return
+  if (target.id === 'password') {
+    event.preventDefault()
+    void actOn('login-password', target)
+    return
+  }
   if (target.id !== 'email' && target.id !== 'code') return
   event.preventDefault()
   const code = document.querySelector<HTMLInputElement>('#code')?.value.trim() ?? ''
@@ -306,7 +428,12 @@ app.addEventListener('submit', (event) => {
   if (!(form instanceof HTMLFormElement)) return
   event.preventDefault()
   const body = (form.elements.namedItem('body') as HTMLTextAreaElement | null)?.value ?? ''
-  void actOn(form.dataset.act === 'comment' ? 'comment' : 'publish', form, body)
+  const act = form.dataset.act ?? ''
+  if (act === 'comment' || act === 'save-intention' || act === 'save-comment' || act === 'feedback' || act === 'save-password') {
+    void actOn(act, form, body)
+    return
+  }
+  void actOn('publish', form, body)
 })
 
 document.querySelector('#celeb')?.addEventListener('click', (event) => {
@@ -347,6 +474,29 @@ function isEmoji(value: string) {
   return parts[0]
 }
 
+async function setCommitment(date: string, on: boolean) {
+  if (!current || locked || busy || !date) return
+  const day = current.calendar.find((item) => item.date === date)
+  if (!day || day.mine_commitment === on) return
+  busy = true
+  try {
+    if (demo) {
+      day.mine_commitment = on
+      selected = date
+      paint()
+      return
+    }
+    await marcarCompromiso(current.me.id, date, on)
+    selected = date
+    await refresh(false)
+  } catch {
+    offline = tx().saveFail
+    paint()
+  } finally {
+    busy = false
+  }
+}
+
 function toggleDemoAttendance(date: string) {
   if (!current) return
   if (date === current.today) {
@@ -382,12 +532,46 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'emoji-open') {
     emojiFor = node.dataset.id ?? ''
+    emojiQuery = ''
     paint()
-    document.querySelector<HTMLInputElement>('#emoji-field')?.focus()
+    document.querySelector<HTMLInputElement>('#emoji-search')?.focus()
     return
   }
   if (act === 'emoji-close') {
     emojiFor = ''
+    emojiQuery = ''
+    paint()
+    return
+  }
+  if (act === 'streak') {
+    const key = node.dataset.key
+    streakMode = key === 'couple' || key === 'group' || key === 'six' || key === 'all' || key === 'individual' ? key : ''
+    monthsBefore = 1
+    monthsAfter = 1
+    historyDate = ''
+    streakAlign = Boolean(streakMode)
+    paint()
+    return
+  }
+  if (act === 'streak-close') {
+    streakMode = ''
+    historyDate = ''
+    paint()
+    return
+  }
+  if (act === 'history-day') {
+    historyDate = node.dataset.date ?? ''
+    paint()
+    return
+  }
+  if (act === 'cancel-edit') {
+    editing = null
+    paint()
+    return
+  }
+  if (act === 'edit') {
+    const kind = node.dataset.kind === 'comment' ? 'comment' : 'intention'
+    editing = { kind, id: node.dataset.id ?? '' }
     paint()
     return
   }
@@ -414,6 +598,32 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       paint()
     } finally {
       busy = false
+    }
+    return
+  }
+  if (act === 'login-password') {
+    const next = loginEmail()
+    const password = document.querySelector<HTMLInputElement>('#password')?.value ?? ''
+    if (!next) {
+      loginMessage = tx().needEmail
+      paint()
+      return
+    }
+    if (!supabase || password.length < 6) return
+    signingIn = true
+    busy = true
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: next, password })
+      if (error) {
+        loginMessage = tx().badCode
+        paint()
+        return
+      }
+      pendingCode = ''
+      await refresh(true)
+    } finally {
+      busy = false
+      signingIn = false
     }
     return
   }
@@ -496,6 +706,57 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       }
       await marcarCompromiso(current.me.id, date, !day?.mine_commitment)
       selected = date
+      await refresh(false)
+      return
+    }
+    if (act === 'save-password') {
+      const password = node.querySelector<HTMLInputElement>('#new-password')?.value ?? ''
+      if (password.length < 6) return
+      if (demo || !supabase) {
+        passwordSaved = true
+        paint()
+        return
+      }
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+      passwordSaved = true
+      paint()
+      return
+    }
+    if (act === 'feedback') {
+      const text = plain(body, 1000)
+      if (!text) return
+      if (demo) {
+        feedbackSaved = true
+        paint()
+        return
+      }
+      await enviarFeedback(current.me.id, text)
+      feedbackSaved = true
+      paint()
+      return
+    }
+    if (act === 'save-intention' || act === 'save-comment') {
+      const text = plain(body, act === 'save-intention' ? 280 : 200)
+      const id = node.dataset.id ?? ''
+      if (!text || !id) return
+      if (demo) {
+        if (act === 'save-intention') {
+          const item = current.intentions.find((intention) => intention.id === id)
+          if (item) item.body = text
+        } else {
+          for (const item of current.intentions) {
+            const comment = item.comments.find((entry) => entry.id === id)
+            if (comment) comment.body = text
+          }
+        }
+        editing = null
+        paint()
+        return
+      }
+      if (act === 'save-intention') await editarIntencion(id, text)
+      else await editarComentario(id, text)
+      editing = null
       await refresh(false)
       return
     }
