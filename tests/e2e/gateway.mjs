@@ -154,7 +154,7 @@ async function wallCopy(client, portuguese) {
     [P(1), first],
   )
   await client.query(
-    `insert into public.intentions (member_id, body, created_at) values ($1, $2, now() - interval '1 day')`,
+    `insert into public.intentions (member_id, body, created_at) values ($1, $2, ((now() at time zone 'Europe/Madrid') - interval '1 day') at time zone 'Europe/Madrid')`,
     [P(4), second],
   )
   const id = inserted.rows[0].id
@@ -199,7 +199,7 @@ async function seedActivity(client) {
 
     insert into public.intentions (member_id, body, created_at) values
       (('00000000-0000-4000-8000-' || lpad(to_hex(1), 12, '0'))::uuid, 'Por quienes no pueden salir de casa.', now()),
-      (('00000000-0000-4000-8000-' || lpad(to_hex(4), 12, '0'))::uuid, 'Por la paz en casa.', now() - interval '1 day');
+      (('00000000-0000-4000-8000-' || lpad(to_hex(4), 12, '0'))::uuid, 'Por la paz en casa.', ((now() at time zone 'Europe/Madrid') - interval '1 day') at time zone 'Europe/Madrid');
 
     insert into public.commitments (member_id, mass_date)
     select ('00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
