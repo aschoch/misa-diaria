@@ -1,6 +1,6 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
-import { esc, fecha, formatTimestamp } from './format'
+import { esc, fecha, formatTimestamp, fullDate } from './format'
 import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
 export type StreakMode = '' | 'individual' | 'couple' | 'group' | 'six' | 'all'
@@ -15,6 +15,7 @@ export type UiState = {
   emojiQuery?: string
   passwordSaved?: boolean
   passwordError?: string
+  nameSaved?: boolean
   feedbackSaved?: boolean
   calendarDays?: number
 }
@@ -96,11 +97,18 @@ function shell(route: Route, body: string, offline = '', refreshing = false) {
 
 function nav(route: Route) {
   const copy = tx()
-  const item = (key: Route, navKey: string, label: string, icon: string) => `
-    <a href="${href(key)}" data-nav="${navKey}" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
+  const tabs = [
+    ['hoy', 'hoy', copy.hoy, brandMark()],
+    ['calendario', 'calendario', copy.calendario, cal],
+    ['muro', 'intenciones', copy.muro, note],
+    ['ajustes', 'ajustes', copy.ajustes, gear],
+  ] as const
+  const index = Math.max(0, tabs.findIndex(([key]) => key === route))
+  const links = tabs.map(([key, navKey, label, icon]) => `
+    <a href="${href(key)}" data-nav="${navKey}" draggable="false" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
       ${icon}<span>${label}</span>
-    </a>`
-  return `<nav class="tabs">${item('hoy', 'hoy', copy.hoy, brandMark())}${item('calendario', 'calendario', copy.calendario, cal)}${item('muro', 'intenciones', copy.muro, note)}${item('ajustes', 'ajustes', copy.ajustes, gear)}</nav>`
+    </a>`).join('')
+  return `<nav class="tabs" data-tab="${index}" style="--tab: ${index}"><span class="tab-glass-pill" aria-hidden="true"><span class="tab-glass-lens"></span></span>${links}</nav>`
 }
 
 const sun = '<svg class="sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M13 3l-1.4 1.4M4.4 11.6 3 13"/></svg>'
@@ -113,33 +121,31 @@ function riskLine(risk: Estado['risk']) {
   return `<p class="risk" data-testid="risk">${tx().riskEmpty}</p>`
 }
 
-function streaks(state: Estado) {
-  const copy = tx()
-  const rows = [
-    ['group', copy.group, copy.groupAsk, state.streaks.group],
-    ['couple', copy.couple, copy.coupleAsk, state.streaks.couple],
-    ['six', copy.six, copy.sixAsk, state.streaks.six],
-    ['individual', state.me.display_name, copy.yoursAsk, state.streaks.individual],
-  ] as const
-  return `<h2 class="streak-title">${copy.streaks}</h2><ol class="streaks">${rows.map(([key, title, ask, value]) => `
-    <li data-testid="streak-${key}">
-      <button type="button" class="streak-open" data-act="streak" data-key="${key}">
-        <span><strong>${esc(title)}</strong><small>${ask}</small></span>
-        <b>${value}</b>
-      </button>
-    </li>`).join('')}</ol>`
+function piece(className: string, body: string) {
+  return `<span class="piece ${className}"><svg viewBox="80 120 864 820" aria-hidden="true">${body}</svg></span>`
 }
 
-function monday(state: Estado) {
-  if (!state.monday) return ''
-  const line = tx().week(state.monday.people, state.monday.couples, state.monday.empty_days)
-  return `<p class="monday" data-testid="monday">${esc(line)}</p>`
+function venceMark() {
+  return `<span class="vence" aria-hidden="true">${[
+    piece('leaf', '<path d="M 118 220 C 230 165, 395 190, 428 310 C 455 415, 390 595, 430 740 C 310 785, 165 735, 125 605 C 92 495, 85 310, 118 220 Z" fill="#1B3E70"/>'),
+    piece('clay', '<path d="M 480 455 C 640 430, 845 470, 892 615 C 925 725, 845 875, 675 905 C 510 925, 360 885, 345 775 C 332 675, 395 470, 480 455 Z" fill="#C64B27"/>'),
+    piece('halo', '<path d="M 538 142 C 675 132, 795 225, 798 355 C 802 482, 685 572, 545 568 C 402 564, 312 465, 318 338 C 324 218, 415 150, 538 142 Z" fill="#E8A229"/>'),
+    piece('host', '<path d="M 516 208 C 608 204, 678 272, 676 360 C 674 448, 602 512, 512 510 C 422 508, 354 440, 358 352 C 362 268, 430 212, 516 208 Z" fill="#FAF4E8"/>'),
+    piece('star-a', '<path d="M 245 360 C 265 320, 265 280, 245 240 C 285 260, 325 260, 365 240 C 345 280, 345 320, 365 360 C 325 340, 285 340, 245 360 Z" fill="#FAF4E8" transform="translate(-45, 25) scale(0.82)"/>'),
+    piece('star-b', '<path d="M 760 280 C 775 245, 775 210, 760 175 C 795 190, 830 190, 865 175 C 850 210, 850 245, 865 280 C 830 265, 795 265, 760 280 Z" fill="#1B3E70"/>'),
+    piece('ink', `<path d="M 503 265 C 512 262, 524 265, 523 278 C 521 318, 520 392, 522 442 C 522 454, 502 455, 501 440 C 500 390, 501 318, 503 265 Z" fill="#17120E"/>
+      <path d="M 426 346 C 472 342, 554 340, 600 345 C 612 347, 611 367, 596 367 C 550 364, 474 365, 426 368 C 414 368, 414 348, 426 346 Z" fill="#17120E"/>
+      <path d="M 278 492 C 296 485, 315 496, 320 515 C 346 624, 422 686, 514 685 C 606 684, 682 618, 704 506 C 708 486, 734 488, 732 512 C 708 646, 618 718, 514 720 C 408 722, 314 652, 278 514 C 274 500, 272 495, 278 492 Z" fill="#17120E"/>
+      <path d="M 274 495 C 392 508, 618 506, 732 492 C 745 490, 748 512, 730 515 C 614 530, 392 532, 276 518 C 260 515, 262 493, 274 495 Z" fill="#17120E"/>
+      <path d="M 498 705 C 506 705, 526 705, 526 715 C 525 758, 526 815, 528 855 C 528 868, 498 868, 498 855 C 499 815, 499 758, 498 705 Z" fill="#17120E"/>
+      <path d="M 446 768 C 485 758, 542 758, 578 768 C 592 772, 588 795, 572 794 C 538 786, 488 786, 448 794 C 432 796, 432 772, 446 768 Z" fill="#17120E"/>
+      <path d="M 338 868 C 425 842, 602 842, 688 868 C 706 874, 700 900, 678 896 C 594 874, 432 874, 346 896 C 325 900, 320 874, 338 868 Z" fill="#17120E"/>`),
+  ].join('')}</span>`
 }
 
-function badges(day: { went: number; couples_went: number }) {
+function badges(day: { went: number }) {
   const copy = tx()
   const items = [
-    day.couples_went >= 6 ? `<i class="badge couples">${copy.badgeCouples}</i>` : '',
     day.went >= 10 ? `<i class="badge ten">${copy.badgeTen}</i>` : '',
     day.went >= 12 ? `<i class="badge all">${copy.badgeAll}</i>` : '',
   ].filter(Boolean)
@@ -153,20 +159,18 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
   const gone = today?.mine_attendance
   const past = state.past.map((day) => {
     const f = fecha(day.date)
-    const count = `${copy.of12(day.went)} · ${copy.of6(day.couples_went)}`
     return `<li class="${day.sunday ? 'sunday' : ''}" data-date="${day.date}">
-      <span class="past-main"><span>${f.corto} ${f.d}</span><small class="past-count">${count}</small>${badges(day)}</span>
+      <span class="past-main"><span>${f.corto} ${f.d}</span><small class="past-count">${copy.of12(day.went)}</small>${badges(day)}</span>
       <button type="button" class="check ${day.mine_attendance ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${day.mine_attendance}" aria-label="${f.largo} ${f.d}" ${locked ? 'disabled' : ''}></button>
     </li>`
   }).join('')
   return `
     ${riskLine(state.risk)}
-    <button type="button" class="go ${gone ? 'on' : ''}" data-testid="go" data-act="attend" data-date="${state.today}" aria-pressed="${gone ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>
-      ${gone ? copy.gone : copy.go}
+    <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
+    <button type="button" class="go hero-a ${gone ? 'on' : ''}" data-testid="go" data-act="attend" data-date="${state.today}" aria-pressed="${gone ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>
+      ${venceMark()}
+      <span class="go-label">${gone ? copy.gone : copy.go}</span>
     </button>
-    <p class="group-total" data-testid="total"><b>${state.streaks.total}</b><span>${copy.totalLabel}</span></p>
-    ${streaks(state)}
-    ${monday(state)}
     <section class="past" data-testid="past">
       <h2 class="streak-title">${copy.recentDays}</h2>
       <ol class="past-list">${past}</ol>
@@ -244,7 +248,6 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
     const classes = ['cell', hit ? 'hit' : '', run.has(iso) ? 'run' : '', iso === state.today ? 'today' : ''].filter(Boolean).join(' ')
     const dots = row ? [
       row.mine_attendance ? '<i class="dot mine"></i>' : '',
-      row.couples_went >= 6 ? '<i class="dot couples"></i>' : '',
       row.went >= 10 ? '<i class="dot ten"></i>' : '',
       row.went >= 12 ? '<i class="dot all"></i>' : '',
     ].join('') : ''
@@ -268,7 +271,6 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
   const past = state.past.find((day) => day.date === date)
   const today = state.calendar.find((day) => day.date === date)
   const went = row?.went ?? past?.went ?? today?.went ?? 0
-  const couples = row?.couples_went ?? past?.couples_went ?? today?.couples_went ?? 0
   const mine = row?.mine_attendance ?? past?.mine_attendance ?? today?.mine_attendance ?? false
   const f = fecha(date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
@@ -278,8 +280,8 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
   return `<aside class="history-detail" data-testid="history-detail">
     <h3>${heading}</h3>
     <p>${mine ? copy.wentLabel : copy.absentLabel}</p>
-    <p>${copy.of12(went)} · ${copy.of6(couples)}</p>
-    ${badges({ went, couples_went: couples })}
+    <p>${copy.of12(went)}</p>
+    ${badges({ went })}
     ${toggle}
   </aside>`
 }
@@ -299,7 +301,6 @@ function streakPopup(state: Estado, mode: StreakMode, before: number, after: num
   }
   const legend = mode === 'all' ? `<ul class="legend" data-testid="legend">
     <li><i class="dot mine"></i>${copy.legendMine}</li>
-    <li><i class="dot couples"></i>${copy.legendCouples}</li>
     <li><i class="dot ten"></i>${copy.legendTen}</li>
     <li><i class="dot all"></i>${copy.legendAll}</li>
   </ul>` : ''
@@ -323,7 +324,7 @@ function atRisk(day: Day) {
 
 function counts(day: Day) {
   const copy = tx()
-  return `<span class="count"><em>${copy.of12(day.covered)}</em><small>${copy.of6(day.couples)}</small></span>`
+  return `<span class="count"><em>${copy.of12(day.covered)}</em></span>`
 }
 
 function dayMeta(day: Day) {
@@ -415,7 +416,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
   const side = `
     <aside class="day" data-testid="day">
       <h2>${heading}</h2>
-      <p class="count">${copy.of12(day.covered)} · ${copy.of6(day.couples)}</p>
+      <p class="count">${copy.of12(day.covered)}</p>
       ${note ? `<p class="why ${tone}">${esc(note)}</p>` : ''}
       ${badges(day)}
       <button type="button" class="texty" data-act="commit" data-date="${day.date}" ${locked ? 'disabled' : ''}>
@@ -595,6 +596,12 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
     <button type="button" data-act="locale" data-locale="${value}" aria-pressed="${locale === value}">${label}</button>`
   return `
     <section class="settings" data-testid="ajustes">
+      <form class="stack" data-act="save-name">
+        <label for="display-name">${copy.yourName}</label>
+        <input id="display-name" name="display_name" maxlength="40" autocomplete="nickname" required value="${esc(state.me.display_name)}" />
+        <button type="submit">${copy.saveName}</button>
+      </form>
+      ${ui.nameSaved ? `<p class="hint" data-testid="name-saved">${copy.nameSaved}</p>` : ''}
       <h2>${copy.alerts}</h2>
       <p class="notify-note">${copy.notifyNote}</p>
       <div class="switches">
@@ -641,7 +648,7 @@ export function renderApp(route: Route, state: Estado, selected: string, locked:
 
 export type LoginMode = 'password' | 'forgot' | 'code'
 
-export function renderLogin(message: string, email: string, code: string, mode: LoginMode = 'password') {
+export function renderLogin(message: string, email: string, code: string, mode: LoginMode = 'password', sending = false) {
   const copy = tx()
   const hint = message ? `<p class="hint">${esc(message)}</p>` : ''
   const emailField = `
@@ -659,8 +666,7 @@ export function renderLogin(message: string, email: string, code: string, mode: 
   } else if (mode === 'forgot') {
     fields = `
       ${emailField}
-      <button type="button" data-act="send-code">${copy.sendCode}</button>
-      <button type="button" class="secondary" data-act="have-code">${copy.haveCode}</button>
+      <button type="button" data-act="send-code" ${sending ? 'disabled aria-busy="true"' : ''}>${sending ? `<span class="send-wait" aria-hidden="true"><i></i><i></i><i></i></span><span class="visually-hidden">${copy.sendCode}</span>` : copy.sendCode}</button>
       <button type="button" class="secondary" data-act="login-back">${copy.back}</button>
       ${hint}`
   } else {

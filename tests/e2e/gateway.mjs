@@ -154,7 +154,7 @@ async function wallCopy(client, portuguese) {
     [P(1), first],
   )
   await client.query(
-    `insert into public.intentions (member_id, body, created_at) values ($1, $2, now() - interval '1 day')`,
+    `insert into public.intentions (member_id, body, created_at) values ($1, $2, ((now() at time zone 'Europe/Madrid') - interval '1 day') at time zone 'Europe/Madrid')`,
     [P(4), second],
   )
   const id = inserted.rows[0].id
@@ -173,6 +173,12 @@ async function wallCopy(client, portuguese) {
 
 async function seedActivity(client) {
   await client.query(`select set_config('app.now', $1, false)`, [clock])
+  await client.query(`
+    update public.members
+    set display_name = 'Persona ' || n
+    from generate_series(1, 12) as n
+    where id = ('00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid
+  `)
   await client.query(`
     truncate public.intention_comments, public.intention_reactions,
       public.attendance, public.commitments, public.intentions,
@@ -193,7 +199,7 @@ async function seedActivity(client) {
 
     insert into public.intentions (member_id, body, created_at) values
       (('00000000-0000-4000-8000-' || lpad(to_hex(1), 12, '0'))::uuid, 'Por quienes no pueden salir de casa.', now()),
-      (('00000000-0000-4000-8000-' || lpad(to_hex(4), 12, '0'))::uuid, 'Por la paz en casa.', now() - interval '1 day');
+      (('00000000-0000-4000-8000-' || lpad(to_hex(4), 12, '0'))::uuid, 'Por la paz en casa.', ((now() at time zone 'Europe/Madrid') - interval '1 day') at time zone 'Europe/Madrid');
 
     insert into public.commitments (member_id, mass_date)
     select ('00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
@@ -329,6 +335,22 @@ async function handleRest(req, res, url) {
         [body.member_id, body.mass_date],
       ))
       empty(res, 201)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/members' && req.method === 'PATCH') {
+      const body = await readBody(req)
+      const query = filters(url)
+      const name = String(body.display_name ?? '').trim()
+      if (name.length < 1 || name.length > 40) {
+        json(res, 400, { message: 'nombre' })
+        return
+      }
+      await asRole(header, (client) => client.query(
+        'update public.members set display_name = $2 where id = $1',
+        [query.id, name],
+      ))
+      empty(res, 204)
       return
     }
 

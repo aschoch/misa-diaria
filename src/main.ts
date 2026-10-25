@@ -2,7 +2,7 @@ import '@fontsource-variable/fraunces/wght.css'
 import '@fontsource/atkinson-hyperlegible/400.css'
 import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
-import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush, updatePassword } from './api'
+import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
@@ -20,6 +20,21 @@ let mustResetPassword = false
 let recoverySignIn = false
 let passwordError = ''
 let resetCalendarScroll = false
+let glassFrom: { index: number } | { px: number } | null = null
+let suppressNavClick = false
+let tabScrub: {
+  id: number
+  nav: HTMLElement
+  pill: HTMLElement
+  startX: number
+  startY: number
+  origin: number
+  last: number
+  slot: number
+  mode: 'pending' | 'x' | 'y'
+  lastY: number
+  pressed: HTMLAnchorElement | null
+} | null = null
 const EMAIL_KEY = 'misa-email'
 let denied = false
 let demo = false
@@ -55,7 +70,14 @@ let historyDate = ''
 let editing: { kind: 'intention' | 'comment'; id: string } | null = null
 let emojiQuery = ''
 let passwordSaved = false
+let nameSaved = false
 let feedbackSaved = false
+let codeSending = false
+let scrollFrame = 0
+let scrollGen = 0
+let scrollSeen = 0
+let lastProgrammaticY = Number.NaN
+let applyingScroll = false
 let calendarDays = 28
 let commitChain: Promise<void> = Promise.resolve()
 
@@ -106,6 +128,7 @@ function rateLimited(error: unknown) {
 }
 
 function paint() {
+  stopScrollAnim()
   setLocale(locale)
   document.documentElement.lang = locale === 'pt' ? 'pt-PT' : 'es'
   const route = routeFromPath(location.pathname)
@@ -124,7 +147,7 @@ function paint() {
   }
   if (!current) {
     if (!denied) keepLoginDraft()
-    app.innerHTML = denied ? renderDenied() : renderLogin(loginMessage, rememberedEmail(), pendingCode, loginMode)
+    app.innerHTML = denied ? renderDenied() : renderLogin(loginMessage, rememberedEmail(), pendingCode, loginMode, codeSending)
     return
   }
   if (!selected) selected = current.today
@@ -146,6 +169,7 @@ function paint() {
     emojiQuery,
     passwordSaved,
     passwordError,
+    nameSaved,
     feedbackSaved,
     calendarDays,
   })
@@ -155,6 +179,7 @@ function paint() {
   document.documentElement.classList.toggle('modal-open', popup)
   document.body.classList.toggle('modal-open', popup)
   if (streakAlign) alignStreak()
+  settleGlass()
 }
 
 function daysBetween(from: string, to: string) {
@@ -272,10 +297,182 @@ function blurFocus() {
   if (node instanceof HTMLElement) node.blur()
 }
 
+function stopScrollAnim() {
+  if (scrollFrame) cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
+}
+
 function scrollPageTop() {
-  window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
-  document.documentElement.scrollTop = 0
-  document.body.scrollTop = 0
+  const gen = ++scrollGen
+  stopScrollAnim()
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const start = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop
+  scrollSeen = start
+  const apply = (y: number) => {
+    lastProgrammaticY = y
+    applyingScroll = true
+    window.scrollTo(0, y)
+    document.documentElement.scrollTop = y
+    document.body.scrollTop = y
+    applyingScroll = false
+  }
+  if (reduce || start <= 0) {
+    apply(0)
+    return
+  }
+  const duration = 280
+  const t0 = performance.now()
+  const step = (now: number) => {
+    if (gen !== scrollGen) return
+    const t = Math.min(1, (now - t0) / duration)
+    const eased = 1 - (1 - t) ** 3
+    apply(t >= 1 ? 0 : Math.round(start * (1 - eased)))
+    if (t < 1) scrollFrame = requestAnimationFrame(step)
+    else {
+      scrollFrame = 0
+      requestAnimationFrame(() => {
+        if (gen !== scrollGen || window.scrollY <= 1) return
+        apply(0)
+      })
+    }
+  }
+  scrollFrame = requestAnimationFrame(step)
+}
+
+function readGlassX(pill: HTMLElement) {
+  const transform = getComputedStyle(pill).transform
+  const match = transform && transform !== 'none' ? /matrix(?:3d)?\(([^)]+)\)/.exec(transform) : null
+  if (match) {
+    const parts = match[1].split(',').map((part) => Number(part))
+    const tx = parts.length === 6 ? parts[4] : parts[12]
+    if (Number.isFinite(tx)) return tx
+  }
+  const nav = pill.closest<HTMLElement>('nav.tabs')
+  return Number(nav?.dataset.tab ?? '0') * (pill.getBoundingClientRect().width || 0)
+}
+
+function settleGlass() {
+  const pill = document.querySelector<HTMLElement>('.tab-glass-pill')
+  const nav = document.querySelector<HTMLElement>('nav.tabs')
+  const from = glassFrom
+  glassFrom = null
+  if (!pill || !nav || !from) return
+  const to = Number(nav.dataset.tab ?? '0')
+  const slot = pill.getBoundingClientRect().width || 1
+  const startPx = 'px' in from ? from.px : from.index * slot
+  if (Math.abs(startPx - to * slot) < 0.5) return
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce) {
+    pill.style.transition = 'none'
+    pill.style.transform = `translateX(${to * 100}%)`
+    return
+  }
+  pill.style.transition = 'none'
+  pill.style.transform = `translateX(${startPx}px)`
+  pill.getBoundingClientRect()
+  pill.classList.add('pulse')
+  pill.style.transition = 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)'
+  pill.style.transform = `translateX(${to * slot}px)`
+}
+
+function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number } | null) {
+  hideCelebration()
+  const navKey = link.dataset.nav ?? ''
+  if (navKey === 'calendario') resetCalendarScroll = true
+  if (navKey === 'intenciones') {
+    openIntention = ''
+    emojiFor = ''
+    editing = null
+  }
+  blurFocus()
+  glassFrom = from
+  pushRoute(navKey === 'intenciones' ? href('muro') : link.pathname)
+  syncRoute()
+  paint()
+  if (navKey) scrollPageTop()
+}
+
+function beginTabScrub(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Element) || event.button !== 0) return
+  const nav = target.closest<HTMLElement>('nav.tabs')
+  const pill = nav?.querySelector<HTMLElement>('.tab-glass-pill')
+  if (!nav || !pill) return
+  if (event.cancelable) event.preventDefault()
+  gesture = null
+  const slot = pill.getBoundingClientRect().width || 1
+  const origin = readGlassX(pill)
+  tabScrub = {
+    id: event.pointerId,
+    nav,
+    pill,
+    startX: event.clientX,
+    startY: event.clientY,
+    origin,
+    last: origin,
+    slot,
+    mode: 'pending',
+    lastY: event.clientY,
+    pressed: target.closest<HTMLAnchorElement>('a[data-nav]'),
+  }
+}
+
+function moveTabScrub(event: PointerEvent) {
+  if (!tabScrub || tabScrub.id !== event.pointerId) return
+  const dx = event.clientX - tabScrub.startX
+  const dy = event.clientY - tabScrub.startY
+  if (tabScrub.mode === 'pending') {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+      tabScrub.mode = 'y'
+    } else if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) {
+      return
+    } else {
+      tabScrub.mode = 'x'
+    }
+  }
+  if (tabScrub.mode === 'y') {
+    const step = event.clientY - tabScrub.lastY
+    tabScrub.lastY = event.clientY
+    window.scrollBy(0, -step)
+    return
+  }
+  const max = tabScrub.slot * 3
+  const next = Math.min(max, Math.max(0, tabScrub.origin + dx))
+  tabScrub.last = next
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  tabScrub.pill.style.transition = 'none'
+  tabScrub.pill.style.transform = `translateX(${next}px)`
+  tabScrub.pill.classList.toggle('bulge', !reduce)
+  const index = Math.min(3, Math.max(0, Math.round(next / tabScrub.slot)))
+  tabScrub.nav.querySelectorAll<HTMLAnchorElement>('a[data-nav]').forEach((link, i) => {
+    link.classList.toggle('on', i === index)
+  })
+}
+
+function endTabScrub(event: PointerEvent, cancel: boolean) {
+  if (!tabScrub || tabScrub.id !== event.pointerId) return
+  const done = tabScrub
+  tabScrub = null
+  done.pill.classList.remove('bulge')
+  suppressNavClick = true
+  window.setTimeout(() => { suppressNavClick = false }, 0)
+  if (cancel || done.mode === 'y') {
+    done.pill.style.transition = ''
+    done.pill.style.transform = ''
+    const current = Number(done.nav.dataset.tab ?? '0')
+    done.nav.querySelectorAll<HTMLAnchorElement>('a[data-nav]').forEach((link, i) => {
+      link.classList.toggle('on', i === current)
+    })
+    return
+  }
+  if (done.mode === 'pending') {
+    if (done.pressed) openNav(done.pressed, { index: Number(done.nav.dataset.tab ?? '0') })
+    return
+  }
+  const index = Math.min(3, Math.max(0, Math.round(done.last / done.slot)))
+  const link = done.nav.querySelectorAll<HTMLAnchorElement>('a[data-nav]')[index]
+  if (!link) return
+  openNav(link, { px: done.last })
 }
 
 function backToWall() {
@@ -305,11 +502,16 @@ async function pullRefresh() {
   }
 }
 
+function blurRow(row: HTMLElement | null) {
+  row?.querySelectorAll<HTMLElement>('button').forEach((button) => button.blur())
+}
+
 function resetRow(row: HTMLElement | null) {
   if (!row) return
   row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) cue.textContent = cue.dataset.cue ?? ''
   const face = row.querySelector<HTMLElement>('.swipe-face')
+  blurRow(row)
   if (!face) return
   face.style.transition = ''
   face.style.transform = 'translateX(0)'
@@ -407,9 +609,9 @@ function closeStreakPopupWithAnimation() {
   }
   if (!pop.style.transform) pop.style.transform = 'translate(-50%, 0px)'
   pop.style.opacity = '1'
-  pop.style.transition = 'transform 340ms cubic-bezier(0.32, 0.72, 0, 1)'
+  pop.style.transition = 'transform 480ms cubic-bezier(0.32, 0.72, 0, 1)'
   if (back) {
-    back.style.transition = 'opacity 320ms ease'
+    back.style.transition = 'opacity 480ms ease'
     back.getBoundingClientRect()
     back.style.opacity = '0'
   }
@@ -424,7 +626,7 @@ function closeStreakPopupWithAnimation() {
   pop.addEventListener('transitionend', (event) => {
     if (event.propertyName === 'transform') end()
   })
-  window.setTimeout(end, 340)
+  window.setTimeout(end, 480)
 }
 
 function followPopup(dy: number) {
@@ -447,6 +649,10 @@ function armPopupDismiss(pointerId: number) {
 app.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (!(target instanceof Element)) return
+  if (target.closest('nav.tabs')) {
+    beginTabScrub(event)
+    return
+  }
   const button = target.closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
   if (target.closest('input, textarea, select, [contenteditable="true"]')) return
@@ -471,7 +677,18 @@ app.addEventListener('pointerdown', (event) => {
   }
 })
 
+window.addEventListener('pointermove', (event) => {
+  if (tabScrub?.id === event.pointerId) moveTabScrub(event)
+}, true)
+window.addEventListener('pointerup', (event) => {
+  if (tabScrub?.id === event.pointerId) endTabScrub(event, false)
+}, true)
+window.addEventListener('pointercancel', (event) => {
+  if (tabScrub?.id === event.pointerId) endTabScrub(event, true)
+}, true)
+
 app.addEventListener('pointermove', (event) => {
+  if (tabScrub?.id === event.pointerId) return
   if (!gesture || gesture.id !== event.pointerId) return
   const dx = event.clientX - gesture.x
   const dy = event.clientY - gesture.y
@@ -497,6 +714,10 @@ document.addEventListener('touchmove', (event) => {
 }, { passive: false })
 
 app.addEventListener('pointerup', (event) => {
+  if (tabScrub?.id === event.pointerId) {
+    endTabScrub(event, false)
+    return
+  }
   if (!gesture || gesture.id !== event.pointerId) return
   const start = gesture
   gesture = null
@@ -512,6 +733,7 @@ app.addEventListener('pointerup', (event) => {
     }
     return
   }
+  if (start.row) blurRow(start.row)
   if (start.row && start.lockedAxis === 'x') {
     suppressRowClick = true
     window.setTimeout(() => { suppressRowClick = false }, 350)
@@ -550,6 +772,10 @@ app.addEventListener('pointerup', (event) => {
 })
 
 app.addEventListener('pointercancel', (event) => {
+  if (tabScrub?.id === event.pointerId) {
+    endTabScrub(event, true)
+    return
+  }
   if (gesture?.id !== event.pointerId) return
   const row = gesture.row
   const pop = gesture.pop
@@ -590,6 +816,19 @@ app.addEventListener('scroll', (event) => {
 let extendingCalendar = false
 let extendQueued = false
 window.addEventListener('scroll', () => {
+  if (!applyingScroll && scrollFrame) {
+    const y = window.scrollY
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+    const atProgram = Math.abs(y - lastProgrammaticY) <= 1
+    const clampedHigh = lastProgrammaticY > max + 1 && y >= max - 1
+    const unchanged = Math.abs(y - scrollSeen) <= 1
+    if (!atProgram && !clampedHigh && !unchanged) {
+      scrollGen += 1
+      stopScrollAnim()
+    } else {
+      scrollSeen = y
+    }
+  }
   if (extendQueued || extendingCalendar) return
   extendQueued = true
   requestAnimationFrame(() => {
@@ -657,6 +896,12 @@ app.addEventListener('keydown', (event) => {
 })
 
 app.addEventListener('click', (event) => {
+  if (suppressNavClick) {
+    suppressNavClick = false
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   if (suppressRowClick) {
     suppressRowClick = false
     event.preventDefault()
@@ -672,19 +917,16 @@ app.addEventListener('click', (event) => {
   const link = (event.target as HTMLElement).closest('a[href]')
   if (link instanceof HTMLAnchorElement && link.origin === location.origin) {
     event.preventDefault()
-    hideCelebration()
-    const navKey = link.dataset.nav ?? ''
-    if (navKey === 'calendario') resetCalendarScroll = true
-    if (navKey === 'intenciones') {
-      openIntention = ''
-      emojiFor = ''
-      editing = null
+    if (link.dataset.nav) {
+      const nav = link.closest<HTMLElement>('nav.tabs')
+      openNav(link, { index: Number(nav?.dataset.tab ?? '0') })
+      return
     }
+    hideCelebration()
     blurFocus()
-    pushRoute(navKey === 'intenciones' ? href('muro') : link.pathname)
+    pushRoute(link.pathname)
     syncRoute()
     paint()
-    if (navKey) scrollPageTop()
     return
   }
   const node = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
@@ -703,7 +945,7 @@ app.addEventListener('submit', (event) => {
   event.preventDefault()
   const body = (form.elements.namedItem('body') as HTMLTextAreaElement | null)?.value ?? ''
   const act = form.dataset.act ?? ''
-  if (act === 'comment' || act === 'save-intention' || act === 'save-comment' || act === 'feedback' || act === 'save-password') {
+  if (act === 'comment' || act === 'save-intention' || act === 'save-comment' || act === 'feedback' || act === 'save-password' || act === 'save-name') {
     void actOn(act, form, body)
     return
   }
@@ -890,13 +1132,16 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     }
     if (!supabase) return
     busy = true
+    codeSending = true
+    paint()
     try {
       const error = await requestEmailCode(next)
       loginMessage = error ? (rateLimited(error) ? tx().rateLimit : tx().sendFail) : tx().loginHint
       if (!error || rateLimited(error)) loginMode = 'code'
-      paint()
     } finally {
       busy = false
+      codeSending = false
+      paint()
     }
     return
   }
@@ -998,6 +1243,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   if (!current || locked) return
   if (act === 'select') {
     const pointer = node.dataset.pointer === '1'
+    if (pointer) blurFocus()
     selected = node.dataset.date ?? selected
     paint()
     if (!pointer) {
@@ -1026,6 +1272,26 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       const day = current.calendar.find((item) => item.date === date)
       busy = false
       await setCommitment(date, day ? !day.mine_commitment : true)
+      return
+    }
+    if (act === 'save-name') {
+      if (!current || locked) return
+      const form = node instanceof HTMLFormElement ? node : node.closest('form')
+      const name = form?.querySelector<HTMLInputElement>('[name="display_name"]')?.value.trim() ?? ''
+      nameSaved = false
+      if (name.length < 1 || name.length > 40) {
+        offline = tx().saveFail
+        paint()
+        return
+      }
+      if (!(demo || !supabase)) await guardarNombre(current.me.id, name)
+      current.me.display_name = name
+      for (const item of current.intentions) {
+        if (item.mine) item.display_name = name
+        for (const comment of item.comments) if (comment.mine) comment.display_name = name
+      }
+      nameSaved = true
+      paint()
       return
     }
     if (act === 'save-password') {
