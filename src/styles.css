@@ -187,7 +187,7 @@ p.risk {
   font-size: 28px;
   font-variant-numeric: lining-nums;
   font-style: normal;
-  color: var(--vence-azul);
+  color: var(--vela);
 }
 
 .group-total {
@@ -268,7 +268,7 @@ p.risk {
 .see-all {
   border: 0;
   background: transparent;
-  color: var(--vence-azul);
+  color: var(--vela);
   min-height: 44px;
   padding: 0 4px;
   font: inherit;
@@ -316,6 +316,7 @@ p.risk {
 .days li.risk:not(.sunday)::before {
   content: "";
   position: absolute;
+  z-index: 2;
   left: 0;
   top: 0;
   bottom: 0;
@@ -337,16 +338,18 @@ p.risk {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--foco) 45%, transparent);
 }
 
-.days li > button[data-act="select"] {
-  flex: 0 0 auto;
+.days li button[data-act="select"] {
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  color: inherit;
   width: 100%;
-  height: auto;
-  min-height: 48px;
+  min-height: 54px;
+  padding: 10px 16px;
   display: grid;
   grid-template-columns: 44px 1fr auto;
   gap: 8px;
   align-items: center;
-  padding: 8px 16px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -460,23 +463,38 @@ p.risk {
 .composer { display: grid; gap: 8px; }
 .composer label { font-size: 13px; color: var(--suave); }
 
-.composer textarea, .login input {
+.composer textarea, .login input, .stack input, .stack textarea, .editor textarea, .sheet input {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
   border: 1px solid var(--linea);
   border-radius: 14px;
   background: var(--papel);
+  color: var(--tinta);
   padding: 12px;
+  font: inherit;
 }
 
+.login input, .stack input, .sheet input { min-height: 48px; }
 .composer textarea { min-height: 88px; resize: vertical; }
+.stack textarea { min-height: 96px; resize: vertical; }
+.editor textarea { min-height: 76px; resize: vertical; }
 
-.composer button, .login button {
+.composer button, .login button, .stack button, .editor button[type="submit"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 48px;
   border: 0;
+  border-radius: 14px;
   background: var(--vela);
   color: var(--sobre-vela);
+  font: inherit;
   font-weight: 700;
   padding: 0 16px;
+  cursor: pointer;
 }
+
+.editor button[type="submit"] { min-height: 40px; padding: 0 14px; }
 
 .notes {
   background: var(--papel);
@@ -539,15 +557,6 @@ p.risk {
 .sheet-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 14px; }
 .sheet-grid button { min-height: 48px; font-size: 22px; border: 0; border-radius: 12px; background: var(--lienzo); cursor: pointer; }
 .sheet label { display: block; margin: 0 0 6px; font-size: 13px; color: var(--suave); }
-.sheet input {
-  width: 100%;
-  min-height: 48px;
-  border: 1px solid var(--linea);
-  border-radius: 14px;
-  background: var(--lienzo);
-  padding: 8px 12px;
-  font-size: 22px;
-}
 
 .notes header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .thread {
@@ -976,7 +985,15 @@ body.celebrating .top { opacity: 0; }
   color: var(--suave);
   font-weight: 400;
 }
-.swipe-face { position: relative; z-index: 1; background: inherit; }
+.swipe-face {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: inherit;
+}
 
 .sheet-grid { overflow: auto; grid-template-columns: repeat(6, 1fr); min-height: 0; }
 .visually-hidden {
@@ -992,23 +1009,21 @@ body.celebrating .top { opacity: 0; }
 }
 .mine-actions { display: inline-flex; gap: 12px; margin-left: auto; }
 .editor { display: grid; gap: 8px; margin: 8px 0 0; }
-.editor textarea { width: 100%; min-height: 72px; }
 .editor-actions { display: flex; align-items: center; gap: 16px; }
 .stack { display: grid; gap: 8px; margin: 8px 0 0; }
-.stack input, .stack textarea { width: 100%; }
 .settings h2 { margin: 22px 0 8px; }
 
 .streak-back {
   position: fixed;
   inset: 0;
-  z-index: 48;
-  background: color-mix(in srgb, var(--lienzo) 42%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  z-index: 60;
+  background: color-mix(in srgb, var(--lienzo) 72%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 .streak-pop {
   position: fixed;
-  z-index: 49;
+  z-index: 61;
   left: 50%;
   top: 7vh;
   transform: translateX(-50%);
@@ -1019,14 +1034,14 @@ body.celebrating .top { opacity: 0; }
   padding: 16px 8px 12px;
   border: 1px solid var(--linea);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--papel) 78%, transparent);
+  background: color-mix(in srgb, var(--papel) 90%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 18px 48px color-mix(in srgb, var(--tinta) 16%, transparent);
 }
 .streak-pop header { display: flex; align-items: baseline; gap: 12px; padding: 0 8px 8px; }
 .streak-pop h2 { margin: 0; font-size: 22px; flex: 1; }
-.streak-pop header b { color: var(--vence-azul); font-family: "Fraunces Variable", serif; font-size: 28px; font-weight: 560; }
+.streak-pop header b { color: var(--vela); font-family: "Fraunces Variable", serif; font-size: 28px; font-weight: 560; }
 .month-scroll { overflow: auto; height: 360px; padding: 0 8px 8px; }
 .month h3 { margin: 12px 0 8px; font-size: 16px; font-weight: 560; text-align: center; }
 .weekdays, .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -1045,7 +1060,7 @@ body.celebrating .top { opacity: 0; }
   font-size: 14px;
 }
 .cell.empty { pointer-events: none; }
-.cell.hit { background: color-mix(in srgb, var(--vence-azul) 18%, var(--papel)); color: var(--vence-azul); font-weight: 700; }
+.cell.hit { background: color-mix(in srgb, var(--vela) 18%, var(--papel)); color: var(--vela); font-weight: 700; }
 .cell.run { box-shadow: inset 0 0 0 2px var(--vence-ocre); }
 .cell.today { text-decoration: underline; text-underline-offset: 3px; }
 .dots { display: flex; gap: 2px; min-height: 5px; }
