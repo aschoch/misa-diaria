@@ -84,7 +84,7 @@ textarea:focus-visible {
 }
 
 .top {
-  padding: 12px 20px 8px;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 20px 8px;
   text-align: center;
 }
 
@@ -239,9 +239,9 @@ p.risk {
   font-size: 13px;
 }
 
-.past, .days, .notes { list-style: none; margin: 12px 0 0; padding: 0; }
+.past-list, .days, .notes { list-style: none; margin: 12px 0 0; padding: 0; }
 
-.past li, .days li {
+.past-list li, .days li {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -250,9 +250,9 @@ p.risk {
   border-bottom: 1px solid var(--linea);
 }
 
-.past li:first-child, .days li:first-child { border-radius: 16px 16px 0 0; }
-.past li:last-child, .days li:last-child { border-radius: 0 0 16px 16px; border-bottom: 0; }
-.past li.sunday, .days li.sunday { background: var(--miel); color: var(--miel-tinta); }
+.past-list li:first-child, .days li:first-child { border-radius: 16px 16px 0 0; }
+.past-list li:last-child, .days li:last-child { border-radius: 0 0 16px 16px; border-bottom: 0; }
+.past-list li.sunday, .days li.sunday { background: var(--miel); color: var(--miel-tinta); }
 .past-main {
   display: flex;
   flex: 1;
@@ -279,7 +279,7 @@ p.risk {
 .past-count { color: var(--suave); font-size: 13px; }
 .recent-bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .recent-bar .streak-title { margin-bottom: 0; }
-.see-all {
+.see-all, .past-more {
   border: 0;
   background: transparent;
   color: var(--vela);
@@ -288,6 +288,12 @@ p.risk {
   font: inherit;
   font-size: 14px;
   cursor: pointer;
+}
+.past-more {
+  display: block;
+  width: 100%;
+  margin: 4px 0 0;
+  text-align: left;
 }
 
 .check {
@@ -360,13 +366,13 @@ p.risk {
   appearance: none;
   font: inherit;
   color: inherit;
-  width: 78px;
-  max-width: 78px;
+  width: 96px;
+  max-width: 96px;
   min-width: 0;
   min-height: 0;
   padding: 0;
   display: flex;
-  gap: 2px;
+  gap: 12px;
   align-items: center;
   overflow: hidden;
   border: 0;
@@ -374,20 +380,25 @@ p.risk {
   text-align: left;
   cursor: pointer;
 }
+.days .select-day { gap: 12px; }
 
 .num {
+  box-sizing: border-box;
   width: 36px;
   height: 36px;
   display: grid;
   place-items: center;
+  flex: none;
   font-family: "Fraunces Variable", serif;
   font-weight: 560;
   font-size: 18px;
   font-variant-numeric: lining-nums;
+  border: 2px dashed var(--linea);
+  border-radius: 50%;
 }
 
-.num.planned { border: 2px dashed var(--olivo); border-radius: 50%; }
-.num.gone { background: var(--olivo); color: var(--sobre-olivo); border-radius: 50%; }
+.num.planned { border: 2px dashed var(--olivo); }
+.num.gone { background: var(--olivo); color: var(--sobre-olivo); border: 2px solid var(--olivo); }
 .when { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; }
 .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; font-size: 13px; color: var(--suave); justify-self: end; min-width: 0; }
 .meta em { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-style: normal; font-size: 13px; color: var(--tinta); white-space: nowrap; }
@@ -441,16 +452,17 @@ p.risk {
 .cal-month { min-width: 0; }
 .cal-month-head {
   position: sticky;
-  top: 0;
+  top: env(safe-area-inset-top, 0px);
   z-index: 12;
   margin: 0;
-  padding: 10px 2px 8px;
+  padding: 10px 4px 8px;
+  border-bottom: none;
   font-family: "Fraunces Variable", serif;
   font-weight: 560;
   font-size: 22px;
-  background: color-mix(in srgb, var(--papel) 92%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--papel) 94%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .day {
@@ -521,6 +533,11 @@ p.risk {
   padding: 0 16px;
   cursor: pointer;
 }
+.login button.secondary {
+  background: transparent;
+  color: var(--vela);
+  border: 1px solid var(--linea);
+}
 
 .editor button[type="submit"] { min-height: 40px; padding: 0 14px; }
 
@@ -541,7 +558,19 @@ p.risk {
 
 .notes article:first-child { border-top: 0; }
 .card-open { display: block; color: inherit; text-decoration: none; }
-.card-open:focus-visible { outline: 2px solid var(--foco); outline-offset: 3px; border-radius: 8px; }
+.wall-open,
+.wall-open:hover,
+.wall-open:focus,
+.wall-open:focus-visible,
+.wall-open:active {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.who { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.wall-time { color: var(--suave); font-size: 13px; font-weight: 400; white-space: nowrap; }
+.notify-note { margin: 0 0 8px; color: var(--suave); font-size: 13px; line-height: 1.45; }
 .count-link { color: var(--suave); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .back {
   display: inline-flex;
@@ -1055,7 +1084,7 @@ body.celebrating .top { opacity: 0; }
   z-index: 1;
   width: 100%;
   display: grid;
-  grid-template-columns: 78px auto 1fr;
+  grid-template-columns: 96px auto 1fr;
   align-items: center;
   min-height: 64px;
   padding: 8px 14px;
@@ -1064,8 +1093,6 @@ body.celebrating .top { opacity: 0; }
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .days li.dragging .swipe-face { transition: none; }
-.days li.swipe-armed.swiping-right .swipe-face { box-shadow: inset 0 0 0 2px var(--olivo); }
-.days li.swipe-armed.swiping-left .swipe-face { box-shadow: inset 0 0 0 2px var(--vence-terracota); }
 
 .sheet-grid {
   overflow-y: auto;
@@ -1133,7 +1160,7 @@ body.celebrating .top { opacity: 0; }
   overscroll-behavior: none;
 }
 .streak-back { transition: opacity 220ms cubic-bezier(0.32, 0.72, 0, 1); }
-.streak-pop.closing { transform: translate(-50%, 110vh); opacity: 0; }
+.streak-pop.closing { transform: translate(-50%, 105vh); opacity: 1; }
 .streak-back.closing { opacity: 0; }
 .pop-close {
   width: 36px;

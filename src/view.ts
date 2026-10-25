@@ -1,7 +1,7 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
-import { esc, fecha, hace } from './format'
-import { dates, monthTitle, tx, type Locale } from './i18n'
+import { esc, fecha, formatTimestamp } from './format'
+import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
 export type StreakMode = '' | 'individual' | 'couple' | 'group' | 'six' | 'all'
 export type EditTarget = { kind: 'intention' | 'comment'; id: string } | null
@@ -14,6 +14,7 @@ export type UiState = {
   editing?: EditTarget
   emojiQuery?: string
   passwordSaved?: boolean
+  passwordError?: string
   feedbackSaved?: boolean
   calendarDays?: number
 }
@@ -95,11 +96,11 @@ function shell(route: Route, body: string, offline = '', refreshing = false) {
 
 function nav(route: Route) {
   const copy = tx()
-  const item = (key: Route, label: string, icon: string) => `
-    <a href="${href(key)}" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
+  const item = (key: Route, navKey: string, label: string, icon: string) => `
+    <a href="${href(key)}" data-nav="${navKey}" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
       ${icon}<span>${label}</span>
     </a>`
-  return `<nav>${item('hoy', copy.hoy, brandMark())}${item('calendario', copy.calendario, cal)}${item('muro', copy.muro, note)}${item('ajustes', copy.ajustes, gear)}</nav>`
+  return `<nav class="tabs">${item('hoy', 'hoy', copy.hoy, brandMark())}${item('calendario', 'calendario', copy.calendario, cal)}${item('muro', 'intenciones', copy.muro, note)}${item('ajustes', 'ajustes', copy.ajustes, gear)}</nav>`
 }
 
 const sun = '<svg class="sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M13 3l-1.4 1.4M4.4 11.6 3 13"/></svg>'
@@ -115,10 +116,10 @@ function riskLine(risk: Estado['risk']) {
 function streaks(state: Estado) {
   const copy = tx()
   const rows = [
-    ['individual', state.me.display_name, copy.yoursAsk, state.streaks.individual],
-    ['couple', copy.couple, copy.coupleAsk, state.streaks.couple],
     ['group', copy.group, copy.groupAsk, state.streaks.group],
+    ['couple', copy.couple, copy.coupleAsk, state.streaks.couple],
     ['six', copy.six, copy.sixAsk, state.streaks.six],
+    ['individual', state.me.display_name, copy.yoursAsk, state.streaks.individual],
   ] as const
   return `<h2 class="streak-title">${copy.streaks}</h2><ol class="streaks">${rows.map(([key, title, ask, value]) => `
     <li data-testid="streak-${key}">
@@ -166,11 +167,11 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     <p class="group-total" data-testid="total"><b>${state.streaks.total}</b><span>${copy.totalLabel}</span></p>
     ${streaks(state)}
     ${monday(state)}
-    <div class="recent-bar">
+    <section class="past" data-testid="past">
       <h2 class="streak-title">${copy.recentDays}</h2>
-      <button type="button" class="see-all" data-act="streak" data-key="all">${copy.seeAll}</button>
-    </div>
-    <ul class="past" data-testid="past">${past}</ul>
+      <ol class="past-list">${past}</ol>
+      <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
+    </section>
     ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked) : ''}
   `
 }
@@ -379,7 +380,7 @@ function dayRow(day: Day, selected: string, locked: boolean) {
       <span class="swipe-under right"><span class="swipe-cue" data-cue="→" aria-hidden="true">→</span></span>
       <span class="swipe-under left"><span class="swipe-cue" data-cue="←" aria-hidden="true">←</span></span>
       <div class="swipe-face">
-        <button type="button" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
+        <button type="button" class="select-day" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
           <span class="num ${mine}">${f.d}</span>
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
         </button>
@@ -483,13 +484,19 @@ function pills(item: Intention, locked: boolean) {
     </div>`
 }
 
+function whenLine(iso: string | undefined) {
+  const text = formatTimestamp(locale(), iso)
+  if (!text) return ''
+  return `<time class="wall-time" datetime="${esc(iso ?? '')}">${esc(text)}</time>`
+}
+
 function card(item: Intention, locked: boolean) {
   const copy = tx()
   const href = hrefIntention(item.id)
   return `
     <article>
-      <a class="card-open" href="${href}">
-        <strong>${esc(item.display_name)}</strong>
+      <a class="card-open wall-open" href="${href}">
+        <span class="who"><strong>${esc(item.display_name)}</strong>${whenLine(item.created_at)}</span>
         <p>${esc(item.body)}</p>
       </a>
       ${pills(item, locked)}
@@ -518,7 +525,7 @@ function detail(item: Intention, locked: boolean, editing: EditTarget) {
     <li>
       <div class="comment-line">
         <strong>${esc(comment.display_name)}</strong>
-        <span class="ago">${esc(hace(comment.created_at))}</span>
+        ${whenLine(comment.created_at)}
         ${comment.mine ? `<span class="mine-actions"><button type="button" class="text-link" data-act="edit" data-kind="comment" data-id="${comment.id}">${copy.edit}</button><button type="button" class="text-link" data-act="delete-comment" data-id="${comment.id}">${copy.delete}</button></span>` : ''}
       </div>
       ${editingComment ? editor('comment', comment.id, comment.body, 200, locked) : `<p>${esc(comment.body)}</p>`}
@@ -528,7 +535,7 @@ function detail(item: Intention, locked: boolean, editing: EditTarget) {
     <a class="back" data-act="back-wall" href="${href('muro')}"><span aria-hidden="true">←</span>${copy.backWall}</a>
     <article data-testid="thread">
       <header>
-        <strong>${esc(item.display_name)}</strong>
+        <span class="who"><strong>${esc(item.display_name)}</strong>${whenLine(item.created_at)}</span>
         ${item.mine ? `<span class="mine-actions"><button type="button" class="text-link" data-act="edit" data-kind="intention" data-id="${item.id}">${copy.edit}</button><button type="button" class="text-link" data-act="delete" data-id="${item.id}">${copy.delete}</button></span>` : ''}
       </header>
       ${editingIntention ? editor('intention', item.id, item.body, 280, locked) : `<p>${esc(item.body)}</p>`}
@@ -571,7 +578,7 @@ export function renderMuro(state: Estado, locked: boolean, openId: string, emoji
   const notes = state.intentions.map((item) => card(item, locked)).join('')
   const composer = `
     <form class="composer" data-testid="muro" data-act="publish">
-      <label for="intention">${copy.intention}</label>
+      <label for="intention">${copy.oneIntention}</label>
       <textarea id="intention" name="body" maxlength="280" rows="3" placeholder="${copy.intentionHint}" ${locked ? 'disabled' : ''}></textarea>
       <button type="submit" ${locked ? 'disabled' : ''}>${copy.publish}</button>
     </form>`
@@ -589,6 +596,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
   return `
     <section class="settings" data-testid="ajustes">
       <h2>${copy.alerts}</h2>
+      <p class="notify-note">${copy.notifyNote}</p>
       <div class="switches">
         <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
           <span>${copy.alertEmpty}</span><i></i>
@@ -600,10 +608,14 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
         ${lang('pt', copy.portuguese)}
       </div>
       <h2 id="password-title">${copy.password}</h2>
-      <form class="stack" data-act="save-password">
-        <input id="new-password" name="password" type="password" minlength="6" autocomplete="new-password" aria-labelledby="password-title" />
+      <form class="stack" data-form="password" data-act="save-password">
+        <label for="current-password">${copy.currentPassword}</label>
+        <input id="current-password" name="current_password" type="password" autocomplete="current-password" required />
+        <label for="new-password">${copy.newPassword}</label>
+        <input id="new-password" name="password" type="password" minlength="6" autocomplete="new-password" required />
         <button type="submit">${copy.savePassword}</button>
       </form>
+      ${ui.passwordError ? `<p class="hint" data-testid="password-error">${esc(ui.passwordError)}</p>` : ''}
       ${ui.passwordSaved ? `<p class="hint" data-testid="password-saved">${copy.passwordSaved}</p>` : ''}
       <form class="stack" data-act="feedback">
         <h2 id="feedback-title">${copy.feedbackTitle}</h2>
@@ -627,24 +639,60 @@ export function renderApp(route: Route, state: Estado, selected: string, locked:
   return shell(route, body, banner, refreshing)
 }
 
-export function renderLogin(message: string, email: string, code: string) {
+export type LoginMode = 'password' | 'forgot' | 'code'
+
+export function renderLogin(message: string, email: string, code: string, mode: LoginMode = 'password') {
   const copy = tx()
+  const hint = message ? `<p class="hint">${esc(message)}</p>` : ''
+  const emailField = `
+      <label for="email">${copy.email}</label>
+      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" value="${esc(email)}" />`
+  let fields = ''
+  if (mode === 'password') {
+    fields = `
+      ${emailField}
+      <label for="password">${copy.password}</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" />
+      <button type="button" data-act="login-password">${copy.enter}</button>
+      <button type="button" class="secondary" data-act="forgot-start">${copy.forgotPassword}</button>
+      ${hint}`
+  } else if (mode === 'forgot') {
+    fields = `
+      ${emailField}
+      <button type="button" data-act="send-code">${copy.sendCode}</button>
+      <button type="button" class="secondary" data-act="have-code">${copy.haveCode}</button>
+      <button type="button" class="secondary" data-act="login-back">${copy.back}</button>
+      ${hint}`
+  } else {
+    fields = `
+      ${emailField}
+      <label for="code">${copy.code}</label>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" value="${esc(code)}" />
+      <button type="button" data-act="verify">${copy.enterCode}</button>
+      <button type="button" class="secondary" data-act="login-back">${copy.back}</button>
+      ${hint}`
+  }
   return `
     <header class="top">
       ${brandMark()}
       <h1>${copy.brand}</h1>
     </header>
     <main class="login" data-testid="login">
-      <label for="email">${copy.email}</label>
-      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" value="${esc(email)}" />
-      <label for="password">${copy.password}</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" />
-      <button type="button" data-act="login-password">${copy.passwordEnter}</button>
-      <button type="button" data-act="send-link">${copy.sendLink}</button>
-      ${message ? `<p class="hint">${esc(message)}</p>` : ''}
-      <label for="code">${copy.code}</label>
-      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" value="${esc(code)}" />
-      <button type="button" data-act="verify">${copy.enter}</button>
+      ${fields}
+    </main>`
+}
+
+export function renderResetPassword() {
+  const copy = tx()
+  return `
+    <header class="top">
+      ${brandMark()}
+      <h1>${copy.setPasswordTitle}</h1>
+    </header>
+    <main class="login" data-testid="reset-password">
+      <label for="reset-password">${copy.newPassword}</label>
+      <input id="reset-password" name="password" type="password" minlength="6" autocomplete="new-password" />
+      <button type="button" data-act="set-new-password">${copy.savePassword}</button>
     </main>`
 }
 

@@ -53,6 +53,7 @@ export type Intention = {
   body: string
   display_name: string
   mine: boolean
+  created_at?: string
   comments: Comment[]
   reactions: Reaction[]
 }

@@ -56,8 +56,8 @@ export function sampleEstado(): Estado {
       { date: '2026-10-23', went: 9, couples_went: 5, mine_attendance: false, couple_attendance: true },
     ] satisfies HistoryDay[],
     intentions: [
-      { id: 'i1', body: 'Por la familia de Persona 3.', display_name: 'Persona 2', mine: false, comments: [], reactions: [] },
-      { id: 'i2', body: 'En acción de gracias.', display_name: 'Persona 1', mine: true, comments: [], reactions: [] },
+      { id: 'i1', body: 'Por la familia de Persona 3.', display_name: 'Persona 2', mine: false, created_at: '2026-10-23T18:32:00Z', comments: [], reactions: [] },
+      { id: 'i2', body: 'En acción de gracias.', display_name: 'Persona 1', mine: true, created_at: '2026-10-22T17:15:00Z', comments: [], reactions: [] },
     ],
     prefs: { empty_day: false, couple: false, locale: null },
     pending: [

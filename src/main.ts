@@ -2,11 +2,11 @@ import '@fontsource-variable/fraunces/wght.css'
 import '@fontsource/atkinson-hyperlegible/400.css'
 import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
-import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush } from './api'
+import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -15,6 +15,11 @@ let offline = ''
 let locked = false
 let loginMessage = ''
 let pendingCode = ''
+let loginMode: LoginMode = 'password'
+let mustResetPassword = false
+let recoverySignIn = false
+let passwordError = ''
+let resetCalendarScroll = false
 const EMAIL_KEY = 'misa-email'
 let denied = false
 let demo = false
@@ -42,6 +47,7 @@ let gesture: {
 let suppressRowClick = false
 let streakClosing = false
 let streakMode: StreakMode = ''
+let streakScroll = 0
 let monthsBefore = 1
 let monthsAfter = 1
 let streakAlign = false
@@ -80,6 +86,18 @@ function keepLoginDraft() {
   if (codeInput?.value) pendingCode = codeInput.value
 }
 
+async function requestEmailCode(email: string) {
+  const { error } = await supabase!.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo: `${location.origin}${import.meta.env.BASE_URL}`,
+      data: { locale },
+    },
+  })
+  return error
+}
+
 function rateLimited(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const item = error as { status?: number; code?: string; message?: string }
@@ -99,9 +117,14 @@ function paint() {
     app.innerHTML = renderSetup()
     return
   }
+  if (mustResetPassword) {
+    app.innerHTML = renderResetPassword()
+    document.title = tx().brand
+    return
+  }
   if (!current) {
     if (!denied) keepLoginDraft()
-    app.innerHTML = denied ? renderDenied() : renderLogin(loginMessage, rememberedEmail(), pendingCode)
+    app.innerHTML = denied ? renderDenied() : renderLogin(loginMessage, rememberedEmail(), pendingCode, loginMode)
     return
   }
   if (!selected) selected = current.today
@@ -111,7 +134,8 @@ function paint() {
   if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
   const intention = intentionFromPath(location.pathname) || openIntention
   if (emojiFor && !current.intentions.some((item) => item.id === emojiFor)) emojiFor = ''
-  const keepScroll = route === 'calendario' && Boolean(document.querySelector('[data-testid="calendar"]'))
+  const keepScroll = route === 'calendario' && !resetCalendarScroll && Boolean(document.querySelector('[data-testid="calendar"]'))
+  resetCalendarScroll = false
   const y = window.scrollY
   app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling, {
     streak: streakMode,
@@ -121,6 +145,7 @@ function paint() {
     editing,
     emojiQuery,
     passwordSaved,
+    passwordError,
     feedbackSaved,
     calendarDays,
   })
@@ -223,6 +248,7 @@ async function boot() {
       }
       return
     }
+    if (mustResetPassword || recoverySignIn) return
     if (!current && !signingIn) window.setTimeout(() => void refresh(true), 0)
   })
   if (!import.meta.env.DEV && 'serviceWorker' in navigator) {
@@ -241,7 +267,19 @@ function pushRoute(pathname: string) {
   depth += 1
 }
 
+function blurFocus() {
+  const node = document.activeElement
+  if (node instanceof HTMLElement) node.blur()
+}
+
+function scrollPageTop() {
+  window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+}
+
 function backToWall() {
+  blurFocus()
   hideCelebration()
   openIntention = ''
   emojiFor = ''
@@ -311,7 +349,10 @@ function trackRow(event: PointerEvent) {
   else gesture.armed = ''
   row.classList.toggle('swipe-armed', gesture.armed !== '')
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
-    cue.textContent = gesture.armed ? '✓' : (cue.dataset.cue ?? '')
+    const side = cue.closest('.swipe-under.left') ? 'left' : 'right'
+    if (gesture.armed === 'right' && side === 'right') cue.textContent = '✓'
+    else if (gesture.armed === 'left' && side === 'left') cue.textContent = '✕'
+    else cue.textContent = cue.dataset.cue ?? ''
   }
   const committed = row.dataset.committed === 'true'
   row.classList.toggle('swiping-right', dx > 8)
@@ -321,24 +362,69 @@ function trackRow(event: PointerEvent) {
   face.style.transform = `translateX(${shown}px)`
 }
 
+function lockStreakScroll() {
+  streakScroll = window.scrollY
+  const body = document.body
+  body.style.position = 'fixed'
+  body.style.top = `-${streakScroll}px`
+  body.style.left = '0'
+  body.style.right = '0'
+  body.style.width = '100%'
+}
+
+function unlockStreakScroll() {
+  const body = document.body
+  if (body.style.position !== 'fixed') {
+    window.scrollTo(0, streakScroll)
+    return
+  }
+  body.style.position = ''
+  body.style.top = ''
+  body.style.left = ''
+  body.style.right = ''
+  body.style.width = ''
+  window.scrollTo(0, streakScroll)
+}
+
 function closeStreakPopupWithAnimation() {
   if (!streakMode || streakClosing) return
   streakClosing = true
   const pop = document.querySelector<HTMLElement>('.streak-pop')
   const back = document.querySelector<HTMLElement>('.streak-back')
-  if (pop) {
-    pop.style.transition = ''
-    pop.style.transform = ''
-    pop.classList.add('closing')
-  }
-  back?.classList.add('closing')
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  window.setTimeout(() => {
+  const finish = () => {
+    if (!streakClosing && !streakMode) return
     streakClosing = false
     streakMode = ''
     historyDate = ''
+    unlockStreakScroll()
     paint()
-  }, reduce ? 0 : 200)
+    window.scrollTo(0, streakScroll)
+  }
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce || !pop) {
+    finish()
+    return
+  }
+  if (!pop.style.transform) pop.style.transform = 'translate(-50%, 0px)'
+  pop.style.opacity = '1'
+  pop.style.transition = 'transform 340ms cubic-bezier(0.32, 0.72, 0, 1)'
+  if (back) {
+    back.style.transition = 'opacity 320ms ease'
+    back.getBoundingClientRect()
+    back.style.opacity = '0'
+  }
+  pop.getBoundingClientRect()
+  pop.style.transform = 'translate(-50%, 105vh)'
+  let done = false
+  const end = () => {
+    if (done) return
+    done = true
+    finish()
+  }
+  pop.addEventListener('transitionend', (event) => {
+    if (event.propertyName === 'transform') end()
+  })
+  window.setTimeout(end, 340)
 }
 
 function followPopup(dy: number) {
@@ -346,6 +432,7 @@ function followPopup(dy: number) {
   if (!pop || dy <= 0) return
   pop.style.transition = 'none'
   pop.style.transform = `translate(-50%, ${dy}px)`
+  if (window.scrollY !== streakScroll) window.scrollTo(0, streakScroll)
 }
 
 function armPopupDismiss(pointerId: number) {
@@ -552,10 +639,21 @@ app.addEventListener('keydown', (event) => {
     void actOn('login-password', target)
     return
   }
-  if (target.id !== 'email' && target.id !== 'code') return
-  event.preventDefault()
-  const code = document.querySelector<HTMLInputElement>('#code')?.value.trim() ?? ''
-  void actOn(target.id === 'code' || code.length >= 6 ? 'verify' : 'send-link', target)
+  if (target.id === 'reset-password') {
+    event.preventDefault()
+    void actOn('set-new-password', target)
+    return
+  }
+  if (target.id === 'email') {
+    if (loginMode !== 'forgot') return
+    event.preventDefault()
+    void actOn('send-code', target)
+    return
+  }
+  if (target.id === 'code') {
+    event.preventDefault()
+    void actOn('verify', target)
+  }
 })
 
 app.addEventListener('click', (event) => {
@@ -575,9 +673,18 @@ app.addEventListener('click', (event) => {
   if (link instanceof HTMLAnchorElement && link.origin === location.origin) {
     event.preventDefault()
     hideCelebration()
-    pushRoute(link.pathname)
+    const navKey = link.dataset.nav ?? ''
+    if (navKey === 'calendario') resetCalendarScroll = true
+    if (navKey === 'intenciones') {
+      openIntention = ''
+      emojiFor = ''
+      editing = null
+    }
+    blurFocus()
+    pushRoute(navKey === 'intenciones' ? href('muro') : link.pathname)
     syncRoute()
     paint()
+    if (navKey) scrollPageTop()
     return
   }
   const node = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
@@ -721,9 +828,10 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     paint()
     return
   }
-  if (act === 'streak') {
-    const key = node.dataset.key
+  if (act === 'streak' || act === 'open-past-cal') {
+    const key = act === 'open-past-cal' ? 'all' : node.dataset.key
     streakMode = key === 'couple' || key === 'group' || key === 'six' || key === 'all' || key === 'individual' ? key : ''
+    if (streakMode) lockStreakScroll()
     monthsBefore = 1
     monthsAfter = 1
     historyDate = ''
@@ -752,7 +860,28 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     return
   }
   if (busy && act !== 'select') return
-  if (act === 'send-link') {
+  if (act === 'forgot-start') {
+    loginEmail()
+    loginMode = 'forgot'
+    loginMessage = ''
+    paint()
+    return
+  }
+  if (act === 'have-code') {
+    loginEmail()
+    loginMode = 'code'
+    loginMessage = ''
+    paint()
+    return
+  }
+  if (act === 'login-back') {
+    loginEmail()
+    loginMode = 'password'
+    loginMessage = ''
+    paint()
+    return
+  }
+  if (act === 'send-code' || act === 'send-link') {
     const next = loginEmail()
     if (!next) {
       loginMessage = tx().needEmail
@@ -762,15 +891,9 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (!supabase) return
     busy = true
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: next,
-        options: {
-          shouldCreateUser: false,
-          emailRedirectTo: `${location.origin}${import.meta.env.BASE_URL}`,
-          data: { locale },
-        },
-      })
+      const error = await requestEmailCode(next)
       loginMessage = error ? (rateLimited(error) ? tx().rateLimit : tx().sendFail) : tx().loginHint
+      if (!error || rateLimited(error)) loginMode = 'code'
       paint()
     } finally {
       busy = false
@@ -796,6 +919,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         return
       }
       pendingCode = ''
+      mustResetPassword = false
       await refresh(true)
     } finally {
       busy = false
@@ -812,6 +936,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       return
     }
     if (!supabase || token.length < 6) return
+    recoverySignIn = true
     signingIn = true
     busy = true
     try {
@@ -822,10 +947,30 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         return
       }
       pendingCode = ''
-      await refresh(true)
+      mustResetPassword = true
+      loginMode = 'password'
+      paint()
     } finally {
       busy = false
       signingIn = false
+      if (!mustResetPassword) recoverySignIn = false
+    }
+    return
+  }
+  if (act === 'set-new-password') {
+    const password = document.querySelector<HTMLInputElement>('#reset-password')?.value ?? ''
+    if (!supabase || password.length < 6) return
+    busy = true
+    try {
+      await updatePassword(password)
+      mustResetPassword = false
+      recoverySignIn = false
+      await refresh(true)
+    } catch {
+      loginMessage = tx().saveFail
+      paint()
+    } finally {
+      busy = false
     }
     return
   }
@@ -833,6 +978,9 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     hideCelebration()
     pendingCode = ''
     loginMessage = ''
+    loginMode = 'password'
+    mustResetPassword = false
+    recoverySignIn = false
     if (demo) {
       current = null
       demo = false
@@ -881,15 +1029,35 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       return
     }
     if (act === 'save-password') {
-      const password = node.querySelector<HTMLInputElement>('#new-password')?.value ?? ''
-      if (password.length < 6) return
+      const form = node instanceof HTMLFormElement ? node : node.closest('form')
+      const currentPassword = form?.querySelector<HTMLInputElement>('[name="current_password"]')?.value ?? ''
+      const password = form?.querySelector<HTMLInputElement>('[name="password"]')?.value ?? ''
+      if (password.length < 6 || !currentPassword) return
+      passwordSaved = false
+      passwordError = ''
       if (demo || !supabase) {
+        let stored = ''
+        try { stored = localStorage.getItem('misa-demo-password') ?? '' } catch { /* sigue en memoria */ }
+        if (stored && stored !== currentPassword) {
+          passwordError = tx().badCurrent
+          paint()
+          return
+        }
+        try { localStorage.setItem('misa-demo-password', password) } catch { /* la copia de muestra no guarda */ }
         passwordSaved = true
         paint()
         return
       }
-      const { error } = await supabase.auth.updateUser({ password })
-      if (error) throw error
+      const { data, error: userError } = await supabase.auth.getUser()
+      const email = data.user?.email
+      if (userError || !email) throw userError ?? new Error('sin correo')
+      const { error } = await supabase.auth.signInWithPassword({ email, password: currentPassword })
+      if (error) {
+        passwordError = tx().badCurrent
+        paint()
+        return
+      }
+      await updatePassword(password)
       passwordSaved = true
       paint()
       return
@@ -935,7 +1103,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       const text = plain(body, 280)
       if (!text) return
       if (demo) {
-        current.intentions.unshift({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, comments: [], reactions: [] })
+        current.intentions.unshift({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, created_at: new Date().toISOString(), comments: [], reactions: [] })
         paint()
         return
       }

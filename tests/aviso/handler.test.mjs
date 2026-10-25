@@ -111,6 +111,24 @@ test('el registro no lleva correo, endpoint ni intención', async () => {
   assert.deepEqual(seen, [[sub.endpoint, 'Mañana nadie ha dicho que va a Misa.', 'Misa diaria']])
 })
 
+test('sábado y domingo vacíos envían, y un compromiso no', async () => {
+  for (const massDate of ['2026-10-18', '2026-10-19']) {
+    const box = deps({
+      due: async () => [{ member_id: 'm1', body: 'Mañana nadie ha dicho que va a Misa.' }],
+      tomorrow: async () => massDate,
+    })
+    const response = await handleReminder(post(), box)
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).sent, 1)
+    assert.equal(box.calls.filter((call) => call[0] === 'send').length, 1)
+    assert.equal(JSON.stringify(box.calls).includes('Persona'), false)
+  }
+  const quiet = deps({ due: async () => [] })
+  const response = await handleReminder(post(), quiet)
+  assert.equal((await response.json()).sent, 0)
+  assert.equal(quiet.calls.filter((call) => call[0] === 'send').length, 0)
+})
+
 test('la función publicada no trae secretos', () => {
   const source = readFileSync(new URL('../../supabase/functions/send-evening-reminder/index.ts', import.meta.url), 'utf8')
   assert.equal(source.includes('BEGIN PRIVATE'), false)

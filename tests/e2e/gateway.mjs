@@ -15,6 +15,12 @@ const dbUrl = adminUrl.replace(/\/[^/]*$/, '/misa_e2e')
 let clock = '2026-10-23T10:00:00Z'
 const inbox = new Map()
 const otpTries = new Map()
+const DEFAULT_PASSWORD = 'misa-2026'
+const passwords = new Map()
+
+function passwordFor(email) {
+  return passwords.get(email) ?? DEFAULT_PASSWORD
+}
 
 function json(res, status, body) {
   const payload = body === undefined ? '' : JSON.stringify(body)
@@ -542,7 +548,7 @@ async function handleAuth(req, res, url) {
       'select id::text, email from auth.users where email = $1',
       [email],
     )).rows[0])
-    if (!user || password.length < 6) {
+    if (!user || password.length < 6 || password !== passwordFor(email)) {
       json(res, 400, { msg: 'Invalid login credentials', error_code: 'invalid_credentials' })
       return
     }
@@ -561,6 +567,7 @@ async function handleAuth(req, res, url) {
       'select id::text, email from auth.users where id = $1',
       [id],
     )).rows[0])
+    if (user) passwords.set(user.email, String(body.password))
     json(res, 200, user ? session(user).user : {})
     return
   }
@@ -620,6 +627,7 @@ export function startGateway(port = 54321) {
         clock = body?.at ?? '2026-10-23T10:00:00Z'
         inbox.clear()
         otpTries.clear()
+        passwords.clear()
         await admin(seedActivity)
         json(res, 200, { at: clock })
         return
