@@ -1,7 +1,7 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
 import { esc, fecha, hace } from './format'
-import { dates, tx, type Locale } from './i18n'
+import { dates, monthTitle, tx, type Locale } from './i18n'
 
 export type StreakMode = '' | 'individual' | 'couple' | 'group' | 'six' | 'all'
 export type EditTarget = { kind: 'intention' | 'comment'; id: string } | null
@@ -15,6 +15,7 @@ export type UiState = {
   emojiQuery?: string
   passwordSaved?: boolean
   feedbackSaved?: boolean
+  calendarDays?: number
 }
 
 export type Route = 'hoy' | 'calendario' | 'muro' | 'ajustes'
@@ -326,11 +327,39 @@ function counts(day: Day) {
 
 function dayMeta(day: Day) {
   const copy = tx()
-  if (day.sunday) return `<em>${copy.sunday}</em>${counts(day)}${badges(day)}`
-  const status = atRisk(day)
-    ? `<em class="flag">${copy.riskFlag}</em>`
-    : (day.committed ? `<em class="committed">${copy.committed}</em>` : '')
-  return `${counts(day)}${status}${badges(day)}`
+  const notes: string[] = []
+  if (day.sunday) notes.push(copy.sunday)
+  if (!atRisk(day) && day.committed) notes.push(copy.committed)
+  const hidden = notes.length ? `<span class="visually-hidden">${notes.join(' · ')}</span>` : ''
+  const flag = atRisk(day) ? `<em class="flag">${copy.riskFlag}</em>` : ''
+  return `${counts(day)}${flag}${badges(day)}${hidden}`
+}
+
+export function blankDay(date: string): Day {
+  const [y, m, d] = date.split('-').map(Number)
+  const sunday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0
+  return {
+    date,
+    covered: 0,
+    couples: 0,
+    went: 0,
+    couples_went: 0,
+    committed: false,
+    at_risk: !sunday,
+    sunday,
+    mine_commitment: false,
+    mine_attendance: false,
+  }
+}
+
+export function getCalendarDays(state: Estado, count: number): Day[] {
+  const known = new Map(state.calendar.map((day) => [day.date, day]))
+  const days: Day[] = []
+  for (let i = 0; i < count; i += 1) {
+    const date = shiftDate(state.today, i)
+    days.push(known.get(date) ?? blankDay(date))
+  }
+  return days
 }
 
 function dayClass(day: Day) {
@@ -339,28 +368,46 @@ function dayClass(day: Day) {
   return ''
 }
 
-export function renderCalendario(state: Estado, selected: string, locked: boolean) {
+function dayRow(day: Day, selected: string, locked: boolean) {
   const copy = tx()
-  const rows = state.calendar.map((day) => {
-    const f = fecha(day.date)
-    const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
-    const open = day.date === selected
-    const commit = `<button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" ${locked ? 'disabled' : ''}>${day.mine_commitment ? copy.uncommit : copy.commit}</button>`
-    const underLeft = day.mine_commitment ? copy.uncommit : copy.notCommitted
-    return `<li class="${dayClass(day)} ${open ? 'selected' : ''} swipeable" data-date="${day.date}" data-committed="${day.mine_commitment}">
-      <span class="swipe-under right">${copy.commit}</span>
-      <span class="swipe-under left">${underLeft}</span>
+  const f = fecha(day.date)
+  const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
+  const open = day.date === selected
+  const visible = day.mine_commitment ? copy.commitOn : copy.commit
+  const name = day.mine_commitment ? copy.uncommit : copy.commit
+  return `<li class="${dayClass(day)} ${open ? 'selected' : ''} swipeable" data-date="${day.date}" data-committed="${day.mine_commitment}">
+      <span class="swipe-under right"><span class="swipe-cue" data-cue="→" aria-hidden="true">→</span></span>
+      <span class="swipe-under left"><span class="swipe-cue" data-cue="←" aria-hidden="true">←</span></span>
       <div class="swipe-face">
         <button type="button" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
           <span class="num ${mine}">${f.d}</span>
-          <span class="when">${day.sunday ? sun : ''}${f.corto}${f.d === 1 ? ` ${f.mes}` : ''}</span>
-          <span class="meta">${dayMeta(day)}</span>
+          <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
         </button>
-        ${commit}
+        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}</button>
+        <span class="meta">${dayMeta(day)}</span>
       </div>
     </li>`
+}
+
+export function renderCalendario(state: Estado, selected: string, locked: boolean, locale: Locale, daysAhead = 28) {
+  const copy = tx()
+  const days = getCalendarDays(state, daysAhead)
+  const groups: { key: string; days: Day[] }[] = []
+  for (const day of days) {
+    const key = day.date.slice(0, 7)
+    const last = groups[groups.length - 1]
+    if (!last || last.key !== key) groups.push({ key, days: [day] })
+    else last.days.push(day)
+  }
+  const sections = groups.map((group) => {
+    const [year, month] = group.key.split('-').map(Number)
+    const rows = group.days.map((day) => dayRow(day, selected, locked)).join('')
+    return `<section class="cal-month" data-month="${group.key}">
+      <h2 class="cal-month-head" data-testid="cal-month-head">${esc(monthTitle(locale, year, month))}</h2>
+      <ol class="days">${rows}</ol>
+    </section>`
   }).join('')
-  const day = state.calendar.find((item) => item.date === selected) ?? state.calendar[0]
+  const day = days.find((item) => item.date === selected) ?? days[0]
   const f = fecha(day.date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
   const tone = day.sunday ? 'sunday' : atRisk(day) ? 'risk' : ''
@@ -381,7 +428,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
         ${day.mine_commitment ? copy.uncommit : copy.commit}
       </button>
     </aside>`
-  return `<div class="split"><ol class="days" data-testid="calendar">${rows}</ol>${side}</div>`
+  return `<div class="split"><div class="cal-stream" data-testid="calendar">${sections}</div>${side}</div>`
 }
 
 function grouped(reactions: Reaction[]) {
@@ -550,7 +597,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
 
 export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '', refreshing = false, ui: UiState = {}) {
   const body = route === 'calendario'
-    ? renderCalendario(state, selected, locked)
+    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28)
     : route === 'muro'
       ? renderMuro(state, locked, openId, emojiFor, ui)
       : route === 'ajustes'

@@ -320,6 +320,17 @@ async function main() {
       assert(typeof dia.went === 'number' && typeof dia.couples_went === 'number', 'el historial cuenta')
       assert(typeof dia.couple_attendance === 'boolean', 'el historial dice si fue el matrimonio')
       assert(!JSON.stringify(dia).includes('Persona'), 'el historial no nombra a nadie')
+      await q(`insert into public.commitments (member_id, mass_date) values ($1, public.madrid_today() + 20)`, [P(1)])
+      await expectFail(() => q(
+        `insert into public.commitments (member_id, mass_date) values ($1, public.madrid_today() - 1)`,
+        [P(1)],
+      ))
+      const lejos = await one(`select public.estado() as e`)
+      const fechas = lejos.e.calendar.map((day) => day.date)
+      assert(fechas.filter((date) => date <= '2026-11-05').length === 14, 'siguen los 14 días de base')
+      assert(fechas.includes('2026-11-12'), 'un compromiso posterior entra en el estado')
+      const futuro = lejos.e.calendar.find((day) => day.date === '2026-11-12')
+      assert(futuro && futuro.mine_commitment === true, 'el compromiso lejano es mío')
     })
 
     await asUser(P(1), async () => {
