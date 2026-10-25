@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, editarComentario, editar
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { blankDay, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -111,6 +111,8 @@ function paint() {
   if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
   const intention = intentionFromPath(location.pathname) || openIntention
   if (emojiFor && !current.intentions.some((item) => item.id === emojiFor)) emojiFor = ''
+  const keepScroll = route === 'calendario' && Boolean(document.querySelector('[data-testid="calendar"]'))
+  const y = window.scrollY
   app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling, {
     streak: streakMode,
     monthsBefore,
@@ -122,6 +124,7 @@ function paint() {
     feedbackSaved,
     calendarDays,
   })
+  if (keepScroll) window.scrollTo(0, y)
   document.title = tx().brand
   const popup = Boolean(streakMode)
   document.documentElement.classList.toggle('modal-open', popup)
@@ -508,11 +511,12 @@ window.addEventListener('scroll', () => {
     if (routeFromPath(location.pathname) !== 'calendario') return
     const remain = document.documentElement.scrollHeight - window.scrollY - window.innerHeight
     if (remain > 320) return
+    const stream = document.querySelector<HTMLElement>('[data-testid="calendar"]')
+    if (!stream) return
     extendingCalendar = true
-    const y = window.scrollY
+    const from = calendarDays
     calendarDays += 21
-    paint()
-    window.scrollTo(0, y)
+    appendCalendarDays(stream, current, selected, locked, locale, from, calendarDays)
     extendingCalendar = false
   })
 }, { passive: true })
