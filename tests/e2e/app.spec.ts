@@ -704,7 +704,10 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   const armedFace = await quit.locator('.swipe-face').evaluate((node) => getComputedStyle(node).backgroundColor)
   const refreshed = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
   await page.mouse.up()
+  const drawn = await quit.locator('.swipe-face').elementHandle()
   await refreshed
+  if (drawn) await expect.poll(() => drawn.evaluate((node) => node.isConnected).catch(() => false)).toBe(false)
+  await expect(quit.locator('.num')).not.toHaveClass(/planned/)
   const afterFace = await quit.locator('.swipe-face').evaluate((node) => getComputedStyle(node).backgroundColor)
   const plainFace = await page.locator('[data-testid="calendar"] li:not(.selected) .swipe-face').first().evaluate((node) => getComputedStyle(node).backgroundColor)
   const selectedFace = await page.locator('[data-testid="calendar"] li.selected .swipe-face').evaluate((node) => getComputedStyle(node).backgroundColor)
