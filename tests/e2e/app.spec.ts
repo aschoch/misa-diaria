@@ -561,7 +561,11 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   const before = await page.locator('[data-testid="calendar"] li').count()
   expect(before).toBeGreaterThan(14)
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  const anchored = await page.evaluate(() => window.scrollY)
+  expect(anchored).toBeGreaterThan(200)
   await expect.poll(() => page.locator('[data-testid="calendar"] li').count()).toBeGreaterThan(before)
+  const stayed = await page.evaluate(() => window.scrollY)
+  expect(stayed).toBeGreaterThan(anchored - 8)
 
   await page.evaluate(() => window.scrollTo(0, 0))
   const row = page.locator('[data-testid="calendar"] li[data-date="2026-10-26"]')
@@ -620,9 +624,34 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await save(page, 'swipe-suave.png')
   await page.mouse.move(startX + 70, y, { steps: 6 })
   await save(page, 'swipe-armado.png')
+  const committed = await page.locator('[data-testid="calendar"] li').nth(1).getAttribute('data-committed')
+  const settled = committed === 'true'
+    ? Promise.resolve()
+    : page.waitForResponse((response) => response.url().includes('/rpc/estado'))
   await page.mouse.up()
-  const later = page.locator('[data-testid="calendar"] li[data-date="2026-11-08"]')
-  await later.scrollIntoViewIfNeeded()
+  await settled
+  const laterDate = '2026-11-08'
+  await expect.poll(async () => page.evaluate((iso) => {
+    const node = document.querySelector(`[data-testid="calendar"] li[data-date="${iso}"]`)
+    if (!(node instanceof HTMLElement)) {
+      window.scrollBy(0, Math.round(window.innerHeight * 0.7))
+      return false
+    }
+    const rect = node.getBoundingClientRect()
+    const topLimit = 48
+    const bottomLimit = window.innerHeight - 72
+    if (rect.height > 0 && rect.top >= topLimit - 2 && rect.bottom <= bottomLimit + 2) return true
+    const delta = rect.top < topLimit ? rect.top - topLimit : rect.bottom - bottomLimit
+    window.scrollBy(0, Math.abs(delta) < 1 ? Math.sign(delta) || 1 : delta)
+    return false
+  }, laterDate)).toBe(true)
+  const later = page.locator(`[data-testid="calendar"] li[data-date="${laterDate}"]`)
+  await expect(later).toBeVisible()
+  const pastFortnight = await page.evaluate((iso) => {
+    const dates = [...document.querySelectorAll('[data-testid="calendar"] li')].map((li) => li.getAttribute('data-date') ?? '')
+    return dates.length > 14 && dates.indexOf(iso) >= 14
+  }, laterDate)
+  expect(pastFortnight).toBe(true)
   await save(page, 'calendario-mas-dias.png')
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.locator('[data-act="select"][data-date="2026-10-24"]').click()

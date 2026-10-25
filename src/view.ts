@@ -399,14 +399,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
     if (!last || last.key !== key) groups.push({ key, days: [day] })
     else last.days.push(day)
   }
-  const sections = groups.map((group) => {
-    const [year, month] = group.key.split('-').map(Number)
-    const rows = group.days.map((day) => dayRow(day, selected, locked)).join('')
-    return `<section class="cal-month" data-month="${group.key}">
-      <h2 class="cal-month-head" data-testid="cal-month-head">${esc(monthTitle(locale, year, month))}</h2>
-      <ol class="days">${rows}</ol>
-    </section>`
-  }).join('')
+  const sections = groups.map((group) => monthSection(group.key, locale, group.days.map((day) => dayRow(day, selected, locked)).join(''))).join('')
   const day = days.find((item) => item.date === selected) ?? days[0]
   const f = fecha(day.date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
@@ -429,6 +422,33 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
       </button>
     </aside>`
   return `<div class="split"><div class="cal-stream" data-testid="calendar">${sections}</div>${side}</div>`
+}
+
+function monthSection(key: string, locale: Locale, rows: string) {
+  const [year, month] = key.split('-').map(Number)
+  return `<section class="cal-month" data-month="${key}">
+      <h2 class="cal-month-head" data-testid="cal-month-head">${esc(monthTitle(locale, year, month))}</h2>
+      <ol class="days">${rows}</ol>
+    </section>`
+}
+
+export function appendCalendarDays(stream: HTMLElement, state: Estado, selected: string, locked: boolean, locale: Locale, from: number, to: number) {
+  if (to <= from) return
+  const seen = new Set([...stream.querySelectorAll<HTMLElement>('li[data-date]')].map((li) => li.dataset.date))
+  const incoming = getCalendarDays(state, to).slice(from).filter((day) => !seen.has(day.date))
+  const groups: { key: string; days: Day[] }[] = []
+  for (const day of incoming) {
+    const key = day.date.slice(0, 7)
+    const last = groups[groups.length - 1]
+    if (!last || last.key !== key) groups.push({ key, days: [day] })
+    else last.days.push(day)
+  }
+  for (const group of groups) {
+    const rows = group.days.map((day) => dayRow(day, selected, locked)).join('')
+    const list = stream.querySelector<HTMLElement>(`.cal-month[data-month="${group.key}"] ol.days`)
+    if (list) list.insertAdjacentHTML('beforeend', rows)
+    else stream.insertAdjacentHTML('beforeend', monthSection(group.key, locale, rows))
+  }
 }
 
 function grouped(reactions: Reaction[]) {
