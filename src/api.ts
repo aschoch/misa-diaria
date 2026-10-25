@@ -157,6 +157,11 @@ export async function suscribirPush(memberId: string) {
   if (error) throw error
 }
 
+export async function guardarNombre(memberId: string, displayName: string) {
+  const { error } = await supabase!.from('members').update({ display_name: displayName.trim() }).eq('id', memberId)
+  if (error) throw error
+}
+
 export async function updatePassword(password: string) {
   const { data, error } = await supabase!.auth.updateUser({ password })
   if (error) throw error

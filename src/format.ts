@@ -39,6 +39,12 @@ export function fecha(iso: string) {
   return { y, m, d, dow, corto: pack.cortos[dow], largo: pack.largos[dow], mes: pack.meses[m - 1] }
 }
 
+export function fullDate(iso: string) {
+  const f = fecha(iso)
+  const weekday = `${f.largo.charAt(0).toLocaleUpperCase()}${f.largo.slice(1)}`
+  return `${weekday}, ${f.d} de ${f.mes} de ${f.y}`
+}
+
 export function hace(iso: string | undefined) {
   if (!iso) return ''
   const then = new Date(iso).getTime()
