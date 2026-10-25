@@ -54,6 +54,21 @@ export async function publicarIntencion(memberId: string, body: string) {
   if (error) throw error
 }
 
+export async function editarIntencion(id: string, body: string) {
+  const { error } = await supabase!.from('intentions').update({ body }).eq('id', id)
+  if (error) throw error
+}
+
+export async function editarComentario(id: string, body: string) {
+  const { error } = await supabase!.from('intention_comments').update({ body }).eq('id', id)
+  if (error) throw error
+}
+
+export async function enviarFeedback(memberId: string, body: string) {
+  const { error } = await supabase!.from('feedback').insert({ member_id: memberId, body })
+  if (error) throw error
+}
+
 export async function borrarIntencion(id: string) {
   const { error } = await supabase!.from('intentions').delete().eq('id', id)
   if (error) throw error
