@@ -221,8 +221,23 @@ async function main() {
 
     const friday = '2026-10-23T18:30:00Z'
     const rows = async (when) => (await q(`select member_id::text, body from public.aviso_tarde($1::timestamptz)`, [when])).rows
-    assert((await rows('2026-10-18T18:30:00Z')).length === 0, 'el domingo no se avisa')
-    assert((await rows('2026-10-17T18:30:00Z')).length === 0, 'el sábado no avisa del domingo')
+    assert((await one(`select has_function_privilege('anon', 'public.aviso_tarde(timestamptz)', 'execute') as ok`)).ok === false, 'anon no ejecuta el aviso')
+    assert((await one(`select has_function_privilege('service_role', 'public.aviso_tarde(timestamptz)', 'execute') as ok`)).ok === true, 'service_role ejecuta el aviso')
+    await q('savepoint finde')
+    await q(`delete from public.attendance where mass_date in ('2026-10-18', '2026-10-19')`)
+    await q(`delete from public.commitments where mass_date in ('2026-10-18', '2026-10-19')`)
+    await q(`delete from public.notification_log`)
+    await q(`insert into public.notification_prefs (member_id, empty_day, couple) values ($1, true, false)`, [P(1)])
+    const sabado = await rows('2026-10-17T18:30:00Z')
+    assert(sabado.length === 1 && sabado[0].member_id === P(1), 'el sábado avisa si el domingo está vacío')
+    assert(sabado[0].body === 'Mañana nadie ha dicho que va a Misa.', 'el aviso del sábado no nombra a nadie')
+    const avisoDomingo = await rows('2026-10-18T18:30:00Z')
+    assert(avisoDomingo.length === 1 && avisoDomingo[0].member_id === P(1), 'el domingo avisa si el lunes está vacío')
+    await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-18')`, [P(2)])
+    assert((await rows('2026-10-17T18:30:00Z')).length === 0, 'el sábado no avisa si alguien se comprometió para el domingo')
+    await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-19')`, [P(3)])
+    assert((await rows('2026-10-18T18:30:00Z')).length === 0, 'el domingo no avisa si alguien se comprometió para el lunes')
+    await q('rollback to savepoint finde')
     assert((await rows('2026-10-23T17:30:00Z')).length === 0, 'antes de las 20 no sale')
 
     await q(`insert into public.notification_prefs (member_id, empty_day, couple) values ($1, true, true), ($2, false, true)`, [P(1), P(11)])
@@ -357,6 +372,7 @@ async function main() {
       const state = await one(`select public.estado() as e`)
       const row = state.e.intentions[0]
       assert(row.id === intention.id, 'la actividad nueva queda arriba')
+      assert(typeof row.created_at === 'string', 'la intención trae su hora')
       assert(row.comments[0].body === 'Primero.' && row.comments[0].mine === true, 'el comentario es mío')
       assert(typeof row.comments[0].created_at === 'string', 'el comentario trae su hora')
       assert(row.reactions[0].emoji === '🙏' && row.reactions[0].mine === true, 'la reacción es mía')
