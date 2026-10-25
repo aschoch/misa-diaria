@@ -26,7 +26,21 @@ let openIntention = ''
 let emojiFor = ''
 let depth = 0
 let pulling = false
-let gesture: { x: number; y: number; scroll: number; sheet: boolean; id: number; row: HTMLElement | null } | null = null
+let gesture: {
+  x: number
+  y: number
+  scroll: number
+  sheet: boolean
+  id: number
+  row: HTMLElement | null
+  lockedAxis: '' | 'x' | 'y'
+  armed: 'right' | 'left' | ''
+  peakX: number
+  pop: boolean
+  month: boolean
+} | null = null
+let suppressRowClick = false
+let streakClosing = false
 let streakMode: StreakMode = ''
 let monthsBefore = 1
 let monthsAfter = 1
@@ -235,51 +249,116 @@ async function pullRefresh() {
   }
 }
 
+function resetRow(row: HTMLElement | null) {
+  if (!row) return
+  row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
+  const face = row.querySelector<HTMLElement>('.swipe-face')
+  if (!face) return
+  face.style.transition = ''
+  face.style.transform = 'translateX(0)'
+}
+
+function trackRow(event: PointerEvent) {
+  if (!gesture?.row || gesture.lockedAxis === 'y') return
+  const dx = event.clientX - gesture.x
+  const dy = event.clientY - gesture.y
+  const row = gesture.row
+  const face = row.querySelector<HTMLElement>('.swipe-face')
+  if (!face) return
+  if (gesture.lockedAxis !== 'x') {
+    if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+      gesture.lockedAxis = 'x'
+      row.setPointerCapture?.(event.pointerId)
+      row.classList.add('dragging')
+      face.style.transition = 'none'
+    } else if (Math.abs(dy) >= 14 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+      gesture.lockedAxis = 'y'
+      gesture.row = null
+      resetRow(row)
+      return
+    } else {
+      return
+    }
+  }
+  if (dx >= 0) {
+    if (gesture.peakX < 0) gesture.peakX = 0
+    gesture.peakX = Math.max(gesture.peakX, dx)
+  } else {
+    if (gesture.peakX > 0) gesture.peakX = 0
+    gesture.peakX = Math.min(gesture.peakX, dx)
+  }
+  if (dx >= 44) gesture.armed = 'right'
+  else if (dx <= -44) gesture.armed = 'left'
+  if (gesture.armed === 'right' && gesture.peakX >= 44 && (dx < gesture.peakX - 18 || dx < 36)) gesture.armed = ''
+  if (gesture.armed === 'left' && gesture.peakX <= -44 && (dx > gesture.peakX + 18 || dx > -36)) gesture.armed = ''
+  row.classList.toggle('swipe-armed', gesture.armed !== '')
+  const committed = row.dataset.committed === 'true'
+  row.classList.toggle('swiping-right', dx > 8)
+  row.classList.toggle('swiping-left', dx < -8 && committed)
+  row.classList.toggle('swiping-muted', dx < -8 && !committed)
+  const shown = Math.max(-168, Math.min(dx, 148))
+  face.style.transform = `translateX(${shown}px)`
+}
+
+function closeStreak() {
+  if (!streakMode || streakClosing) return
+  streakClosing = true
+  const pop = document.querySelector<HTMLElement>('.streak-pop')
+  const back = document.querySelector<HTMLElement>('.streak-back')
+  if (pop) {
+    pop.style.transition = ''
+    pop.style.transform = ''
+    pop.classList.add('closing')
+  }
+  back?.classList.add('closing')
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  window.setTimeout(() => {
+    streakClosing = false
+    streakMode = ''
+    historyDate = ''
+    paint()
+  }, reduce ? 0 : 200)
+}
+
 app.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (!(target instanceof Element)) return
   const button = target.closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
   if (target.closest('input, textarea, select, [contenteditable="true"]')) return
-  const row = target.closest('.days li.swipeable')
+  const month = Boolean(target.closest('.month-scroll'))
+  const rowNode = target.closest('.days li.swipeable')
+  const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
+  const pop = Boolean(streakMode && !month && target.closest('.streak-pop, .streak-back'))
   gesture = {
     x: event.clientX,
     y: event.clientY,
     scroll: window.scrollY,
     sheet: Boolean(target.closest('.sheet')),
     id: event.pointerId,
-    row: row instanceof HTMLElement ? row : null,
+    row,
+    lockedAxis: '',
+    armed: '',
+    peakX: 0,
+    pop,
+    month,
   }
 })
 
 app.addEventListener('pointermove', (event) => {
-  if (!gesture || gesture.id !== event.pointerId || !gesture.row || gesture.x <= 36) return
-  const dx = event.clientX - gesture.x
+  if (!gesture || gesture.id !== event.pointerId || gesture.month) return
   const dy = event.clientY - gesture.y
-  const row = gesture.row
-  const face = row.querySelector<HTMLElement>('.swipe-face')
-  if (!face) return
-  if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
-    face.style.transform = ''
-    row.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
-    gesture.row = null
+  if (gesture.pop) {
+    if (dy > 0) {
+      const pop = document.querySelector<HTMLElement>('.streak-pop')
+      if (pop) {
+        pop.style.transition = 'none'
+        pop.style.transform = `translate(-50%, ${dy}px)`
+      }
+    }
     return
   }
-  if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy) * 1.5) return
-  const committed = row.dataset.committed === 'true'
-  row.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
-  if (dx > 0) {
-    row.classList.add('swiping-right')
-    face.style.transform = `translateX(${Math.min(dx, 148)}px)`
-    return
-  }
-  if (committed) {
-    row.classList.add('swiping-left')
-    face.style.transform = `translateX(${Math.max(dx, -168)}px)`
-    return
-  }
-  row.classList.add('swiping-muted')
-  face.style.transform = `translateX(${dx * 0.25}px)`
+  trackRow(event)
 })
 
 app.addEventListener('pointerup', (event) => {
@@ -288,18 +367,25 @@ app.addEventListener('pointerup', (event) => {
   gesture = null
   const dx = event.clientX - start.x
   const dy = event.clientY - start.y
-  if (start.row && start.x > 36) {
-    const face = start.row.querySelector<HTMLElement>('.swipe-face')
-    if (face) face.style.transform = ''
-    start.row.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
-    const across = Math.abs(dx) > Math.abs(dy) * 1.5
-    if (across) {
-      const date = start.row.dataset.date ?? ''
-      const committed = start.row.dataset.committed === 'true'
-      if (dx >= 64 && !committed) void setCommitment(date, true)
-      else if (dx <= -64 && committed) void setCommitment(date, false)
-      return
+  if (start.month) return
+  if (start.pop) {
+    const pop = document.querySelector<HTMLElement>('.streak-pop')
+    if (dy > 56) closeStreak()
+    else if (pop) {
+      pop.style.transition = ''
+      pop.style.transform = ''
     }
+    return
+  }
+  if (start.row && start.lockedAxis === 'x') {
+    suppressRowClick = true
+    window.setTimeout(() => { suppressRowClick = false }, 350)
+    const date = start.row.dataset.date ?? ''
+    const committed = start.row.dataset.committed === 'true'
+    resetRow(start.row)
+    if (start.armed === 'right' && !committed) void setCommitment(date, true)
+    else if (start.armed === 'left' && committed) void setCommitment(date, false)
+    return
   }
   const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
   const downDetail = dy > 70 && dy > Math.abs(dx) * 1.5
@@ -331,10 +417,16 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', (event) => {
   if (gesture?.id !== event.pointerId) return
   const row = gesture.row
+  const pop = gesture.pop
   gesture = null
-  const face = row?.querySelector<HTMLElement>('.swipe-face')
-  if (face) face.style.transform = ''
-  row?.classList.remove('swiping-right', 'swiping-left', 'swiping-muted')
+  resetRow(row)
+  if (pop) {
+    const node = document.querySelector<HTMLElement>('.streak-pop')
+    if (node) {
+      node.style.transition = ''
+      node.style.transform = ''
+    }
+  }
 })
 
 app.addEventListener('scroll', (event) => {
@@ -398,6 +490,12 @@ app.addEventListener('keydown', (event) => {
 })
 
 app.addEventListener('click', (event) => {
+  if (suppressRowClick) {
+    suppressRowClick = false
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   const acted = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
   if (acted?.dataset.act === 'back-wall') {
     event.preventDefault()
@@ -454,14 +552,6 @@ function plain(value: string, max: number) {
   const text = value.trim()
   if (!text || text.length > max || /[<>]/.test(text)) return ''
   return text
-}
-
-function bump(id: string) {
-  if (!current) return
-  const index = current.intentions.findIndex((item) => item.id === id)
-  if (index <= 0) return
-  const [item] = current.intentions.splice(index, 1)
-  current.intentions.unshift(item)
 }
 
 function isEmoji(value: string) {
@@ -534,7 +624,8 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     emojiFor = node.dataset.id ?? ''
     emojiQuery = ''
     paint()
-    document.querySelector<HTMLInputElement>('#emoji-search')?.focus()
+    const touch = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
+    if (!touch) document.querySelector<HTMLInputElement>('#emoji-search')?.focus()
     return
   }
   if (act === 'emoji-close') {
@@ -554,9 +645,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     return
   }
   if (act === 'streak-close') {
-    streakMode = ''
-    historyDate = ''
-    paint()
+    closeStreak()
     return
   }
   if (act === 'history-day') {
@@ -804,7 +893,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         const item = current.intentions.find((intention) => intention.id === intentionId)
         if (item) {
           item.comments.push({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, created_at: new Date().toISOString() })
-          bump(intentionId)
         }
         openIntention = intentionId
         paint()
@@ -837,7 +925,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         item.reactions = mine
           ? item.reactions.filter((reaction) => !(reaction.emoji === emoji && reaction.mine))
           : [...item.reactions, { emoji, mine: true }]
-        bump(intentionId)
         paint()
         return
       }
@@ -870,5 +957,15 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     busy = false
   }
 }
+
+function syncViewport() {
+  const view = window.visualViewport
+  if (!view) return
+  document.documentElement.style.setProperty('--vvh', `${view.height}px`)
+  if (emojiFor && window.scrollY !== 0) window.scrollTo(0, 0)
+}
+window.visualViewport?.addEventListener('resize', syncViewport)
+window.visualViewport?.addEventListener('scroll', syncViewport)
+syncViewport()
 
 void boot()

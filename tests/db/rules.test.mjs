@@ -349,6 +349,27 @@ async function main() {
       assert(row.comments[0].body === 'Primero.' && row.comments[0].mine === true, 'el comentario es mío')
       assert(typeof row.comments[0].created_at === 'string', 'el comentario trae su hora')
       assert(row.reactions[0].emoji === '🙏' && row.reactions[0].mine === true, 'la reacción es mía')
+      const older = await one(
+        `insert into public.intentions (member_id, body, created_at) values ($1, 'Vieja.', now() - interval '2 days') returning id`,
+        [P(1)],
+      )
+      const newer = await one(
+        `insert into public.intentions (member_id, body, created_at) values ($1, 'Nueva.', now() - interval '1 day') returning id`,
+        [P(1)],
+      )
+      await q(
+        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, 'Sigue abajo.')`,
+        [older.id, P(1)],
+      )
+      await q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '💛')`,
+        [older.id, P(1)],
+      )
+      const ordered = await one(`select public.estado() as e`)
+      const bodies = ordered.e.intentions.map((item) => item.body)
+      assert(bodies.indexOf('Nueva.') >= 0 && bodies.indexOf('Nueva.') < bodies.indexOf('Vieja.'), 'comentar no adelanta la intención vieja')
+      const kept = ordered.e.intentions.find((item) => item.id === older.id)
+      assert(kept.comments.at(-1).body === 'Sigue abajo.', 'el comentario nuevo queda al final del hilo')
       await q(
         `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '✨')`,
         [intention.id, P(1)],
