@@ -1,5 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Misa diaria">
-  <rect width="512" height="512" fill="#F3EBDD"/>
-  <path d="M146 372V236a110 110 0 0 1 220 0v136" fill="none" stroke="#9C3F1C" stroke-width="28" stroke-linecap="round"/>
-  <circle cx="256" cy="268" r="18" fill="#1E5C38"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  
+  <defs>
+    <clipPath id="squircle01">
+      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+    <filter id="matissePaper01" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="3" seed="7" result="wobble"/>
+      <feDisplacementMap in="SourceGraphic" in2="wobble" scale="4.8" xChannelSelector="R" yChannelSelector="G" result="cut"/>
+    </filter>
+    <filter id="linenGrain01" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="3" seed="12" result="noise"/>
+      <feColorMatrix type="matrix" values="
+        0 0 0 0 0.85
+        0 0 0 0 0.78
+        0 0 0 0 0.68
+        0 0 0 0.14 0" in="noise" result="linen"/>
+      <feComposite in="linen" in2="SourceGraphic" operator="atop"/>
+    </filter>
+  </defs>
+
+  <g clip-path="url(#squircle01)">
+    
+  <!-- Warm unbleached linen ground -->
+  <rect x="0" y="0" width="1024" height="1024" fill="#F6EFE2"/>
+  <g filter="url(#linenGrain01)">
+    <g filter="url(#matissePaper01)">
+      <!-- Bold asymmetric gouache paper cutouts (Vence Chapel palette) -->
+      <!-- Deep Cobalt Ultramarine cutout on left -->
+      <path d="M 118 220 C 230 165, 395 190, 428 310 C 455 415, 390 595, 430 740 C 310 785, 165 735, 125 605 C 92 495, 85 310, 118 220 Z" fill="#1B3E70"/>
+      <!-- Burnt Terracotta gouache cutout on right/bottom -->
+      <path d="M 480 455 C 640 430, 845 470, 892 615 C 925 725, 845 875, 675 905 C 510 925, 360 885, 345 775 C 332 675, 395 470, 480 455 Z" fill="#C64B27"/>
+      <!-- Warm Ochre Sun/Host gouache disk offset upper-right -->
+      <path d="M 538 142 C 675 132, 795 225, 798 355 C 802 482, 685 572, 545 568 C 402 564, 312 465, 318 338 C 324 218, 415 150, 538 142 Z" fill="#E8A229"/>
+      <!-- Warm Cream paper cutout for the Host wafer -->
+      <path d="M 516 208 C 608 204, 678 272, 676 360 C 674 448, 602 512, 512 510 C 422 508, 354 440, 358 352 C 362 268, 430 212, 516 208 Z" fill="#FAF4E8"/>
+
+      <!-- Matisse-style Four-Leaf Star cutouts -->
+      <path d="M 245 360 C 265 320, 265 280, 245 240 C 285 260, 325 260, 365 240 C 345 280, 345 320, 365 360 C 325 340, 285 340, 245 360 Z" fill="#FAF4E8" transform="translate(-45, 25) scale(0.82)"/>
+      <path d="M 760 280 C 775 245, 775 210, 760 175 C 795 190, 830 190, 865 175 C 850 210, 850 245, 865 280 C 830 265, 795 265, 760 280 Z" fill="#1B3E70"/>
+
+      <!-- Expressive variable-width Sumi-ink brush stroke drawing the Chalice & Cross -->
+      <!-- Brush Cross inside Host -->
+      <path d="M 503 265 C 512 262, 524 265, 523 278 C 521 318, 520 392, 522 442 C 522 454, 502 455, 501 440 C 500 390, 501 318, 503 265 Z" fill="#17120E"/>
+      <path d="M 426 346 C 472 342, 554 340, 600 345 C 612 347, 611 367, 596 367 C 550 364, 474 365, 426 368 C 414 368, 414 348, 426 346 Z" fill="#17120E"/>
+
+      <!-- Sweeping single-gesture Brush Chalice Bowl, Stem, Knop & Foot -->
+      <path d="M 278 492 C 296 485, 315 496, 320 515 C 346 624, 422 686, 514 685 C 606 684, 682 618, 704 506 C 708 486, 734 488, 732 512 C 708 646, 618 718, 514 720 C 408 722, 314 652, 278 514 C 274 500, 272 495, 278 492 Z" fill="#17120E"/>
+      <!-- Rim brush stroke -->
+      <path d="M 274 495 C 392 508, 618 506, 732 492 C 745 490, 748 512, 730 515 C 614 530, 392 532, 276 518 C 260 515, 262 493, 274 495 Z" fill="#17120E"/>
+      <!-- Stem & Knop brush stroke -->
+      <path d="M 498 705 C 506 705, 526 705, 526 715 C 525 758, 526 815, 528 855 C 528 868, 498 868, 498 855 C 499 815, 499 758, 498 705 Z" fill="#17120E"/>
+      <path d="M 446 768 C 485 758, 542 758, 578 768 C 592 772, 588 795, 572 794 C 538 786, 488 786, 448 794 C 432 796, 432 772, 446 768 Z" fill="#17120E"/>
+      <!-- Sweeping Chalice Base -->
+      <path d="M 338 868 C 425 842, 602 842, 688 868 C 706 874, 700 900, 678 896 C 594 874, 432 874, 346 896 C 325 900, 320 874, 338 868 Z" fill="#17120E"/>
+    </g>
+  </g>
+
+  </g>
+  <rect x="2" y="2" width="1020" height="1020" rx="226" ry="226" fill="none" stroke="rgba(35,22,14,0.22)" stroke-width="4"/>
 </svg>

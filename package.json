@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "npm run test:db && npm run test:aviso",
     "test:db": "node tests/db/rules.test.mjs",
     "test:aviso": "node --test tests/aviso/handler.test.mjs",
     "test:e2e": "playwright test"
