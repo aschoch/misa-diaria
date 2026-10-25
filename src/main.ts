@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, editarComentario, editar
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route, type StreakMode } from './view'
+import { blankDay, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderSetup, routeFromPath, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -50,6 +50,8 @@ let editing: { kind: 'intention' | 'comment'; id: string } | null = null
 let emojiQuery = ''
 let passwordSaved = false
 let feedbackSaved = false
+let calendarDays = 28
+let commitChain: Promise<void> = Promise.resolve()
 
 function rememberedEmail() {
   try {
@@ -103,6 +105,9 @@ function paint() {
     return
   }
   if (!selected) selected = current.today
+  const lastDate = current.calendar.reduce((max, day) => (day.date > max ? day.date : max), current.today)
+  const span = daysBetween(current.today, lastDate) + 1
+  if (span > calendarDays) calendarDays = span
   if (openIntention && !current.intentions.some((item) => item.id === openIntention)) openIntention = ''
   const intention = intentionFromPath(location.pathname) || openIntention
   if (emojiFor && !current.intentions.some((item) => item.id === emojiFor)) emojiFor = ''
@@ -115,9 +120,19 @@ function paint() {
     emojiQuery,
     passwordSaved,
     feedbackSaved,
+    calendarDays,
   })
   document.title = tx().brand
+  const popup = Boolean(streakMode)
+  document.documentElement.classList.toggle('modal-open', popup)
+  document.body.classList.toggle('modal-open', popup)
   if (streakAlign) alignStreak()
+}
+
+function daysBetween(from: string, to: string) {
+  const [y1, m1, d1] = from.split('-').map(Number)
+  const [y2, m2, d2] = to.split('-').map(Number)
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000)
 }
 
 function alignStreak() {
@@ -252,6 +267,7 @@ async function pullRefresh() {
 function resetRow(row: HTMLElement | null) {
   if (!row) return
   row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
+  for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) cue.textContent = cue.dataset.cue ?? ''
   const face = row.querySelector<HTMLElement>('.swipe-face')
   if (!face) return
   face.style.transition = ''
@@ -268,7 +284,7 @@ function trackRow(event: PointerEvent) {
   if (gesture.lockedAxis !== 'x') {
     if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       gesture.lockedAxis = 'x'
-      row.setPointerCapture?.(event.pointerId)
+      try { row.setPointerCapture?.(event.pointerId) } catch { /* Safari suelta el gesto si la captura falla */ }
       row.classList.add('dragging')
       face.style.transition = 'none'
     } else if (Math.abs(dy) >= 14 && Math.abs(dy) > Math.abs(dx) * 1.2) {
@@ -287,11 +303,13 @@ function trackRow(event: PointerEvent) {
     if (gesture.peakX > 0) gesture.peakX = 0
     gesture.peakX = Math.min(gesture.peakX, dx)
   }
-  if (dx >= 44) gesture.armed = 'right'
-  else if (dx <= -44) gesture.armed = 'left'
-  if (gesture.armed === 'right' && gesture.peakX >= 44 && (dx < gesture.peakX - 18 || dx < 36)) gesture.armed = ''
-  if (gesture.armed === 'left' && gesture.peakX <= -44 && (dx > gesture.peakX + 18 || dx > -36)) gesture.armed = ''
+  if (dx >= 52) gesture.armed = 'right'
+  else if (dx <= -52) gesture.armed = 'left'
+  else gesture.armed = ''
   row.classList.toggle('swipe-armed', gesture.armed !== '')
+  for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
+    cue.textContent = gesture.armed ? '✓' : (cue.dataset.cue ?? '')
+  }
   const committed = row.dataset.committed === 'true'
   row.classList.toggle('swiping-right', dx > 8)
   row.classList.toggle('swiping-left', dx < -8 && committed)
@@ -300,7 +318,7 @@ function trackRow(event: PointerEvent) {
   face.style.transform = `translateX(${shown}px)`
 }
 
-function closeStreak() {
+function closeStreakPopupWithAnimation() {
   if (!streakMode || streakClosing) return
   streakClosing = true
   const pop = document.querySelector<HTMLElement>('.streak-pop')
@@ -320,6 +338,22 @@ function closeStreak() {
   }, reduce ? 0 : 200)
 }
 
+function followPopup(dy: number) {
+  const pop = document.querySelector<HTMLElement>('.streak-pop')
+  if (!pop || dy <= 0) return
+  pop.style.transition = 'none'
+  pop.style.transform = `translate(-50%, ${dy}px)`
+}
+
+function armPopupDismiss(pointerId: number) {
+  if (!gesture || gesture.pop) return
+  const scroller = document.querySelector<HTMLElement>('.month-scroll')
+  if (!scroller || scroller.scrollTop > 0) return
+  gesture.pop = true
+  gesture.month = false
+  try { document.querySelector<HTMLElement>('.streak-pop')?.setPointerCapture?.(pointerId) } catch { /* sigue el gesto */ }
+}
+
 app.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (!(target instanceof Element)) return
@@ -329,7 +363,9 @@ app.addEventListener('pointerdown', (event) => {
   const month = Boolean(target.closest('.month-scroll'))
   const rowNode = target.closest('.days li.swipeable')
   const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
-  const pop = Boolean(streakMode && !month && target.closest('.streak-pop, .streak-back'))
+  const popNode = streakMode && !month ? target.closest<HTMLElement>('.streak-pop, .streak-back') : null
+  const pop = Boolean(popNode)
+  if (popNode && !target.closest('button.pop-close')) popNode.setPointerCapture?.(event.pointerId)
   gesture = {
     x: event.clientX,
     y: event.clientY,
@@ -346,20 +382,29 @@ app.addEventListener('pointerdown', (event) => {
 })
 
 app.addEventListener('pointermove', (event) => {
-  if (!gesture || gesture.id !== event.pointerId || gesture.month) return
+  if (!gesture || gesture.id !== event.pointerId) return
+  const dx = event.clientX - gesture.x
   const dy = event.clientY - gesture.y
+  if (gesture.month && !gesture.pop) {
+    if (dy > 0 && dy > Math.abs(dx)) armPopupDismiss(event.pointerId)
+    if (!gesture.pop) return
+  }
   if (gesture.pop) {
-    if (dy > 0) {
-      const pop = document.querySelector<HTMLElement>('.streak-pop')
-      if (pop) {
-        pop.style.transition = 'none'
-        pop.style.transform = `translate(-50%, ${dy}px)`
-      }
-    }
+    followPopup(dy)
     return
   }
   trackRow(event)
 })
+
+document.addEventListener('touchmove', (event) => {
+  if (!gesture) return
+  const touch = event.touches[0]
+  if (!touch) return
+  const dy = touch.clientY - gesture.y
+  const dx = touch.clientX - gesture.x
+  if (gesture.month && !gesture.pop && dy > 0 && dy > Math.abs(dx)) armPopupDismiss(gesture.id)
+  if (gesture.pop && dy > 0) event.preventDefault()
+}, { passive: false })
 
 app.addEventListener('pointerup', (event) => {
   if (!gesture || gesture.id !== event.pointerId) return
@@ -370,7 +415,7 @@ app.addEventListener('pointerup', (event) => {
   if (start.month) return
   if (start.pop) {
     const pop = document.querySelector<HTMLElement>('.streak-pop')
-    if (dy > 56) closeStreak()
+    if (dy > 56) closeStreakPopupWithAnimation()
     else if (pop) {
       pop.style.transition = ''
       pop.style.transform = ''
@@ -451,6 +496,26 @@ app.addEventListener('scroll', (event) => {
     if (next) next.scrollTop = top
   }
 }, true)
+
+let extendingCalendar = false
+let extendQueued = false
+window.addEventListener('scroll', () => {
+  if (extendQueued || extendingCalendar) return
+  extendQueued = true
+  requestAnimationFrame(() => {
+    extendQueued = false
+    if (extendingCalendar || streakMode || !current) return
+    if (routeFromPath(location.pathname) !== 'calendario') return
+    const remain = document.documentElement.scrollHeight - window.scrollY - window.innerHeight
+    if (remain > 320) return
+    extendingCalendar = true
+    const y = window.scrollY
+    calendarDays += 21
+    paint()
+    window.scrollTo(0, y)
+    extendingCalendar = false
+  })
+}, { passive: true })
 
 app.addEventListener('input', (event) => {
   const node = event.target
@@ -564,27 +629,45 @@ function isEmoji(value: string) {
   return parts[0]
 }
 
-async function setCommitment(date: string, on: boolean) {
-  if (!current || locked || busy || !date) return
-  const day = current.calendar.find((item) => item.date === date)
-  if (!day || day.mine_commitment === on) return
-  busy = true
-  try {
-    if (demo) {
-      day.mine_commitment = on
-      selected = date
-      paint()
-      return
-    }
-    await marcarCompromiso(current.me.id, date, on)
-    selected = date
-    await refresh(false)
-  } catch {
-    offline = tx().saveFail
-    paint()
-  } finally {
-    busy = false
+function ensureCommitmentDay(date: string) {
+  if (!current || date < current.today) return null
+  let day = current.calendar.find((item) => item.date === date)
+  if (!day) {
+    day = blankDay(date)
+    current.calendar.push(day)
+    current.calendar.sort((a, b) => a.date.localeCompare(b.date))
   }
+  const span = daysBetween(current.today, date) + 1
+  if (span > calendarDays) calendarDays = span
+  return day
+}
+
+async function setCommitment(date: string, on: boolean) {
+  if (!current || locked || !date || date < current.today) return
+  const day = ensureCommitmentDay(date)
+  if (!day || day.mine_commitment === on) return
+  day.mine_commitment = on
+  day.committed = on ? true : day.covered > 0
+  selected = date
+  paint()
+  if (demo) return
+  const member = current.me.id
+  const run = commitChain.then(async () => {
+    busy = true
+    try {
+      await marcarCompromiso(member, date, on)
+      await refresh(false)
+    } catch {
+      const currentDay = current?.calendar.find((item) => item.date === date)
+      if (currentDay) currentDay.mine_commitment = !on
+      offline = tx().saveFail
+      paint()
+    } finally {
+      busy = false
+    }
+  })
+  commitChain = run.then(() => undefined, () => undefined)
+  await run
 }
 
 function toggleDemoAttendance(date: string) {
@@ -645,7 +728,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     return
   }
   if (act === 'streak-close') {
-    closeStreak()
+    closeStreakPopupWithAnimation()
     return
   }
   if (act === 'history-day') {
@@ -749,12 +832,14 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (demo) {
       current = null
       demo = false
+      calendarDays = 28
       go('hoy')
       return
     }
     await salir()
     current = null
     denied = false
+    calendarDays = 28
     go('hoy')
     return
   }
@@ -787,15 +872,8 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (act === 'commit') {
       const date = node.dataset.date ?? ''
       const day = current.calendar.find((item) => item.date === date)
-      if (demo) {
-        if (day) day.mine_commitment = !day.mine_commitment
-        selected = date
-        paint()
-        return
-      }
-      await marcarCompromiso(current.me.id, date, !day?.mine_commitment)
-      selected = date
-      await refresh(false)
+      busy = false
+      await setCommitment(date, day ? !day.mine_commitment : true)
       return
     }
     if (act === 'save-password') {

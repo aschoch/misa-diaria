@@ -456,7 +456,7 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   await expect(page.locator('[data-act="select"][data-date="2026-10-23"]')).toContainText('vie')
   const select = page.locator('.days li button[data-act="select"]').first()
   await expect(select).toHaveCSS('appearance', 'none')
-  await expect(page.locator('.days li.swipeable').first()).toHaveCSS('min-height', '60px')
+  await expect(page.locator('.days li.swipeable').first()).toHaveCSS('min-height', '64px')
   const bar = await page.locator('.days li.risk').first().evaluate((node) => getComputedStyle(node, '::before').zIndex)
   expect(bar).toBe('2')
 
@@ -483,8 +483,109 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   expect(errors).toEqual([])
 })
 
+test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo', async ({ page, viewport }) => {
+  test.setTimeout(60_000)
+  const errors = watchConsole(page)
+  const phone = viewport?.width === 390
+  await login(page, 'persona1@example.com')
+  await page.evaluate(() => window.scrollTo(0, 120))
+  const scrolled = await page.evaluate(() => window.scrollY)
+  await page.getByTestId('streak-individual').click()
+  await expect(page.locator('body')).toHaveClass(/modal-open/)
+  const header = await page.locator('.streak-pop header').boundingBox()
+  if (!header) throw new Error('sin cabecera')
+  await page.mouse.move(header.x + 40, header.y + 18)
+  await page.mouse.down()
+  await page.mouse.move(header.x + 44, header.y + 120, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrolled)
+
+  await page.getByRole('button', { name: 'Ver todo' }).click()
+  await expect(page.getByTestId('month-scroll')).toBeVisible()
+  const foot = await page.locator('.pop-foot').boundingBox()
+  if (!foot) throw new Error('sin borde')
+  await page.mouse.move(foot.x + 40, foot.y + 8)
+  await page.mouse.down()
+  await page.mouse.move(foot.x + 44, foot.y + 90, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrolled)
+
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await expect(page.getByTestId('cal-month-head').first()).toHaveText('Octubre 2026')
+  await expect(page.getByTestId('cal-month-head').first()).toHaveCSS('position', 'sticky')
+  const first = page.locator('[data-testid="calendar"] li[data-date="2026-11-01"] .when')
+  await expect(first).toContainText('dom')
+  await expect(first).not.toContainText(/noviembre|octubre/)
+  if (phone) {
+    const layout = await page.evaluate(() => {
+      const bad: string[] = []
+      const check = () => {
+        for (const li of document.querySelectorAll<HTMLElement>('[data-testid="calendar"] li')) {
+          const row = li.getBoundingClientRect()
+          if (row.width < 1 || row.top < 48 || row.bottom > window.innerHeight - 72) continue
+          const num = li.querySelector('.num')?.getBoundingClientRect()
+          const when = li.querySelector('.when')?.getBoundingClientRect()
+          const commit = li.querySelector('.row-commit')?.getBoundingClientRect()
+          const meta = li.querySelector('.meta')?.getBoundingClientRect()
+          if (!num || !when || !commit || !meta) {
+            bad.push(li.dataset.date ?? 'falta')
+            continue
+          }
+          const left = Math.max(num.right, when.right)
+          if (left > commit.left + 1 || commit.right > meta.left + 1) bad.push(li.dataset.date ?? '')
+          const mid = (commit.left + commit.right) / 2
+          if (mid < row.left + row.width * 0.28 || mid > row.left + row.width * 0.72) bad.push(`centro ${li.dataset.date}`)
+        }
+      }
+      check()
+      window.scrollBy(0, 280)
+      check()
+      return bad
+    })
+    expect(layout).toEqual([])
+  }
+  await page.evaluate(() => {
+    const node = document.querySelector('.cal-month[data-month="2026-11"]')
+    if (!node) return
+    window.scrollTo(0, node.getBoundingClientRect().top + window.scrollY)
+  })
+  await expect.poll(async () => page.evaluate(() => {
+    const heads = [...document.querySelectorAll<HTMLElement>('.cal-month-head')]
+    return heads.find((head) => {
+      const rect = head.getBoundingClientRect()
+      return rect.top >= -2 && rect.bottom > 0 && rect.top < 40
+    })?.textContent ?? ''
+  })).toBe('Noviembre 2026')
+  const before = await page.locator('[data-testid="calendar"] li').count()
+  expect(before).toBeGreaterThan(14)
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await expect.poll(() => page.locator('[data-testid="calendar"] li').count()).toBeGreaterThan(before)
+
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const row = page.locator('[data-testid="calendar"] li[data-date="2026-10-26"]')
+  await row.scrollIntoViewIfNeeded()
+  const box = await row.boundingBox()
+  if (!box) throw new Error('sin fila')
+  const startX = Math.max(box.x + 48, 48)
+  const y = box.y + box.height / 2
+  await page.mouse.move(startX, y)
+  await page.mouse.down()
+  await page.mouse.move(startX + 36, y + 4, { steps: 6 })
+  await expect(row).toHaveClass(/swiping-right/)
+  await expect(row).not.toHaveClass(/swipe-armed/)
+  await page.mouse.move(startX + 64, y + 4, { steps: 6 })
+  await expect(row).toHaveClass(/swipe-armed/)
+  await page.mouse.move(startX + 20, y + 4, { steps: 6 })
+  await expect(row).not.toHaveClass(/swipe-armed/)
+  await page.mouse.up()
+  await expect(row.locator('.num')).not.toHaveClass(/planned/)
+  expect(errors).toEqual([])
+})
+
 test('capturas del teléfono', async ({ page, browserName, viewport }) => {
-  test.setTimeout(90_000)
+  test.setTimeout(120_000)
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)
   const errors = watchConsole(page)
   ensureShots()
@@ -499,6 +600,31 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
     if (node instanceof HTMLElement) node.blur()
   })
   await save(page, 'calendario.png')
+  await page.evaluate(() => {
+    const node = document.querySelector('.cal-month[data-month="2026-11"]')
+    if (!node) return
+    window.scrollTo(0, node.getBoundingClientRect().top + window.scrollY)
+  })
+  await expect(page.getByTestId('cal-month-head').nth(1)).toBeVisible()
+  await save(page, 'calendario-noviembre.png')
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const suave = page.locator('[data-testid="calendar"] li').nth(1)
+  await suave.scrollIntoViewIfNeeded()
+  const suaveBox = await suave.boundingBox()
+  if (!suaveBox) throw new Error('sin fila')
+  const startX = Math.max(suaveBox.x + 48, 48)
+  const y = suaveBox.y + suaveBox.height / 2
+  await page.mouse.move(startX, y)
+  await page.mouse.down()
+  await page.mouse.move(startX + 36, y, { steps: 6 })
+  await save(page, 'swipe-suave.png')
+  await page.mouse.move(startX + 70, y, { steps: 6 })
+  await save(page, 'swipe-armado.png')
+  await page.mouse.up()
+  const later = page.locator('[data-testid="calendar"] li[data-date="2026-11-08"]')
+  await later.scrollIntoViewIfNeeded()
+  await save(page, 'calendario-mas-dias.png')
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.locator('[data-act="select"][data-date="2026-10-24"]').click()
   await page.evaluate(() => {
     const node = document.activeElement
@@ -575,6 +701,7 @@ test('en portugués se ven las sequências y el calendario', async ({ page, brow
   if (shoot) await save(page, 'hoy-pt.png')
   await page.getByRole('link', { name: 'Calendário' }).click()
   await expect(page.getByTestId('calendar')).toContainText('de 6 casais')
+  await expect(page.getByTestId('cal-month-head').first()).toHaveText('Outubro 2026')
   await expect(page.getByText(/Falta|matrimónio/)).toHaveCount(0)
   if (shoot) await save(page, 'calendario-pt.png')
   await page.getByRole('link', { name: 'Definições' }).click()
@@ -812,12 +939,16 @@ test('un gesto en el calendario apunta y quita el voy', async ({ page }) => {
   await page.getByRole('link', { name: 'Calendario' }).click()
   const day = (date: string) => page.locator(`[data-act="select"][data-date="${date}"] .num`)
   const drag = async (date: string, dx: number, dy = 6) => {
-    const box = await page.locator(`[data-act="select"][data-date="${date}"]`).boundingBox()
+    const button = page.locator(`[data-act="select"][data-date="${date}"]`)
+    await expect.poll(async () => (await button.boundingBox())?.width ?? 0).toBeGreaterThan(20)
+    const box = await button.boundingBox()
     if (!box) throw new Error('sin día')
-    const startX = dx < 0 ? box.x + box.width - 36 : box.x + 72
-    await page.mouse.move(startX, box.y + box.height / 2)
+    const host = await page.locator(`[data-testid="calendar"] li[data-date="${date}"]`).boundingBox()
+    const startX = dx < 0 && host ? host.x + host.width - 40 : Math.max(box.x + 24, 48)
+    const y = box.y + box.height / 2
+    await page.mouse.move(startX, y)
     await page.mouse.down()
-    await page.mouse.move(startX + dx, box.y + box.height / 2 + dy, { steps: 8 })
+    await page.mouse.move(startX + dx, y + dy, { steps: 12 })
     await page.mouse.up()
   }
   await expect(day('2026-10-26')).not.toHaveClass(/planned/)

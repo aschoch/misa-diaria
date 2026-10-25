@@ -49,6 +49,12 @@ export function dates() {
   return current === 'pt' ? ptDates : esDates
 }
 
+export function monthTitle(locale: Locale, year: number, month: number) {
+  const name = (locale === 'pt' ? ptDates : esDates).meses[month - 1] ?? ''
+  const head = name.charAt(0).toLocaleUpperCase(locale === 'pt' ? 'pt-PT' : 'es-ES')
+  return `${head}${name.slice(1)} ${year}`
+}
+
 const copy = {
   es: {
     brand: 'Misa diaria',
@@ -92,6 +98,7 @@ const copy = {
     sunday: 'Domingo',
     riskFlag: 'En riesgo',
     commit: 'Voy a ir',
+    commitOn: '✓ Voy a ir',
     uncommit: 'Quitar «voy a ir»',
     nobody: 'Nadie se ha apuntado',
     committed: 'Alguien se ha apuntado',
@@ -183,6 +190,7 @@ const copy = {
     sunday: 'Domingo',
     riskFlag: 'Em risco',
     commit: 'Vou',
+    commitOn: '✓ Vou',
     uncommit: 'Tirar o «vou»',
     nobody: 'Ninguém se apontou',
     committed: 'Alguém se apontou',
