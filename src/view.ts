@@ -306,10 +306,11 @@ function streakPopup(state: Estado, mode: StreakMode, before: number, after: num
       <header>
         <h2>${esc(streakTitle(state, mode))}</h2>
         <b>${streakCount(state, mode)}</b>
-        <button type="button" class="text-link" data-act="streak-close">${copy.close}</button>
+        <button type="button" class="pop-close" data-act="streak-close" aria-label="${copy.close}"><span aria-hidden="true">×</span></button>
       </header>
       ${legend}
       <div class="month-scroll" data-testid="month-scroll">${months.join('')}</div>
+      <div class="pop-foot"></div>
       ${mode === 'all' ? historyDetail(state, historyDate, locked) : ''}
     </section>`
 }
@@ -323,13 +324,11 @@ function counts(day: Day) {
   return `<span class="count"><em>${copy.of12(day.covered)}</em><small>${copy.of6(day.couples)}</small></span>`
 }
 
-function dayMeta(day: Day, open: boolean) {
+function dayMeta(day: Day) {
   const copy = tx()
   if (day.sunday) return `<em>${copy.sunday}</em>${counts(day)}${badges(day)}`
   const status = atRisk(day)
-    ? (open
-      ? `<span class="why" data-testid="risk-why">${esc(copy.nobody)}</span>`
-      : `<em class="flag">${copy.riskFlag}</em>`)
+    ? `<em class="flag">${copy.riskFlag}</em>`
     : (day.committed ? `<em class="committed">${copy.committed}</em>` : '')
   return `${counts(day)}${status}${badges(day)}`
 }
@@ -346,9 +345,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
     const f = fecha(day.date)
     const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
     const open = day.date === selected
-    const commit = open
-      ? `<button type="button" class="row-commit" data-act="commit" data-date="${day.date}" ${locked ? 'disabled' : ''}>${day.mine_commitment ? copy.uncommit : copy.commit}</button>`
-      : ''
+    const commit = `<button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" ${locked ? 'disabled' : ''}>${day.mine_commitment ? copy.uncommit : copy.commit}</button>`
     const underLeft = day.mine_commitment ? copy.uncommit : copy.notCommitted
     return `<li class="${dayClass(day)} ${open ? 'selected' : ''} swipeable" data-date="${day.date}" data-committed="${day.mine_commitment}">
       <span class="swipe-under right">${copy.commit}</span>
@@ -357,7 +354,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
         <button type="button" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
           <span class="num ${mine}">${f.d}</span>
           <span class="when">${day.sunday ? sun : ''}${f.corto}${f.d === 1 ? ` ${f.mes}` : ''}</span>
-          <span class="meta">${dayMeta(day, open)}</span>
+          <span class="meta">${dayMeta(day)}</span>
         </button>
         ${commit}
       </div>
@@ -407,7 +404,15 @@ function pills(item: Intention, locked: boolean) {
   return `
     <div class="reacts">
       ${buttons}
-      <button type="button" class="react add" data-act="emoji-open" data-id="${item.id}" aria-label="${copy.addReaction}" ${locked ? 'disabled' : ''}>+</button>
+      <button type="button" class="react add" data-act="emoji-open" data-id="${item.id}" aria-label="${copy.addReaction}" ${locked ? 'disabled' : ''}>
+        <svg class="add-emoji-icon" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16.5 10.5a6.5 6.5 0 1 1-7-6.48" />
+          <circle cx="7.5" cy="9" r="0.9" fill="currentColor" stroke="none" />
+          <circle cx="12.5" cy="9" r="0.9" fill="currentColor" stroke="none" />
+          <path d="M7.3 12.2c.7.9 1.6 1.3 2.7 1.3s2-.4 2.7-1.3" />
+          <path d="M15.5 2.5v4M13.5 4.5h4" />
+        </svg>
+      </button>
     </div>`
 }
 
@@ -480,7 +485,10 @@ function sheet(intentionId: string, query: string) {
   return `
     <div class="sheet-back" data-act="emoji-close"></div>
     <section class="sheet" data-testid="emoji-sheet" role="dialog" aria-label="${copy.reactionSheet}">
-      <h2>${copy.reactionSheet}</h2>
+      <div class="sheet-head">
+        <h2>${copy.reactionSheet}</h2>
+        <button type="button" class="pop-close" data-act="emoji-close" aria-label="${copy.close}"><span aria-hidden="true">×</span></button>
+      </div>
       <label class="visually-hidden" for="emoji-search">${copy.emojiSearch}</label>
       <input id="emoji-search" data-act="emoji-search" data-id="${intentionId}" type="text" value="${esc(query)}" placeholder="${esc(copy.emojiSearch)}" autocomplete="off" enterkeyhint="search" />
       <div class="sheet-grid">${emojiGrid(intentionId, query)}</div>

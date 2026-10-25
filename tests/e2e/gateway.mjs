@@ -144,11 +144,11 @@ async function wallCopy(client, portuguese) {
   const newer = portuguese ? 'Eu também.' : 'Yo también.'
   await client.query('truncate public.intention_comments, public.intention_reactions, public.intentions')
   const inserted = await client.query(
-    `insert into public.intentions (member_id, body) values ($1, $2) returning id`,
+    `insert into public.intentions (member_id, body, created_at) values ($1, $2, now()) returning id`,
     [P(1), first],
   )
   await client.query(
-    `insert into public.intentions (member_id, body) values ($1, $2)`,
+    `insert into public.intentions (member_id, body, created_at) values ($1, $2, now() - interval '1 day')`,
     [P(4), second],
   )
   const id = inserted.rows[0].id
@@ -185,9 +185,9 @@ async function seedActivity(client) {
            public.madrid_today()
     from generate_series(1, 9) as n;
 
-    insert into public.intentions (member_id, body) values
-      (('00000000-0000-4000-8000-' || lpad(to_hex(1), 12, '0'))::uuid, 'Por quienes no pueden salir de casa.'),
-      (('00000000-0000-4000-8000-' || lpad(to_hex(4), 12, '0'))::uuid, 'Por la paz en casa.');
+    insert into public.intentions (member_id, body, created_at) values
+      (('00000000-0000-4000-8000-' || lpad(to_hex(1), 12, '0'))::uuid, 'Por quienes no pueden salir de casa.', now()),
+      (('00000000-0000-4000-8000-' || lpad(to_hex(4), 12, '0'))::uuid, 'Por la paz en casa.', now() - interval '1 day');
 
     insert into public.commitments (member_id, mass_date)
     select ('00000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,

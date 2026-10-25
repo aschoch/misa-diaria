@@ -355,20 +355,25 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   const narrow = (page.viewportSize()?.width ?? 0) < 800
   if (narrow) await expect(page.locator('.day')).toBeHidden()
   else await expect(page.locator('.day')).toBeVisible()
-  await page.locator('[data-act="select"][data-date="2026-10-27"]').click()
   const empty = page.locator('[data-testid="calendar"] li:has([data-date="2026-10-27"])')
+  const before = await empty.evaluate((node) => node.getBoundingClientRect().height)
+  await page.locator('[data-act="select"][data-date="2026-10-27"]').click()
+  const after = await empty.evaluate((node) => node.getBoundingClientRect().height)
+  expect(Math.abs(after - before)).toBeLessThan(1)
+  expect(before).toBeGreaterThanOrEqual(60)
   await expect(empty).toHaveClass(/risk/)
-  await expect(empty.getByTestId('risk-why')).toHaveText('Nadie se ha apuntado')
+  await expect(empty.locator('.flag')).toHaveText('En riesgo')
+  await expect(empty.getByTestId('risk-why')).toHaveCount(0)
   const open = await empty.evaluate((node) => {
-    const why = node.querySelector('.why')
+    const flag = node.querySelector('.flag')
     const count = node.querySelector('.count')
     const commit = node.querySelector('.row-commit')
     const bar = getComputedStyle(node, '::before')
     const box = commit?.getBoundingClientRect()
     return {
-      whySize: why ? getComputedStyle(why).fontSize : '',
+      flagSize: flag ? getComputedStyle(flag).fontSize : '',
       countSize: count ? getComputedStyle(count).fontSize : '',
-      whyColor: why ? getComputedStyle(why).color : '',
+      flagColor: flag ? getComputedStyle(flag).color : '',
       barWidth: bar.width,
       commit: commit && box ? {
         display: getComputedStyle(commit).display,
@@ -378,9 +383,9 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
       } : null,
     }
   })
-  expect(open.whySize).toBe(open.countSize)
-  expect(open.whySize).toBe('16px')
-  expect(open.whyColor).toBe('rgb(122, 62, 12)')
+  expect(open.flagSize).toBe(open.countSize)
+  expect(open.flagSize).toBe('13px')
+  expect(open.flagColor).toBe('rgb(122, 62, 12)')
   expect(open.barWidth).toBe('4px')
   if (open.commit && open.commit.display !== 'none') {
     expect(open.commit.whiteSpace).toBe('nowrap')
@@ -439,7 +444,8 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
 
   await page.locator('[data-act="select"][data-date="2026-10-27"]').click()
   await expect(row('2026-10-27')).toHaveClass(/risk/)
-  await expect(page.getByTestId('risk-why')).toHaveText('Nadie se ha apuntado')
+  await expect(row('2026-10-27').locator('.flag')).toHaveText('En riesgo')
+  await expect(page.getByTestId('risk-why')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
@@ -450,7 +456,7 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   await expect(page.locator('[data-act="select"][data-date="2026-10-23"]')).toContainText('vie')
   const select = page.locator('.days li button[data-act="select"]').first()
   await expect(select).toHaveCSS('appearance', 'none')
-  await expect(select).toHaveCSS('min-height', '54px')
+  await expect(page.locator('.days li.swipeable').first()).toHaveCSS('min-height', '60px')
   const bar = await page.locator('.days li.risk').first().evaluate((node) => getComputedStyle(node, '::before').zIndex)
   expect(bar).toBe('2')
 
@@ -780,6 +786,23 @@ test('la contraseña se guarda y el comentario de feedback entra', async ({ page
   await page.locator('#feedback').fill('Una nota breve.')
   await page.getByRole('button', { name: 'Enviar comentario' }).click()
   await expect(page.getByTestId('feedback-thanks')).toHaveText('¡Gracias! Se ha enviado.')
+  expect(errors).toEqual([])
+})
+
+test('un comentario no sube la intención vieja', async ({ page }) => {
+  const errors = watchConsole(page)
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Intenciones' }).click()
+  const bodies = page.locator('.notes article p')
+  await expect(bodies.nth(0)).toHaveText('Por quienes no pueden salir de casa.')
+  await expect(bodies.nth(1)).toHaveText('Por la paz en casa.')
+  await page.getByRole('link', { name: /Por la paz en casa/ }).click()
+  await page.getByLabel('Un comentario').fill('Sigue abajo.')
+  await page.getByRole('button', { name: 'Publicar' }).click()
+  await expect(page.getByText('Sigue abajo.')).toBeVisible()
+  await page.getByRole('link', { name: 'Volver a intenciones' }).click()
+  await expect(page.locator('.notes article p').nth(0)).toHaveText('Por quienes no pueden salir de casa.')
+  await expect(page.locator('.notes article p').nth(1)).toHaveText('Por la paz en casa.')
   expect(errors).toEqual([])
 })
 
