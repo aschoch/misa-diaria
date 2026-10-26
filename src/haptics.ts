@@ -68,18 +68,18 @@ export function stopMomentum() {
   frame = 0
 }
 
-// La inercia solo sigue a un gesto rápido que aún se movía al soltar: si el dedo
-// se paró antes de levantarse, la lista se queda donde está.
+// Inercia como la de iOS. Solo si el dedo aún se movía al soltar: si se paró
+// antes de levantarse, la lista se queda donde está.
 export function startMomentum(samples: { t: number; y: number }[], releasedAt: number) {
   stopMomentum()
   const last = samples[samples.length - 1]
-  if (!last || releasedAt - last.t > 40) return
-  const recent = samples.filter((sample) => releasedAt - sample.t <= 80)
+  if (!last || releasedAt - last.t > 60) return
+  const recent = samples.filter((sample) => last.t - sample.t <= 100)
   const first = recent[0]
-  if (!first || recent.length < 3 || last.t - first.t < 16) return
-  let velocity = -(last.y - first.y) / (releasedAt - first.t)
-  if (Math.abs(velocity) < 0.35) return
-  velocity = Math.max(-4, Math.min(4, velocity))
+  if (!first || recent.length < 2 || last.t === first.t) return
+  let velocity = -(last.y - first.y) / (last.t - first.t)
+  if (Math.abs(velocity) < 0.15) return
+  velocity = Math.max(-6, Math.min(6, velocity))
   let prev = performance.now()
   const step = (now: number) => {
     const dt = Math.min(32, Math.max(1, now - prev))
