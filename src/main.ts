@@ -1215,6 +1215,7 @@ function classifySwitch(start: NonNullable<typeof gesture>, x: number, y: number
 }
 
 let lastTouchEnd = 0
+let cancelledSwitch: HTMLInputElement | null = null
 // Tras un deslizamiento o un scroll, el clic simulado del switch no es un toque.
 let ignoreSwitchClickUntil = 0
 
@@ -1292,6 +1293,15 @@ app.addEventListener('touchstart', (event) => {
 // simulado (y su vibración) cuando el gesto fue un scroll o un deslizamiento que no cambia nada.
 app.addEventListener('touchend', (event) => {
   lastTouchEnd = performance.now()
+  if (cancelledSwitch) {
+    const input = cancelledSwitch
+    cancelledSwitch = null
+    traceSwipe('te:cancel')
+    ignoreSwitchClickUntil = performance.now() + 400
+    input.removeAttribute('switch')
+    window.setTimeout(() => input.setAttribute('switch', ''), 0)
+    return
+  }
   const touch = event.changedTouches?.[0]
   const pending = switchRelease && !switchRelease.done ? switchRelease : null
   const kind = pending?.kind ?? (gesture?.rowSwitch && touch ? classifySwitch(gesture, touch.clientX, touch.clientY) : null)
@@ -1464,6 +1474,13 @@ app.addEventListener('pointercancel', (event) => {
   if (gesture?.id !== event.pointerId) return
   if (gesture.rowSwitch) {
     traceSwipe('pcancel')
+    // iOS cancela a veces un deslizamiento corto: el clic que el switch manda al
+    // levantar el dedo no es un toque y no debe apuntarte ni abrir el día.
+    if (gesture.lockedAxis !== '' || gesture.scrolling) {
+      const input = gesture.rowSwitch
+      cancelledSwitch = input
+      window.setTimeout(() => { if (cancelledSwitch === input) cancelledSwitch = null }, 600)
+    }
     const ownTrace = swipeTrace
     window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
   }

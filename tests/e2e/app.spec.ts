@@ -2043,3 +2043,31 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   // Cada gesto deja su rastro técnico para diagnosticar en el iPhone real.
   await expect.poll(async () => (await usageRows(page)).filter((row) => row.event_name === 'swipe_debug').length, { timeout: 5000 }).toBeGreaterThanOrEqual(2)
 })
+
+test('si iOS cancela un deslizamiento corto, el clic del switch no apunta ni abre el día', async ({ page, viewport }) => {
+  test.skip((viewport?.width ?? 0) > 600)
+  await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  const date = await page.locator('.row-commit[aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
+  const pill = page.locator(`.row-commit[data-date="${date}"]`)
+  await pill.scrollIntoViewIfNeeded()
+  const box = await pill.boundingBox()
+  if (!box) throw new Error('sin píldora')
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 20, y, { steps: 3 })
+  // Lo que hace iOS: pointercancel, luego touchend y el clic simulado del switch.
+  await page.evaluate(({ x, y }) => {
+    const input = document.elementFromPoint(x + 20, y) as HTMLInputElement
+    input.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
+    input.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true }))
+    input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }))
+  }, { x, y })
+  await page.mouse.up()
+  await page.waitForTimeout(400)
+  await expect(pill).toHaveAttribute('aria-pressed', 'false')
+})
