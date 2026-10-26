@@ -2092,8 +2092,10 @@ test('un swipe muy rápido que iOS cancela cuenta si al soltar pasó el umbral',
   await page.evaluate(({ x, y }) => {
     const input = document.elementFromPoint(x + 20, y) as HTMLInputElement
     input.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
-    const touch = new Touch({ identifier: 1, target: input, clientX: x + 130, clientY: y })
-    input.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, changedTouches: [touch] }))
+    // Safari no deja crear un Touch: basta con un touchend que diga dónde se levantó el dedo.
+    const end = new Event('touchend', { bubbles: true, cancelable: true })
+    Object.defineProperty(end, 'changedTouches', { value: [{ clientX: x + 130, clientY: y }] })
+    input.dispatchEvent(end)
     input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x + 130, clientY: y }))
   }, { x, y })
   await page.mouse.up()

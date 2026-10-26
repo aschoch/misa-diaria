@@ -201,8 +201,6 @@ const copy = {
     pushNeedsInstall: 'Para recibir el aviso, primero añade la app a la pantalla de inicio.',
     pushBlocked: 'Las notificaciones están bloqueadas en los ajustes del teléfono.',
     loading: 'Cargando',
-    swipeHaptic: 'Vibrar al deslizar en el calendario (prueba)',
-    swipeHapticNote: 'Notarás pequeños toques al arrastrar un día y uno al soltar. Si el scroll del calendario se siente raro, apágalo.',
   },
   pt: {
     brand: 'Missa diária',
@@ -349,8 +347,6 @@ const copy = {
     pushNeedsInstall: 'Para receber o aviso, primeiro adiciona a aplicação ao ecrã principal.',
     pushBlocked: 'As notificações estão bloqueadas nas definições do telemóvel.',
     loading: 'A carregar',
-    swipeHaptic: 'Vibrar ao deslizar no calendário (teste)',
-    swipeHapticNote: 'Vais sentir pequenos toques ao arrastar um dia e um ao largar. Se o scroll do calendário parecer estranho, desliga.',
   },
 } as const
 

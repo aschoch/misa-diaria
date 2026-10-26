@@ -1,7 +1,7 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
 import { esc, fecha, formatTimestamp, fullDate } from './format'
-import { swipeSwitchOn, swipeSwitchSupported } from './haptics'
+import { swipeSwitchOn } from './haptics'
 import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
 export type StreakMode = '' | 'individual' | 'couple' | 'group' | 'six' | 'all'
@@ -747,10 +747,6 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
           <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
             <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
           </button>
-          ${swipeSwitchSupported() || swipeSwitchOn() ? `<button type="button" class="switch" role="switch" aria-checked="${swipeSwitchOn()}" data-act="swipe-haptic" data-testid="swipe-haptic">
-            <span>${copy.swipeHaptic}</span><i></i>${hapticOverlay()}
-          </button>
-          <p class="notify-note">${copy.swipeHapticNote}</p>` : ''}
         </div>
       </section>
       <section class="settings-card">

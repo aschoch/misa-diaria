@@ -5,7 +5,7 @@ import './styles.css'
 import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { loadEmojis } from './emoji'
-import { placeSwitch, resetSwitch, setSwipeSwitch, startMomentum, stopMomentum, swipeSwitchOn } from './haptics'
+import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeDiagnostics, swipeSwitchOn } from './haptics'
 import { esc } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
@@ -1148,7 +1148,7 @@ app.addEventListener('pointerdown', (event) => {
   stopMomentum()
   if (target.closest('input:not([data-haptic-switch]):not([data-row-haptic]):not([data-row-switch]), textarea, select, [contenteditable="true"]')) return
   const rowSwitch = target instanceof HTMLInputElement && target.hasAttribute('data-row-switch') ? target : null
-  if (rowSwitch) {
+  if (rowSwitch && swipeDiagnostics()) {
     if (swipeTrace) sendSwipeTrace()
     const style = getComputedStyle(rowSwitch)
     swipeTrace = {
@@ -1649,7 +1649,7 @@ app.addEventListener('click', (event) => {
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-haptic-switch')) {
     event.stopPropagation()
     // Con el diagnóstico encendido, cada toque deja si el switch cambió de verdad (isTrusted).
-    if (swipeSwitchOn() && current && !demo && swipeTraceSent < 40) {
+    if (swipeDiagnostics() && current && !demo && swipeTraceSent < 40) {
       swipeTraceSent += 1
       const owner = event.target.closest<HTMLElement>('[data-act]')
       registrarEvento(current.me.id, 'tap_debug', routeFromPath(location.pathname), {
@@ -2125,11 +2125,6 @@ function queueAttendance(node: HTMLElement) {
 async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'back-wall') {
     backToWall()
-    return
-  }
-  if (act === 'swipe-haptic') {
-    setSwipeSwitch(!swipeSwitchOn())
-    paint()
     return
   }
   if (act === 'locale') {

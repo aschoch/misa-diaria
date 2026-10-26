@@ -10,30 +10,32 @@
 const FLAG = 'misa-vibrar-deslizar'
 let cached: boolean | null = null
 
+// Solo en iPhone y iPad con switch nativo (iOS 17.4 o más): en el resto no vibraría.
 export function swipeSwitchSupported() {
   try {
-    const native = 'switch' in document.createElement('input') || /iP(hone|ad|od)/.test(navigator.userAgent)
-    return native && window.matchMedia('(pointer: coarse)').matches
+    const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    return ios && 'switch' in document.createElement('input')
   } catch {
     return false
   }
 }
 
+function flag() {
+  try { return localStorage.getItem(FLAG) ?? '' } catch { return '' }
+}
+
+// Siempre encendido donde funciona. "force" solo existe para las pruebas en
+// navegadores sin switch nativo.
 export function swipeSwitchOn() {
-  if (cached != null) return cached
-  let value = ''
-  try { value = localStorage.getItem(FLAG) ?? '' } catch { /* sin almacenamiento: apagado */ }
-  // "force" solo existe para las pruebas en navegadores sin switch nativo.
-  cached = value === 'force' || (value === 'on' && swipeSwitchSupported())
+  if (cached == null) cached = flag() === 'force' || swipeSwitchSupported()
   return cached
 }
 
-export function setSwipeSwitch(on: boolean) {
-  try {
-    if (on) localStorage.setItem(FLAG, 'on')
-    else localStorage.removeItem(FLAG)
-  } catch { /* se queda como estaba */ }
-  cached = null
+// El registro técnico de cada gesto (swipe_debug, tap_debug) solo sale en los
+// móviles que encendieron la antigua opción de prueba.
+export function swipeDiagnostics() {
+  const value = flag()
+  return value === 'on' || value === 'force'
 }
 
 // Posición del switch para que el dedo quede en el lado "apagado" (on = false)
