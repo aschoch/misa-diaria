@@ -24,7 +24,7 @@ let glassFrom: { index: number } | { px: number } | null = null
 let attendanceEpoch = 0
 let attendChain: Promise<void> = Promise.resolve()
 let appOpened = false
-let audioCtx: AudioContext | null = null
+let installOpen = false
 let suppressNavClick = false
 let tabScrub: {
   id: number
@@ -177,6 +177,7 @@ function paint() {
     feedbackSaved,
     calendarDays,
     hero: heroVariant(),
+    installOpen,
   })
   if (keepScroll) window.scrollTo(0, y)
   document.title = tx().brand
@@ -379,36 +380,7 @@ function readGlassX(pill: HTMLElement) {
 }
 
 function triggerHaptic() {
-  document.querySelector<HTMLLabelElement>('#haptic-label')?.click()
   navigator.vibrate?.(12)
-  try {
-    const Ctx = window.AudioContext
-      ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Ctx) return
-    if (!audioCtx) audioCtx = new Ctx()
-    const thump = () => {
-      try {
-        if (!audioCtx) return
-        const osc = audioCtx.createOscillator()
-        const gain = audioCtx.createGain()
-        osc.type = 'sine'
-        osc.frequency.value = 55
-        const t = audioCtx.currentTime
-        gain.gain.setValueAtTime(0.0001, t)
-        gain.gain.exponentialRampToValueAtTime(0.2, t + 0.004)
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.012)
-        osc.connect(gain)
-        gain.connect(audioCtx.destination)
-        osc.start(t)
-        osc.stop(t + 0.016)
-      } catch {
-        /* el toque no puede romper el tap */
-      }
-    }
-    void audioCtx.resume().then(thump, () => undefined)
-  } catch {
-    /* el toque no puede romper el tap */
-  }
 }
 
 function settleGlass() {
@@ -463,7 +435,6 @@ function beginTabScrub(event: PointerEvent) {
   const nav = target.closest<HTMLElement>('nav.tabs')
   const pill = nav?.querySelector<HTMLElement>('.tab-glass-pill')
   if (!nav || !pill) return
-  if (event.cancelable) event.preventDefault()
   gesture = null
   const slot = pill.getBoundingClientRect().width || 1
   const origin = readGlassX(pill)
@@ -969,13 +940,17 @@ app.addEventListener('keydown', (event) => {
   }
 })
 
-for (const selector of ['#haptic-label', '#haptic-switch']) {
-  document.querySelector(selector)?.addEventListener('click', (event) => {
-    event.stopPropagation()
-  })
-}
+app.addEventListener('toggle', (event) => {
+  const node = event.target
+  if (!(node instanceof HTMLDetailsElement) || !node.classList.contains('install-details')) return
+  installOpen = node.open
+}, true)
 
 app.addEventListener('click', (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-haptic-switch')) {
+    event.stopPropagation()
+    return
+  }
   const hapticTarget = event.target
   if (
     hapticTarget instanceof Element
