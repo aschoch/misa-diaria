@@ -700,6 +700,26 @@ function triggerHaptic() {
   navigator.vibrate?.(12)
 }
 
+// iOS no tiene vibrate: un switch oculto que recibe un clic dentro de un gesto
+// del dedo hace que Safari dispare su vibración nativa.
+function switchHaptic() {
+  const label = document.createElement('label')
+  label.setAttribute('aria-hidden', 'true')
+  label.style.display = 'none'
+  const input = document.createElement('input')
+  input.type = 'checkbox'
+  input.setAttribute('switch', '')
+  label.appendChild(input)
+  document.head.appendChild(label)
+  label.click()
+  label.remove()
+}
+
+function swipeCommits(row: HTMLElement, armed: 'right' | 'left' | '') {
+  const committed = row.dataset.committed === 'true'
+  return (armed === 'right' && !committed) || (armed === 'left' && committed)
+}
+
 function tickIfRunning() {
   const ctx = audioCtx
   if (!ctx || ctx.state !== 'running') return
@@ -876,8 +896,6 @@ function blurRow(row: HTMLElement | null) {
 function resetRow(row: HTMLElement | null) {
   if (!row) return
   row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
-  const inputs = row.querySelectorAll<HTMLInputElement>('input[data-row-haptic]')
-  window.setTimeout(() => inputs.forEach((input) => input.removeAttribute('switch')), 0)
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) cue.textContent = cue.dataset.cue ?? ''
   const face = row.querySelector<HTMLElement>('.swipe-face')
   blurRow(row)
@@ -922,21 +940,12 @@ function trackRow(event: PointerEvent) {
   else if (dx <= -SWIPE_CONFIRM_PX) gesture.armed = 'left'
   else gesture.armed = ''
   const committed = row.dataset.committed === 'true'
-  const willCommit = (gesture.armed === 'right' && !committed) || (gesture.armed === 'left' && committed)
+  const willCommit = swipeCommits(row, gesture.armed)
   const wasArmed = row.classList.contains('swipe-armed')
   row.classList.toggle('swipe-armed', willCommit)
   if (willCommit && !wasArmed) {
     triggerHaptic()
     tickIfRunning()
-  }
-  const hapticInput = gesture.hapticInput
-  if (hapticInput) {
-    if (willCommit) {
-      hapticInput.setAttribute('switch', '')
-      void hapticInput.offsetWidth
-    } else {
-      hapticInput.removeAttribute('switch')
-    }
   }
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
     const side = cue.closest('.swipe-under.left') ? 'left' : 'right'
@@ -1078,22 +1087,28 @@ app.addEventListener('pointerdown', (event) => {
 })
 
 let rowTouch: { x: number; y: number } | null = null
+let swipeHaptic = false
 app.addEventListener('touchstart', (event) => {
-  const touch = event.changedTouches[0]
+  const touch = event.changedTouches?.[0]
   rowTouch = touch ? { x: touch.clientX, y: touch.clientY } : null
 }, { capture: true, passive: true })
 
+// El touchend es gesto del usuario en Safari: ahí vibra el swipe que confirma
+// (marcado en pointerup, que en iOS llega antes) y el toque quieto en la fila.
 app.addEventListener('touchend', (event) => {
+  const live = gesture?.row && gesture.lockedAxis === 'x' ? swipeCommits(gesture.row, gesture.armed) : false
+  const committing = swipeHaptic || live
+  swipeHaptic = false
+  if (committing) {
+    switchHaptic()
+    return
+  }
   const target = event.target
-  if (!(target instanceof HTMLInputElement) || !target.hasAttribute('data-row-haptic')) return
-  if (!target.closest('.row-commit, .select-day')) return
+  if (!(target instanceof Element) || !target.closest('.days .row-commit, .days .select-day')) return
   if (gesture && gesture.lockedAxis !== '') return
-  // En iOS el pointerup llega antes: solo un toque quieto cuenta como tap.
-  const touch = event.changedTouches[0]
+  const touch = event.changedTouches?.[0]
   if (!rowTouch || !touch || Math.hypot(touch.clientX - rowTouch.x, touch.clientY - rowTouch.y) > 10) return
-  target.setAttribute('switch', '')
-  void target.offsetWidth
-  window.setTimeout(() => target.removeAttribute('switch'), 0)
+  switchHaptic()
 }, true)
 
 window.addEventListener('pointermove', (event) => {
@@ -1155,13 +1170,15 @@ app.addEventListener('pointerup', (event) => {
   if (start.row) blurRow(start.row)
   if (start.row && start.lockedAxis === 'x') {
     const date = start.row.dataset.date ?? ''
-    const committed = start.row.dataset.committed === 'true'
-    const willCommit = (start.armed === 'right' && !committed) || (start.armed === 'left' && committed)
+    const willCommit = swipeCommits(start.row, start.armed)
     rowCommitClick = willCommit
     suppressRowClick = true
     window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
     resetRow(start.row)
-    // El repintado espera al touchend: WebKit vibra con el switch de la fila si sigue en el DOM.
+    if (willCommit && event.pointerType === 'touch') {
+      swipeHaptic = true
+      window.setTimeout(() => { swipeHaptic = false }, 300)
+    }
     if (willCommit) window.setTimeout(() => void setCommitment(date, start.armed === 'right', 'swipe'), 0)
     return
   }
@@ -1323,7 +1340,6 @@ app.addEventListener('click', (event) => {
   }
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-row-haptic')) {
     const input = event.target
-    window.setTimeout(() => input.removeAttribute('switch'), 0)
     if (suppressRowClick) {
       suppressRowClick = false
       rowCommitClick = false
