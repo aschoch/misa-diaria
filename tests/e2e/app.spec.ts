@@ -2172,5 +2172,23 @@ test('con la prueba del calendario único, los días pasados viven en el calenda
   const moved = (await calendar.locator('li[data-date="2026-09-26"]').boundingBox())?.y ?? 0
   expect(Math.abs(moved - before)).toBeLessThan(4)
   if (process.env.MISA_UNIFIED_SHOTS) await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-arriba.png` })
+
+  // Lejos de hoy sale «Hoy» con la flecha hacia hoy, y lleva de vuelta.
+  const back = page.getByTestId('to-today')
+  await expect(back).toBeVisible()
+  await expect(back).toHaveAttribute('data-dir', 'down')
+  await expect(back).toHaveText('↓Hoy')
+  await back.click()
+  await expect(today).toBeInViewport()
+  await expect(back).toBeHidden()
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await expect(back).toBeVisible()
+  await expect(back).toHaveAttribute('data-dir', 'up')
+  if (process.env.MISA_UNIFIED_SHOTS) await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-abajo.png` })
+  await back.click()
+  await expect(today).toBeInViewport()
+  await expect(today).toHaveClass(/is-today/)
+  // Los días pasados no llevan puntos (no hay leyenda): lo dicen con palabras.
+  await expect(calendar.locator('li[data-kind="past"] .dots')).toHaveCount(0)
   expect(errors).toEqual([])
 })

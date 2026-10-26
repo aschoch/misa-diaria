@@ -384,6 +384,7 @@ function paint() {
   if (opening) focusDialog()
   if (keepScroll) window.scrollTo(0, y)
   else if (route === 'calendario' && unifiedCalendar()) jumpPageTop(calendarHomeY())
+  syncTodayButton()
   document.title = tx().brand
   const popup = Boolean(streakMode)
   document.documentElement.classList.toggle('modal-open', popup)
@@ -849,6 +850,27 @@ function jumpPageTop(to = 0) {
 
 // Con los días pasados en el calendario, el inicio es hoy: arriba se ven un par
 // de días pasados y abajo lo que viene.
+// El botón «Hoy» sale cuando la fila de hoy no se ve, y la flecha apunta hacia ella.
+function syncTodayButton() {
+  const button = document.querySelector<HTMLButtonElement>('[data-testid="to-today"]')
+  if (!button || !current) return
+  const row = document.querySelector<HTMLElement>(`[data-testid="calendar"] li[data-date="${current.today}"]`)
+  const box = row?.getBoundingClientRect()
+  const above = Boolean(box && box.bottom < 0)
+  const below = Boolean(box && box.top > window.innerHeight - 90)
+  const show = above || below
+  if (show) {
+    const dir = above ? 'up' : 'down'
+    if (button.dataset.dir !== dir) {
+      button.dataset.dir = dir
+      const arrow = button.querySelector('.to-today-arrow')
+      if (arrow) arrow.textContent = above ? '↑' : '↓'
+    }
+  }
+  if (button.hidden === !show) return
+  button.hidden = !show
+}
+
 function calendarHomeY() {
   if (!unifiedCalendar() || !current || routeFromPath(location.pathname) !== 'calendario') return 0
   const row = document.querySelector<HTMLElement>(`[data-testid="calendar"] li[data-date="${current.today}"]`)
@@ -1592,6 +1614,7 @@ window.addEventListener('scroll', () => {
       scrollSeen = y
     }
   }
+  syncTodayButton()
   if (extendQueued || extendingCalendar) return
   extendQueued = true
   requestAnimationFrame(() => {
@@ -2155,6 +2178,10 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'unified-cal') {
     setUnifiedCalendar(!unifiedCalendar())
     paint()
+    return
+  }
+  if (act === 'to-today') {
+    scrollPageTop(calendarHomeY())
     return
   }
   if (act === 'earlier-days') {

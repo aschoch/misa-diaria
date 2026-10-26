@@ -1861,3 +1861,40 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
   -webkit-tap-highlight-color: transparent;
 }
 
+
+/* Calendario con los días pasados: lo pasado, apagado; hoy, destacado; lo que viene, como siempre. */
+.cal-stream .days li[data-kind="past"] .swipe-face { background: var(--papel-2); }
+.cal-stream .days li[data-kind="past"] .when,
+.cal-stream .days li[data-kind="past"] .meta .count em { color: var(--suave); font-weight: 500; }
+.cal-stream .days li.is-today .swipe-face {
+  background: color-mix(in srgb, var(--olivo) 9%, var(--papel));
+  box-shadow: inset 0 0 0 2px var(--olivo);
+}
+.cal-stream .days li.is-today .when b { color: var(--olivo); }
+
+.to-today {
+  position: fixed;
+  z-index: 39;
+  left: 50%;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--olivo);
+  color: var(--sobre-olivo);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(28, 25, 22, 0.18);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  animation: to-today-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.to-today[hidden] { display: none; }
+@keyframes to-today-in { from { opacity: 0; transform: translate(-50%, 8px) scale(0.96); } }
+@media (prefers-reduced-motion: reduce) { .to-today { animation: none; } }
