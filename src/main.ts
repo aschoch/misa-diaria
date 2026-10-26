@@ -5,6 +5,7 @@ import './styles.css'
 import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { loadEmojis } from './emoji'
+import { setUnifiedCalendar, unifiedCalendar } from './flags'
 import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeDiagnostics, swipeSwitchOn } from './haptics'
 import { esc } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
@@ -126,6 +127,8 @@ let scrollSeen = 0
 let lastProgrammaticY = Number.NaN
 let applyingScroll = false
 let calendarDays = 28
+// Días pasados que enseña el calendario con la prueba de los días pasados.
+let pastDays = 30
 let commitChain: Promise<void> = Promise.resolve()
 let commitEpoch = 0
 // Hasta saber si hay sesión se pinta la marca, no el formulario de entrada.
@@ -361,6 +364,7 @@ function paint() {
     nameSaved,
     feedbackSaved,
     calendarDays,
+    pastDays,
     installOpen,
     passwordScreen,
     enter,
@@ -379,6 +383,7 @@ function paint() {
   restoreDrafts(focusedDraft)
   if (opening) focusDialog()
   if (keepScroll) window.scrollTo(0, y)
+  else if (route === 'calendario' && unifiedCalendar()) jumpPageTop(calendarHomeY())
   document.title = tx().brand
   const popup = Boolean(streakMode)
   document.documentElement.classList.toggle('modal-open', popup)
@@ -682,7 +687,7 @@ function stopScrollAnim() {
   scrollFrame = 0
 }
 
-function scrollPageTop() {
+function scrollPageTop(to = 0) {
   const gen = ++scrollGen
   stopScrollAnim()
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -696,8 +701,8 @@ function scrollPageTop() {
     document.body.scrollTop = y
     applyingScroll = false
   }
-  if (reduce || start <= 0) {
-    apply(0)
+  if (reduce || start === to) {
+    apply(to)
     return
   }
   const duration = 280
@@ -706,13 +711,13 @@ function scrollPageTop() {
     if (gen !== scrollGen) return
     const t = Math.min(1, (now - t0) / duration)
     const eased = 1 - (1 - t) ** 3
-    apply(t >= 1 ? 0 : Math.round(start * (1 - eased)))
+    apply(t >= 1 ? to : Math.round(start + (to - start) * eased))
     if (t < 1) scrollFrame = requestAnimationFrame(step)
     else {
       scrollFrame = 0
       requestAnimationFrame(() => {
-        if (gen !== scrollGen || window.scrollY <= 1) return
-        apply(0)
+        if (gen !== scrollGen || Math.abs(window.scrollY - to) <= 1) return
+        apply(to)
       })
     }
   }
@@ -748,6 +753,17 @@ function switchHaptic() {
   document.head.appendChild(label)
   label.click()
   label.remove()
+}
+
+// Soltar un swipe que cambia algo: en un día pasado marca si fuiste; en hoy y en
+// los que vienen, si vas a ir.
+function applySwipe(row: HTMLElement, on: boolean) {
+  if (row.dataset.kind === 'past') {
+    const node = row.querySelector<HTMLElement>('[data-act="attend"]')
+    if (node && (node.getAttribute('aria-pressed') === 'true') !== on) queueAttendance(node)
+    return
+  }
+  void setCommitment(row.dataset.date ?? '', on, 'swipe')
 }
 
 function swipeCommits(row: HTMLElement, armed: 'right' | 'left' | '') {
@@ -816,19 +832,28 @@ function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number
   syncRoute()
   paint()
   if (!navKey) return
-  if (sameTab) scrollPageTop()
-  else jumpPageTop()
+  if (sameTab) scrollPageTop(calendarHomeY())
+  else jumpPageTop(calendarHomeY())
 }
 
-function jumpPageTop() {
+function jumpPageTop(to = 0) {
   scrollGen += 1
   stopScrollAnim()
-  lastProgrammaticY = 0
+  lastProgrammaticY = to
   applyingScroll = true
-  window.scrollTo(0, 0)
-  document.documentElement.scrollTop = 0
-  document.body.scrollTop = 0
+  window.scrollTo(0, to)
+  document.documentElement.scrollTop = to
+  document.body.scrollTop = to
   applyingScroll = false
+}
+
+// Con los días pasados en el calendario, el inicio es hoy: arriba se ven un par
+// de días pasados y abajo lo que viene.
+function calendarHomeY() {
+  if (!unifiedCalendar() || !current || routeFromPath(location.pathname) !== 'calendario') return 0
+  const row = document.querySelector<HTMLElement>(`[data-testid="calendar"] li[data-date="${current.today}"]`)
+  if (!row) return 0
+  return Math.max(0, Math.round(row.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.3))
 }
 
 function beginTabScrub(event: PointerEvent) {
@@ -1312,8 +1337,7 @@ app.addEventListener('touchend', (event) => {
       input.disabled = false
       suppressRowClick = true
       window.setTimeout(() => { suppressRowClick = false }, 350)
-      const date = row.dataset.date ?? ''
-      window.setTimeout(() => void setCommitment(date, armed === 'right', 'swipe'), 0)
+      window.setTimeout(() => applySwipe(row, armed === 'right'), 0)
       return
     }
     traceSwipe('te:cancel')
@@ -1430,12 +1454,12 @@ app.addEventListener('pointerup', (event) => {
     const ownTrace = swipeTrace
     window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
     if (start.row && start.lockedAxis === 'x') {
-      const date = start.row.dataset.date ?? ''
+      const row = start.row
       suppressRowClick = true
       window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
       resetRow(start.row)
       if (kind === 'commit') navigator.vibrate?.([12, 40, 24])
-      releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY, run: () => void setCommitment(date, start.armed === 'right', 'swipe') }, touch)
+      releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY, run: () => applySwipe(row, start.armed === 'right') }, touch)
       return
     }
     releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
@@ -1447,8 +1471,8 @@ app.addEventListener('pointerup', (event) => {
     if (kind === 'tap') return
   }
   if (start.row && start.lockedAxis === 'x') {
-    const date = start.row.dataset.date ?? ''
-    const willCommit = swipeCommits(start.row, start.armed)
+    const row = start.row
+    const willCommit = swipeCommits(row, start.armed)
     rowCommitClick = willCommit
     suppressRowClick = true
     window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
@@ -1458,7 +1482,7 @@ app.addEventListener('pointerup', (event) => {
       navigator.vibrate?.([12, 40, 24])
       window.setTimeout(() => { swipeHaptic = false }, 300)
     }
-    if (willCommit) window.setTimeout(() => void setCommitment(date, start.armed === 'right', 'swipe'), 0)
+    if (willCommit) window.setTimeout(() => applySwipe(row, start.armed === 'right'), 0)
     return
   }
   const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
@@ -2083,6 +2107,7 @@ function attendanceSource(node: HTMLElement) {
   if (node.dataset.testid === 'go') return 'hoy_main'
   if (node.closest('[data-testid="past"]')) return 'hoy_past'
   if (node.closest('.streak-pop, .history-detail')) return 'popup_day'
+  if (node.closest('[data-kind="past"]')) return 'calendar_past'
   return 'calendar_detail'
 }
 
@@ -2125,6 +2150,22 @@ function queueAttendance(node: HTMLElement) {
 async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'back-wall') {
     backToWall()
+    return
+  }
+  if (act === 'unified-cal') {
+    setUnifiedCalendar(!unifiedCalendar())
+    paint()
+    return
+  }
+  if (act === 'earlier-days') {
+    // Se añaden días por arriba sin que se mueva lo que ya estabas viendo.
+    const first = document.querySelector<HTMLElement>('[data-testid="calendar"] li[data-date]')
+    const date = first?.dataset.date ?? ''
+    const before = first?.getBoundingClientRect().top ?? 0
+    pastDays += 30
+    paint()
+    const again = document.querySelector<HTMLElement>(`[data-testid="calendar"] li[data-date="${date}"]`)
+    if (again) window.scrollBy(0, again.getBoundingClientRect().top - before)
     return
   }
   if (act === 'locale') {

@@ -470,6 +470,9 @@ p.risk {
   font-size: 14px;
   cursor: pointer;
 }
+.past-head { padding: 4px 4px 0; }
+.past-head .past-legend { margin: 0; }
+.past-earlier { text-align: center !important; }
 .past-more {
   display: block;
   width: 100%;
@@ -555,7 +558,8 @@ p.risk {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--foco) 45%, transparent);
 }
 
-.days li button[data-act="select"] {
+.days li button[data-act="select"],
+.days li span.select-day {
   position: relative;
   z-index: 1;
   -webkit-appearance: none;
@@ -595,6 +599,7 @@ p.risk {
 
 .num.planned { border: 2px dashed var(--olivo); }
 .num.gone { background: var(--olivo); color: var(--sobre-olivo); border: 2px solid var(--olivo); }
+.num.past { border-style: solid; color: var(--suave); }
 .when { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; }
 .meta { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; font-size: 13px; color: var(--suave); justify-self: end; min-width: 0; }
 .meta em { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-style: normal; font-size: 13px; color: var(--tinta); white-space: nowrap; }
@@ -626,6 +631,9 @@ p.risk {
   color: var(--vela);
   cursor: pointer;
 }
+
+.days li[data-kind="past"] .row-commit:not(.on) { color: var(--suave); font-weight: 600; }
+.days .when b { font-weight: 700; color: var(--tinta); }
 
 .days .row-commit.on {
   background: color-mix(in srgb, var(--olivo) 14%, var(--papel));
@@ -760,7 +768,7 @@ p.risk {
 }
 .who { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
 .wall-time { color: var(--suave); font-size: 13px; font-weight: 400; white-space: nowrap; }
-.notify-note { margin: 0 0 8px; color: var(--suave); font-size: 13px; line-height: 1.45; }
+.notify-note, .switch-note { margin: 0 0 8px; color: var(--suave); font-size: 13px; line-height: 1.45; }
 .count-link { color: var(--suave); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .back {
   position: relative;

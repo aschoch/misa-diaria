@@ -1,6 +1,7 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
 import { esc, fecha, formatTimestamp, fullDate } from './format'
+import { unifiedCalendar } from './flags'
 import { swipeSwitchOn } from './haptics'
 import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
@@ -19,6 +20,7 @@ export type UiState = {
   nameSaved?: boolean
   feedbackSaved?: boolean
   calendarDays?: number
+  pastDays?: number
   installOpen?: boolean
   passwordScreen?: boolean
   enter?: boolean
@@ -194,19 +196,24 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
     ${hoyHero(state, gone, locked)}
     ${totalBlock(state)}
-    <section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
+    ${unifiedCalendar() ? '' : `<section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
       <h2 class="streak-title">${copy.recentDays}</h2>
-      <div class="month-legend past-legend" data-testid="past-legend">
+      ${pastLegend()}
+      <ol class="past-list">${past}</ol>
+      <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
+    </section>`}
+    ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked, Boolean(ui.popupEnter)) : ''}
+  `
+}
+
+function pastLegend() {
+  const copy = tx()
+  return `<div class="month-legend past-legend" data-testid="past-legend">
         <span><i class="dot course" aria-hidden="true"></i>${copy.legendCourse}</span>
         <span><i class="dot mine" aria-hidden="true"></i>${copy.legendMine}</span>
         <span><i class="dot couples" aria-hidden="true"></i>${copy.legendCouples}</span>
         <span><i class="dot star" aria-hidden="true">★</i>${copy.legendAll}</span>
-      </div>
-      <ol class="past-list">${past}</ol>
-      <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
-    </section>
-    ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked, Boolean(ui.popupEnter)) : ''}
-  `
+      </div>`
 }
 
 export function totalBlock(state: Estado) {
@@ -410,13 +417,55 @@ export function getCalendarDays(state: Estado, count: number): Day[] {
   return days
 }
 
+type PastRow = { date: string; sunday: boolean; went: number; couples_went: number; mine_attendance: boolean }
+
+// Los días que ya pasaron, del más antiguo a ayer. Un día sin nadie no viene en el historial.
+export function getPastDays(state: Estado, count: number): PastRow[] {
+  const recent = new Map(state.past.map((day) => [day.date, day]))
+  const history = new Map((state.history ?? []).map((day) => [day.date, day]))
+  const rows: PastRow[] = []
+  for (let i = count; i >= 1; i -= 1) {
+    const date = shiftDate(state.today, -i)
+    const known = recent.get(date) ?? history.get(date)
+    rows.push({
+      date,
+      sunday: blankDay(date).sunday,
+      went: known?.went ?? 0,
+      couples_went: known?.couples_went ?? 0,
+      mine_attendance: known?.mine_attendance ?? false,
+    })
+  }
+  return rows
+}
+
+// Un día pasado: «Fui» marca si fuiste, como en Hoy. El swipe hace lo mismo.
+function pastRow(day: PastRow, locked: boolean) {
+  const copy = tx()
+  const f = fecha(day.date)
+  const on = day.mine_attendance
+  return `<li class="past-day ${day.sunday ? 'sunday' : ''} swipeable" data-date="${day.date}" data-kind="past" data-committed="${on}">
+      <span class="swipe-under right"><span class="swipe-cue" data-cue="→" aria-hidden="true">→</span></span>
+      <span class="swipe-under left"><span class="swipe-cue" data-cue="←" aria-hidden="true">←</span></span>
+      <div class="swipe-face">
+        ${swipeHapticInput('data-face-haptic')}
+        <span class="select-day">
+          <span class="num ${on ? 'gone' : 'past'}">${f.d}</span>
+          <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
+        </span>
+        <button type="button" class="row-commit ${on ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${on}" aria-label="${esc(`${copy.went}, ${f.largo} ${f.d}`)}" ${locked ? 'disabled' : ''}>${on ? copy.wentOn : copy.went}${hapticOverlay()}</button>
+        <span class="meta"><span class="count"><em>${copy.of12(day.went)}</em></span>${dayMarks(day)}${swipeHapticInput()}</span>
+      </div>
+      ${swipeSwitchOn() ? '<input type="checkbox" switch class="row-drag-switch" data-row-switch tabindex="-1" aria-hidden="true" />' : ''}
+    </li>`
+}
+
 function dayClass(day: Day) {
   if (day.sunday) return 'sunday'
   if (atRisk(day)) return 'risk'
   return ''
 }
 
-function dayRow(day: Day, selected: string, locked: boolean, pulse = '') {
+function dayRow(day: Day, selected: string, locked: boolean, pulse = '', todayLabel = '') {
   const copy = tx()
   const f = fecha(day.date)
   const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
@@ -430,7 +479,7 @@ function dayRow(day: Day, selected: string, locked: boolean, pulse = '') {
         ${swipeHapticInput('data-face-haptic')}
         <button type="button" class="select-day" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
           <span class="num ${mine}${pulse === day.date ? ' pulse' : ''}">${f.d}</span>
-          <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
+          <span class="when">${day.sunday ? sun : ''}${todayLabel ? `<b>${todayLabel}</b>` : f.corto}</span>
           ${swipeHapticInput()}
         </button>
         <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${hapticOverlay()}</button>
@@ -440,17 +489,23 @@ function dayRow(day: Day, selected: string, locked: boolean, pulse = '') {
     </li>`
 }
 
-export function renderCalendario(state: Estado, selected: string, locked: boolean, locale: Locale, daysAhead = 28, pulse = '') {
+export function renderCalendario(state: Estado, selected: string, locked: boolean, locale: Locale, daysAhead = 28, pulse = '', pastCount = 0) {
   const copy = tx()
   const days = getCalendarDays(state, daysAhead)
-  const groups: { key: string; days: Day[] }[] = []
-  for (const day of days) {
-    const key = day.date.slice(0, 7)
+  const past = pastCount > 0 ? getPastDays(state, pastCount) : []
+  const groups: { key: string; rows: string[] }[] = []
+  const add = (date: string, row: string) => {
+    const key = date.slice(0, 7)
     const last = groups[groups.length - 1]
-    if (!last || last.key !== key) groups.push({ key, days: [day] })
-    else last.days.push(day)
+    if (!last || last.key !== key) groups.push({ key, rows: [row] })
+    else last.rows.push(row)
   }
-  const sections = groups.map((group) => monthSection(group.key, locale, group.days.map((day) => dayRow(day, selected, locked, pulse)).join(''))).join('')
+  for (const day of past) add(day.date, pastRow(day, locked))
+  for (const day of days) add(day.date, dayRow(day, selected, locked, pulse, past.length && day.date === state.today ? copy.hoy : ''))
+  const earlier = past.length
+    ? `<div class="past-head">${pastLegend()}<button type="button" class="past-more past-earlier" data-act="earlier-days" data-testid="earlier-days">${copy.earlierDays}</button></div>`
+    : ''
+  const sections = earlier + groups.map((group) => monthSection(group.key, locale, group.rows.join(''))).join('')
   const day = days.find((item) => item.date === selected) ?? days[0]
   const f = fecha(day.date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
@@ -747,6 +802,10 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
           <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
             <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
           </button>
+          <button type="button" class="switch" role="switch" aria-checked="${unifiedCalendar()}" data-act="unified-cal" data-testid="unified-cal">
+            <span>${copy.unifiedCal}</span><i></i>${hapticOverlay()}
+          </button>
+          <p class="switch-note">${copy.unifiedCalNote}</p>
         </div>
       </section>
       <section class="settings-card">
@@ -770,7 +829,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
 
 export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '', refreshing = false, ui: UiState = {}) {
   const body = route === 'calendario'
-    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28, ui.pulseDate ?? '')
+    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28, ui.pulseDate ?? '', unifiedCalendar() ? ui.pastDays ?? 30 : 0)
     : route === 'muro'
       ? renderMuro(state, locked, openId, emojiFor, ui)
       : route === 'ajustes'

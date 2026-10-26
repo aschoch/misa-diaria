@@ -2101,3 +2101,76 @@ test('un swipe muy rápido que iOS cancela cuenta si al soltar pasó el umbral',
   await page.mouse.up()
   await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
 })
+
+test('con la prueba del calendario único, los días pasados viven en el calendario', async ({ page }) => {
+  const errors = watchConsole(page)
+  await reset('2026-10-26T10:00:00Z')
+  await login(page, 'persona1@example.com')
+  // Se enciende en Ajustes y Hoy deja de tener «Últimos días».
+  await expect(page.getByTestId('past')).toBeVisible()
+  await page.getByRole('link', { name: 'Ajustes' }).click()
+  const toggle = page.getByTestId('unified-cal')
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('link', { name: 'Hoy' }).click()
+  await expect(page.getByTestId('hoy-date')).toBeVisible()
+  await expect(page.getByTestId('past')).toHaveCount(0)
+
+  // El calendario se abre en hoy, con los días pasados encima.
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  const calendar = page.getByTestId('calendar')
+  const today = calendar.locator('li[data-date="2026-10-26"]')
+  await expect(today).toBeInViewport()
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
+  const past = calendar.locator('li[data-kind="past"]')
+  await expect(past).toHaveCount(30)
+  await expect(past.first()).toHaveAttribute('data-date', '2026-09-26')
+  await expect(past.last()).toHaveAttribute('data-date', '2026-10-25')
+  if (process.env.MISA_UNIFIED_SHOTS) await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-hoy.png` })
+
+  // «He ido» en un día pasado marca la asistencia y suma uno al curso.
+  const row = calendar.locator('li[data-date="2026-10-21"]')
+  const went = row.locator('[data-act="attend"]')
+  const was = (await went.getAttribute('aria-pressed')) === 'true'
+  const count = Number((await row.locator('.meta .count em').textContent())?.split(' ')[0])
+  await went.click()
+  await expect(went).toHaveAttribute('aria-pressed', String(!was))
+  await expect(row.locator('.meta .count em')).toHaveText(`${count + (was ? -1 : 1)} de 12`)
+  await expect(row.locator('.num')).toHaveClass(was ? /past/ : /gone/)
+  await page.waitForTimeout(600)
+  await expect(went).toHaveAttribute('aria-pressed', String(!was))
+
+  // Deslizar a la derecha un día pasado también marca que fuiste; a la izquierda lo quita.
+  const swiped = calendar.locator('li[data-kind="past"]:has([data-act="attend"][aria-pressed="false"])').last()
+  const swipedDate = await swiped.getAttribute('data-date')
+  const target = calendar.locator(`li[data-date="${swipedDate}"]`)
+  await target.scrollIntoViewIfNeeded()
+  const drag = async (dx: number) => {
+    const box = await target.boundingBox()
+    if (!box) throw new Error('sin fila')
+    const x = dx > 0 ? box.x + 60 : box.x + box.width - 40
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y, { steps: 10 })
+    await page.mouse.up()
+  }
+  await drag(130)
+  await expect(target.locator('[data-act="attend"]')).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(500)
+  await drag(-130)
+  await expect(target.locator('[data-act="attend"]')).toHaveAttribute('aria-pressed', 'false')
+  await page.waitForTimeout(500)
+
+  // «Días anteriores» añade un mes por arriba sin mover lo que se ve.
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const first = past.first()
+  const before = (await first.boundingBox())?.y ?? 0
+  await page.getByTestId('earlier-days').click()
+  await expect(past).toHaveCount(60)
+  const moved = (await calendar.locator('li[data-date="2026-09-26"]').boundingBox())?.y ?? 0
+  expect(Math.abs(moved - before)).toBeLessThan(4)
+  if (process.env.MISA_UNIFIED_SHOTS) await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-arriba.png` })
+  expect(errors).toEqual([])
+})
