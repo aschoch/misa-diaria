@@ -438,7 +438,22 @@ export function getPastDays(state: Estado, count: number): PastRow[] {
   return rows
 }
 
-// Un día pasado: «Fui» marca si fuiste, como en Hoy. El swipe hace lo mismo.
+// En los días pasados, lo que antes eran puntos se dice con palabras: así no hace
+// falta leyenda. Que fuiste ya lo dice «✓ He ido».
+function pastBadges(day: PastRow) {
+  const copy = tx()
+  // Solo el más notable, para que la fila no crezca.
+  const badge = day.went >= 12
+    ? `<i class="badge all">★ ${copy.badgeAll}</i>`
+    : day.went >= 10
+      ? `<i class="badge ten">${copy.badgeTen}</i>`
+      : day.couples_went >= 6
+        ? `<i class="badge couples">${copy.badgeSix}</i>`
+        : ''
+  return badge ? `<span class="badges">${badge}</span>` : ''
+}
+
+// Un día pasado: «He ido» marca si fuiste, como en Hoy. El swipe hace lo mismo.
 function pastRow(day: PastRow, locked: boolean) {
   const copy = tx()
   const f = fecha(day.date)
@@ -453,7 +468,7 @@ function pastRow(day: PastRow, locked: boolean) {
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
         </span>
         <button type="button" class="row-commit ${on ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${on}" aria-label="${esc(`${copy.went}, ${f.largo} ${f.d}`)}" ${locked ? 'disabled' : ''}>${on ? copy.wentOn : copy.went}${hapticOverlay()}</button>
-        <span class="meta"><span class="count"><em>${copy.of12(day.went)}</em></span>${dayMarks(day)}${swipeHapticInput()}</span>
+        <span class="meta"><span class="count"><em>${copy.of12(day.went)}</em></span>${pastBadges(day)}${swipeHapticInput()}</span>
       </div>
       ${swipeSwitchOn() ? '<input type="checkbox" switch class="row-drag-switch" data-row-switch tabindex="-1" aria-hidden="true" />' : ''}
     </li>`
@@ -472,7 +487,7 @@ function dayRow(day: Day, selected: string, locked: boolean, pulse = '', todayLa
   const open = day.date === selected
   const visible = day.mine_commitment ? copy.commitOn : copy.commit
   const name = day.mine_commitment ? copy.uncommit : copy.commit
-  return `<li class="${dayClass(day)} ${open ? 'selected' : ''} swipeable" data-date="${day.date}" data-committed="${day.mine_commitment}">
+  return `<li class="${dayClass(day)} ${open ? 'selected' : ''}${todayLabel ? ' is-today' : ''} swipeable" data-date="${day.date}" data-committed="${day.mine_commitment}">
       <span class="swipe-under right"><span class="swipe-cue" data-cue="→" aria-hidden="true">→</span></span>
       <span class="swipe-under left"><span class="swipe-cue" data-cue="←" aria-hidden="true">←</span></span>
       <div class="swipe-face">
@@ -503,7 +518,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
   for (const day of past) add(day.date, pastRow(day, locked))
   for (const day of days) add(day.date, dayRow(day, selected, locked, pulse, past.length && day.date === state.today ? copy.hoy : ''))
   const earlier = past.length
-    ? `<div class="past-head">${pastLegend()}<button type="button" class="past-more past-earlier" data-act="earlier-days" data-testid="earlier-days">${copy.earlierDays}</button></div>`
+    ? `<div class="past-head"><button type="button" class="past-more past-earlier" data-act="earlier-days" data-testid="earlier-days">${copy.earlierDays}</button></div>`
     : ''
   const sections = earlier + groups.map((group) => monthSection(group.key, locale, group.rows.join(''))).join('')
   const day = days.find((item) => item.date === selected) ?? days[0]
@@ -527,7 +542,10 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
         ${day.mine_commitment ? copy.uncommit : copy.commit}
       </button>
     </aside>`
-  return `<div class="split"><div class="cal-stream" data-testid="calendar">${sections}</div>${side}</div>`
+  const back = past.length
+    ? `<button type="button" class="to-today" data-act="to-today" data-testid="to-today" data-dir="up" hidden><span aria-hidden="true" class="to-today-arrow">↑</span>${copy.backToToday}</button>`
+    : ''
+  return `<div class="split"><div class="cal-stream${past.length ? ' unified' : ''}" data-testid="calendar">${sections}</div>${side}</div>${back}`
 }
 
 function monthSection(key: string, locale: Locale, rows: string) {
