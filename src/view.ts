@@ -19,9 +19,15 @@ export type UiState = {
   feedbackSaved?: boolean
   calendarDays?: number
   hero?: 'a' | 'b' | 'c'
+  installOpen?: boolean
 }
 
 export type Route = 'hoy' | 'calendario' | 'muro' | 'ajustes'
+
+export function hapticOverlay(id?: string) {
+  const attr = id ? ` id="${id}"` : ''
+  return `<label class="haptic-overlay" data-haptic-trigger aria-hidden="true"><input${attr} type="checkbox" switch data-haptic-switch tabindex="-1" aria-hidden="true" /></label>`
+}
 
 const titles = {
   hoy: 'hoy',
@@ -107,7 +113,7 @@ function nav(route: Route) {
   const index = Math.max(0, tabs.findIndex(([key]) => key === route))
   const links = tabs.map(([key, navKey, label, icon]) => `
     <a href="${href(key)}" data-nav="${navKey}" draggable="false" class="${route === key ? 'on' : ''}" ${route === key ? 'aria-current="page"' : ''}>
-      ${icon}<span>${label}</span>
+      ${icon}<span>${label}</span>${hapticOverlay()}
     </a>`).join('')
   return `<nav class="tabs" data-tab="${index}" style="--tab: ${index}"><span class="tab-glass-pill" aria-hidden="true"><span class="tab-glass-lens"></span></span>${links}</nav>`
 }
@@ -149,7 +155,7 @@ function goButton(state: Estado, gone: boolean, locked: boolean, label: string) 
   const hidden = gone ? `<span class="visually-hidden">${copy.gone}</span>` : ''
   const classes = ['go', gone ? 'on go-secondary' : ''].filter(Boolean).join(' ')
   return `<button type="button" class="${classes}" data-testid="go" data-act="attend" data-date="${state.today}" aria-pressed="${gone ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>
-      <span class="go-label">${label}</span>${hidden}
+      <span class="go-label">${label}</span>${hidden}${hapticOverlay('haptic-switch')}
     </button>`
 }
 
@@ -182,15 +188,21 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     const f = fecha(day.date)
     return `<li class="${day.sunday ? 'sunday' : ''}" data-date="${day.date}">
       <span class="past-main"><span>${f.corto} ${f.d}</span><small class="past-count">${copy.of12(day.went)}</small>${dayMarks(day)}</span>
-      <button type="button" class="check ${day.mine_attendance ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${day.mine_attendance}" aria-label="${f.largo} ${f.d}" ${locked ? 'disabled' : ''}></button>
+      <button type="button" class="check ${day.mine_attendance ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${day.mine_attendance}" aria-label="${f.largo} ${f.d}" ${locked ? 'disabled' : ''}>${hapticOverlay()}</button>
     </li>`
   }).join('')
   return `
     ${riskLine(state.risk)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
     ${hoyHero(state, gone, locked, hero)}
-    <section class="past" data-testid="past">
+    <section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
       <h2 class="streak-title">${copy.recentDays}</h2>
+      <div class="month-legend past-legend" data-testid="past-legend">
+        <span><i class="dot course" aria-hidden="true"></i>${copy.legendCourse}</span>
+        <span><i class="dot mine" aria-hidden="true"></i>${copy.legendMine}</span>
+        <span><i class="dot couples" aria-hidden="true"></i>${copy.legendCouples}</span>
+        <span><i class="dot star" aria-hidden="true">★</i>${copy.legendAll}</span>
+      </div>
       <ol class="past-list">${past}</ol>
       <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
     </section>
@@ -403,7 +415,7 @@ function dayRow(day: Day, selected: string, locked: boolean) {
           <span class="num ${mine}">${f.d}</span>
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
         </button>
-        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}</button>
+        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${hapticOverlay()}</button>
         <span class="meta">${dayMeta(day)}</span>
       </div>
     </li>`
@@ -650,15 +662,20 @@ function installSteps(kind: 'ios' | 'android') {
   </ol>`
 }
 
-function installGuide() {
+function installGuide(open = false) {
   const copy = tx()
   const platform = installPlatform()
   const body = platform === 'desktop'
     ? `<div class="install-both">${installSteps('ios')}${installSteps('android')}</div>`
     : installSteps(platform)
   return `<section class="install-guide" data-testid="install-guide" data-platform="${platform}">
-    <h2>${copy.installTitle}</h2>
-    ${body}
+    <details class="install-details" ${open ? 'open' : ''}>
+      <summary class="install-summary"><span>${copy.installToggle}</span><i class="install-chevron" aria-hidden="true"></i></summary>
+      <div class="install-body">
+        <h2>${copy.installTitle}</h2>
+        ${body}
+      </div>
+    </details>
   </section>`
 }
 
@@ -668,7 +685,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
     <button type="button" data-act="locale" data-locale="${value}" aria-pressed="${locale === value}">${label}</button>`
   return `
     <section class="settings" data-testid="ajustes">
-      ${installGuide()}
+      ${installGuide(Boolean(ui.installOpen))}
       <form class="stack" data-act="save-name">
         <label for="display-name">${copy.yourName}</label>
         <input id="display-name" name="display_name" maxlength="40" autocomplete="nickname" required value="${esc(state.me.display_name)}" />
@@ -679,7 +696,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
       <p class="notify-note">${copy.notifyNote}</p>
       <div class="switches">
         <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
-          <span>${copy.alertEmpty}</span><i></i>
+          <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
         </button>
       </div>
       <h2>${copy.language}</h2>
