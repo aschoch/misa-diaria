@@ -210,13 +210,9 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
 
 export function totalBlock(state: Estado) {
   const copy = tx()
-  const week = state.monday
-    ? `<p class="week-note" data-testid="monday">${esc(copy.week(state.monday.people, state.monday.couples, state.monday.empty_days))}</p>`
-    : ''
   return `<section class="total" data-testid="total">
       <b class="total-num" data-testid="total-num">${state.streaks.total}</b>
       <span class="total-label">${copy.totalLabel}</span>
-      ${week}
     </section>`
 }
 
@@ -435,7 +431,7 @@ function dayRow(day: Day, selected: string, locked: boolean, pulse = '') {
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
           ${swipeHapticInput()}
         </button>
-        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${swipeHapticInput('data-commit-haptic')}</button>
+        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${hapticOverlay()}</button>
         <span class="meta">${dayMeta(day)}${swipeHapticInput()}</span>
       </div>
     </li>`

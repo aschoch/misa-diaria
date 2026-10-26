@@ -766,6 +766,9 @@ function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number
     registrarEvento(current.me.id, 'tab_view', to, { to, via })
   }
   const navKey = link.dataset.nav ?? ''
+  const target: Route = navKey === 'intenciones' ? 'muro' : navKey === 'calendario' || navKey === 'ajustes' ? navKey : 'hoy'
+  // Solo el toque en la pestaña en la que ya estás sube con animación; cambiar de pestaña llega arriba al instante.
+  const sameTab = target === routeFromPath(location.pathname) && !intentionFromPath(location.pathname) && !passwordScreen
   if (navKey === 'calendario') resetCalendarScroll = true
   if (navKey === 'intenciones') {
     openIntention = ''
@@ -777,7 +780,20 @@ function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number
   pushRoute(navKey === 'intenciones' ? href('muro') : link.pathname)
   syncRoute()
   paint()
-  if (navKey) scrollPageTop()
+  if (!navKey) return
+  if (sameTab) scrollPageTop()
+  else jumpPageTop()
+}
+
+function jumpPageTop() {
+  scrollGen += 1
+  stopScrollAnim()
+  lastProgrammaticY = 0
+  applyingScroll = true
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+  applyingScroll = false
 }
 
 function beginTabScrub(event: PointerEvent) {
@@ -1094,7 +1110,9 @@ app.addEventListener('touchstart', (event) => {
 }, { capture: true, passive: true })
 
 // El touchend es gesto del usuario en Safari: ahí vibra el swipe que confirma
-// (marcado en pointerup, que en iOS llega antes) y el toque quieto en la fila.
+// (marcado en pointerup, que en iOS llega antes) y el toque quieto en el día.
+// Desde iOS 26.5 el clic por código ya no vibra: solo sirve en iPhone anteriores.
+// «Voy a ir» vibra con su capa tocable (hapticOverlay), como el resto de botones.
 app.addEventListener('touchend', (event) => {
   const live = gesture?.row && gesture.lockedAxis === 'x' ? swipeCommits(gesture.row, gesture.armed) : false
   const committing = swipeHaptic || live
@@ -1104,7 +1122,7 @@ app.addEventListener('touchend', (event) => {
     return
   }
   const target = event.target
-  if (!(target instanceof Element) || !target.closest('.days .row-commit, .days .select-day')) return
+  if (!(target instanceof Element) || !target.closest('.days .select-day')) return
   if (gesture && gesture.lockedAxis !== '') return
   const touch = event.changedTouches?.[0]
   if (!rowTouch || !touch || Math.hypot(touch.clientX - rowTouch.x, touch.clientY - rowTouch.y) > 10) return
