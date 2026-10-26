@@ -315,10 +315,13 @@ test('la celebración sale una vez y dice el motivo', async ({ page }) => {
   await expect(page.getByTestId('celeb-line')).toHaveCount(0)
   await page.reload()
   await expect(page.getByTestId('celeb-line')).toHaveCount(0)
+  await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
   await page.getByTestId('go').click()
   await expect(page.getByTestId('go')).toHaveText('He ido a Misa')
   await page.getByTestId('go').click()
   await expect(page.getByTestId('go')).toHaveText('Has ido a Misa')
+  await expect(page.getByTestId('go')).toHaveClass(/just-tapped/)
+  await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
   await expect(page.getByTestId('celeb-line')).toHaveCount(0)
   expect(errors).toEqual([])
 })
@@ -398,9 +401,11 @@ test('en oscuro el botón de vela lleva tinta oscura', async ({ page }) => {
   const errors = watchConsole(page)
   await page.emulateMedia({ colorScheme: 'dark' })
   await login(page, 'persona12@example.com')
-  const fill = await page.locator('.piece.leaf path').first().evaluate((node) => getComputedStyle(node).fill)
-  expect(fill).toBe('rgb(27, 62, 112)')
-  await expect(page.getByTestId('go')).toBeVisible()
+  await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
+  const ink = await page.getByTestId('go').evaluate((node) => getComputedStyle(node).color)
+  expect(ink).toBe('rgb(42, 33, 24)')
+  const mark = await page.locator('.top .brand-icon path').first().evaluate((node) => getComputedStyle(node).fill)
+  expect(mark).toBe('rgb(27, 62, 112)')
   expect(errors).toEqual([])
 })
 
@@ -578,7 +583,7 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   const errors = watchConsole(page)
   const phone = viewport?.width === 390
   await login(page, 'persona1@example.com')
-  await page.getByTestId('open-past-cal').scrollIntoViewIfNeeded()
+  await clearOfBar(page, page.getByTestId('open-past-cal'))
   const scrolled = await page.evaluate(() => window.scrollY)
   await page.getByTestId('open-past-cal').click()
   await expect(page.locator('body')).toHaveClass(/modal-open/)
@@ -599,7 +604,7 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
   expect(await page.evaluate(() => window.scrollY)).toBe(scrolled)
 
-  await page.getByTestId('open-past-cal').scrollIntoViewIfNeeded()
+  await clearOfBar(page, page.getByRole('button', { name: 'Ver más' }))
   const parked = await page.evaluate(() => window.scrollY)
   await page.getByRole('button', { name: 'Ver más' }).click()
   await expect(page.getByTestId('month-scroll')).toBeVisible()
@@ -850,16 +855,20 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await save(page, 'login-es.png')
   await login(page, 'persona12@example.com')
   await page.getByTestId('go').waitFor()
+  await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
+  await expect(page.getByTestId('go')).not.toHaveClass(/\bon\b/)
   await save(page, 'hoy.png')
-  for (const letter of ['a', 'b', 'c']) {
-    await page.getByTestId('go').evaluate((node, letter) => {
-      node.classList.remove('hero-a', 'hero-b', 'hero-c', 'on')
-      node.classList.add(`hero-${letter}`)
-    }, letter)
-    await save(page, `hero-${letter}-off.png`)
-    await page.getByTestId('go').evaluate((node) => node.classList.add('on'))
-    await save(page, `hero-${letter}-on.png`)
-  }
+  await page.getByTestId('go').click()
+  await expect(page.getByTestId('go')).toHaveClass(/just-tapped/)
+  await page.waitForTimeout(160)
+  await saveLive(page, 'hoy-glow.png')
+  const skip = page.getByRole('button', { name: 'Saltar la celebración' })
+  if (await skip.isVisible()) await skip.click()
+  await expect(page.getByTestId('go')).toHaveClass(/\bon\b/)
+  await expect(page.getByTestId('go')).toHaveText('Has ido a Misa')
+  await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
+  await page.waitForTimeout(560)
+  await save(page, 'hoy-on.png')
   await save(page, 'nav-es.png')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
@@ -1301,9 +1310,21 @@ test('captura del calendario en el escritorio', async ({ page, browserName, view
   await save(page, 'calendario-escritorio.png')
 })
 
+async function clearOfBar(page: Page, locator: ReturnType<Page['locator']>) {
+  await locator.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest' }))
+}
+
 async function save(page: Page, name: string) {
+  await writeShot(page, name, 'disabled')
+}
+
+async function saveLive(page: Page, name: string) {
+  await writeShot(page, name, 'allow')
+}
+
+async function writeShot(page: Page, name: string, animations: 'disabled' | 'allow') {
   const path = `${shots}/${name}`
-  await page.screenshot({ path, animations: 'disabled' })
+  await page.screenshot({ path, animations })
   const bytes = readFileSync(path)
   expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
   expect(bytes.length).toBeGreaterThan(8_000)

@@ -21,6 +21,8 @@ let recoverySignIn = false
 let passwordError = ''
 let resetCalendarScroll = false
 let glassFrom: { index: number } | { px: number } | null = null
+let glowGo = false
+let glowFrame = 0
 let suppressNavClick = false
 let tabScrub: {
   id: number
@@ -180,6 +182,7 @@ function paint() {
   document.body.classList.toggle('modal-open', popup)
   if (streakAlign) alignStreak()
   settleGlass()
+  settleGoGlow()
 }
 
 function daysBetween(from: string, to: string) {
@@ -351,6 +354,33 @@ function readGlassX(pill: HTMLElement) {
   return Number(nav?.dataset.tab ?? '0') * (pill.getBoundingClientRect().width || 0)
 }
 
+function triggerHaptic() {
+  navigator.vibrate?.(12)
+  const input = document.querySelector<HTMLInputElement>('#haptic-switch')
+  if (!input) return
+  input.click()
+  input.blur()
+}
+
+function settleGoGlow() {
+  if (!glowGo) return
+  if (glowFrame) cancelAnimationFrame(glowFrame)
+  glowFrame = 0
+  const button = document.querySelector<HTMLButtonElement>('button.go')
+  if (!button) return
+  glowFrame = requestAnimationFrame(() => {
+    glowFrame = 0
+    if (!button.isConnected) {
+      settleGoGlow()
+      return
+    }
+    button.classList.remove('just-tapped')
+    void button.offsetWidth
+    button.classList.add('just-tapped')
+    glowGo = false
+  })
+}
+
 function settleGlass() {
   const pill = document.querySelector<HTMLElement>('.tab-glass-pill')
   const nav = document.querySelector<HTMLElement>('nav.tabs')
@@ -376,6 +406,7 @@ function settleGlass() {
 }
 
 function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number } | null) {
+  triggerHaptic()
   hideCelebration()
   const navKey = link.dataset.nav ?? ''
   if (navKey === 'calendario') resetCalendarScroll = true
@@ -546,9 +577,11 @@ function trackRow(event: PointerEvent) {
     if (gesture.peakX > 0) gesture.peakX = 0
     gesture.peakX = Math.min(gesture.peakX, dx)
   }
+  const wasArmed = gesture.armed
   if (dx >= 52) gesture.armed = 'right'
   else if (dx <= -52) gesture.armed = 'left'
   else gesture.armed = ''
+  if (gesture.armed && gesture.armed !== wasArmed) triggerHaptic()
   row.classList.toggle('swipe-armed', gesture.armed !== '')
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
     const side = cue.closest('.swipe-under.left') ? 'left' : 'right'
@@ -932,6 +965,10 @@ app.addEventListener('click', (event) => {
   const node = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
   if (!node || node instanceof HTMLFormElement) return
   const act = node.dataset.act
+  if (act === 'attend' && node.dataset.testid === 'go') {
+    glowGo = true
+    triggerHaptic()
+  }
   if (act === 'skip') {
     hideCelebration()
     return
