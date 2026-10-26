@@ -722,15 +722,25 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   const startX = Math.max(box.x + 48, 48)
   const y = box.y + box.height / 2
   await page.evaluate(() => {
-    const mark = window as unknown as { __hapticDefault?: boolean | null }
+    const mark = window as unknown as { __hapticDefault?: boolean | null; __switchHaptics?: number }
     mark.__hapticDefault = null
+    mark.__switchHaptics = 0
+    const click = HTMLLabelElement.prototype.click
+    HTMLLabelElement.prototype.click = function () {
+      if (this.parentNode === document.head && this.querySelector('input[switch]')) mark.__switchHaptics = (mark.__switchHaptics ?? 0) + 1
+      return click.call(this)
+    }
     document.querySelector('#app')?.addEventListener('click', (event) => {
       const target = event.target
       if (!(target instanceof Element) || !target.closest('input[data-row-haptic]')) return
       mark.__hapticDefault = event.defaultPrevented
     })
   })
-  await expect(row.locator('input[data-row-haptic]').first()).not.toHaveAttribute('switch')
+  // Safari da la vibración en el touchend: lo simulamos sobre la fila a mitad de gesto.
+  const lift = (li: typeof row) => li.locator('input[data-row-haptic]').first().evaluate((node) => {
+    node.dispatchEvent(new Event('touchend', { bubbles: true }))
+  })
+  const switchHaptics = () => page.evaluate(() => (window as unknown as { __switchHaptics?: number }).__switchHaptics ?? 0)
   await page.mouse.move(startX, y)
   await page.mouse.down()
   await page.mouse.move(startX + 36, y + 4, { steps: 6 })
@@ -738,20 +748,21 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   await expect(row).not.toHaveClass(/swipe-armed/)
   await page.mouse.move(startX + 60, y + 4, { steps: 6 })
   await expect(row).not.toHaveClass(/swipe-armed/)
-  await expect(row.locator('input[data-row-haptic][switch]')).toHaveCount(0)
+  await lift(row)
+  expect(await switchHaptics()).toBe(0)
   await page.mouse.move(startX + 100, y + 4, { steps: 6 })
   await expect(row).toHaveClass(/swipe-armed/)
-  await expect(row.locator('input[data-row-haptic][switch]')).toHaveCount(1)
+  await lift(row)
+  expect(await switchHaptics()).toBe(1)
   await expect(row.locator('.swipe-under.right .swipe-cue')).toHaveText('✓')
   await expect(row.locator('.swipe-under.left .swipe-cue')).toHaveText('←')
   expect(await row.locator('.swipe-face').evaluate((node) => getComputedStyle(node).boxShadow)).toBe('none')
   await page.mouse.move(startX + 20, y + 4, { steps: 6 })
   await expect(row).not.toHaveClass(/swipe-armed/)
-  await expect(row.locator('input[data-row-haptic][switch]')).toHaveCount(0)
   await page.mouse.up()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __hapticDefault?: boolean | null }).__hapticDefault)).toBe(false)
   await expect(row.locator('.num')).not.toHaveClass(/planned/)
-  await expect(row.locator('input[data-row-haptic][switch]')).toHaveCount(0)
+  expect(await switchHaptics()).toBe(1)
   const quit = page.locator('[data-testid="calendar"] li[data-date="2026-10-24"]')
   await quit.scrollIntoViewIfNeeded()
   const quitBox = await quit.boundingBox()
@@ -764,7 +775,8 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   await expect(quit).not.toHaveClass(/swipe-armed/)
   await page.mouse.move(quitX - 100, quitY, { steps: 6 })
   await expect(quit).toHaveClass(/swipe-armed/)
-  await expect(quit.locator('input[data-row-haptic][switch]')).toHaveCount(1)
+  await lift(quit)
+  expect(await switchHaptics()).toBe(2)
   await expect(quit.locator('.swipe-under.left .swipe-cue')).toHaveText('✕')
   await expect(quit.locator('.swipe-under.right .swipe-cue')).toHaveText('→')
   expect(await quit.locator('.swipe-face').evaluate((node) => getComputedStyle(node).boxShadow)).toBe('none')
