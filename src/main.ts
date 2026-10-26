@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, editarComentario, editar
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, emojiGrid, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -23,6 +23,7 @@ let resetCalendarScroll = false
 let glassFrom: { index: number } | { px: number } | null = null
 let glowGo = false
 let glowFrame = 0
+let springHeld = false
 let suppressNavClick = false
 let tabScrub: {
   id: number
@@ -174,6 +175,7 @@ function paint() {
     nameSaved,
     feedbackSaved,
     calendarDays,
+    hero: heroVariant(),
   })
   if (keepScroll) window.scrollTo(0, y)
   document.title = tx().brand
@@ -279,9 +281,21 @@ async function boot() {
     if (mustResetPassword || recoverySignIn) return
     if (!current && !signingIn) window.setTimeout(() => void refresh(true), 0)
   })
-  if (!import.meta.env.DEV && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined)
-  }
+  refreshServiceWorker()
+}
+
+function refreshServiceWorker() {
+  if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((reg) => {
+    void reg.update()
+  }).catch(() => undefined)
+}
+
+function heroVariant(): 'a' | 'b' | 'c' {
+  const query = new URLSearchParams(location.search).get('estado')
+  const hooked = document.documentElement.dataset.estado
+  const value = query || hooked || ''
+  return value === 'b' || value === 'c' ? value : 'a'
 }
 
 function syncRoute() {
@@ -355,11 +369,8 @@ function readGlassX(pill: HTMLElement) {
 }
 
 function triggerHaptic() {
+  document.querySelector<HTMLLabelElement>('#haptic-label')?.click()
   navigator.vibrate?.(12)
-  const input = document.querySelector<HTMLInputElement>('#haptic-switch')
-  if (!input) return
-  input.click()
-  input.blur()
 }
 
 function settleGoGlow() {
@@ -377,7 +388,7 @@ function settleGoGlow() {
     button.classList.remove('just-tapped')
     void button.offsetWidth
     button.classList.add('just-tapped')
-    glowGo = false
+    if (!springHeld) glowGo = false
   })
 }
 
@@ -823,26 +834,33 @@ app.addEventListener('pointercancel', (event) => {
   }
 })
 
+let growingMonths = false
 app.addEventListener('scroll', (event) => {
   const scroller = event.target
-  if (!(scroller instanceof HTMLElement) || scroller.dataset.testid !== 'month-scroll' || !streakMode) return
-  const nearTop = scroller.scrollTop < 48
-  const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48
+  if (!(scroller instanceof HTMLElement) || scroller.dataset.testid !== 'month-scroll' || !streakMode || !current || growingMonths) return
+  const nearTop = scroller.scrollTop < 360
+  const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 360
   if (nearTop && monthsBefore < 36) {
+    const add = Math.min(3, 36 - monthsBefore)
+    const from = -(monthsBefore + add)
+    const to = -(monthsBefore + 1)
+    monthsBefore += add
+    growingMonths = true
     const before = scroller.scrollHeight
     const top = scroller.scrollTop
-    monthsBefore += 1
-    paint()
-    const next = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-    if (next) next.scrollTop = top + (next.scrollHeight - before)
+    scroller.insertAdjacentHTML('afterbegin', monthSpan(current, streakMode, from, to))
+    scroller.scrollTop = top + (scroller.scrollHeight - before)
+    growingMonths = false
     return
   }
   if (nearBottom && monthsAfter < 24) {
-    const top = scroller.scrollTop
-    monthsAfter += 1
-    paint()
-    const next = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-    if (next) next.scrollTop = top
+    const add = Math.min(3, 24 - monthsAfter)
+    const from = monthsAfter + 1
+    const to = monthsAfter + add
+    monthsAfter += add
+    growingMonths = true
+    scroller.insertAdjacentHTML('beforeend', monthSpan(current, streakMode, from, to))
+    growingMonths = false
   }
 }, true)
 
@@ -1060,15 +1078,41 @@ async function setCommitment(date: string, on: boolean) {
   await run
 }
 
-function toggleDemoAttendance(date: string) {
-  if (!current) return
+function attendanceRows(date: string) {
+  if (!current) return []
+  const rows: { mine_attendance: boolean; went: number }[] = []
   if (date === current.today) {
     const today = current.calendar[0]
-    if (today) today.mine_attendance = !today.mine_attendance
-    return
+    if (today) rows.push(today)
+  } else {
+    const past = current.past.find((day) => day.date === date)
+    if (past) rows.push(past)
   }
-  const past = current.past.find((day) => day.date === date)
-  if (past) past.mine_attendance = !past.mine_attendance
+  const history = current.history.find((day) => day.date === date)
+  if (history) rows.push(history)
+  return rows
+}
+
+function flipAttendance(date: string) {
+  const rows = attendanceRows(date)
+  if (!rows.length) return null
+  const snaps = rows.map((row) => ({ mine_attendance: row.mine_attendance, went: row.went }))
+  const on = !rows[0].mine_attendance
+  const delta = on ? 1 : -1
+  for (const row of rows) {
+    row.mine_attendance = on
+    row.went = Math.max(0, row.went + delta)
+  }
+  return { on, snaps }
+}
+
+function restoreAttendance(date: string, snaps: { mine_attendance: boolean; went: number }[]) {
+  attendanceRows(date).forEach((row, index) => {
+    const snap = snaps[index]
+    if (!snap) return
+    row.mine_attendance = snap.mine_attendance
+    row.went = snap.went
+  })
 }
 
 async function actOn(act: string, node: HTMLElement, body = '') {
@@ -1111,8 +1155,8 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     const key = act === 'open-past-cal' ? 'all' : node.dataset.key
     streakMode = key === 'couple' || key === 'group' || key === 'six' || key === 'all' || key === 'individual' ? key : ''
     if (streakMode) lockStreakScroll()
-    monthsBefore = 1
-    monthsAfter = 1
+    monthsBefore = 6
+    monthsAfter = 6
     historyDate = ''
     streakAlign = Boolean(streakMode)
     paint()
@@ -1292,15 +1336,24 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   try {
     if (act === 'attend') {
       const date = node.dataset.date ?? current.today
+      const flipped = flipAttendance(date)
+      if (!flipped) return
+      springHeld = true
+      paint()
       if (demo) {
-        toggleDemoAttendance(date)
+        springHeld = false
+        return
+      }
+      try {
+        await marcarAsistencia(current.me.id, date, flipped.on)
+      } catch {
+        restoreAttendance(date, flipped.snaps)
+        offline = tx().saveFail
+        springHeld = false
         paint()
         return
       }
-      const on = date === current.today
-        ? !current.calendar[0]?.mine_attendance
-        : !current.past.find((day) => day.date === date)?.mine_attendance
-      await marcarAsistencia(current.me.id, date, on)
+      springHeld = false
       await refresh(true)
       return
     }
@@ -1520,5 +1573,8 @@ function syncViewport() {
 window.visualViewport?.addEventListener('resize', syncViewport)
 window.visualViewport?.addEventListener('scroll', syncViewport)
 syncViewport()
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshServiceWorker()
+})
 
 void boot()

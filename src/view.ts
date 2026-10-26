@@ -18,6 +18,7 @@ export type UiState = {
   nameSaved?: boolean
   feedbackSaved?: boolean
   calendarDays?: number
+  hero?: 'a' | 'b' | 'c'
 }
 
 export type Route = 'hoy' | 'calendario' | 'muro' | 'ajustes'
@@ -131,10 +132,40 @@ function badges(day: { went: number }) {
   return `<span class="badges">${items.join('')}</span>`
 }
 
+function goButton(state: Estado, gone: boolean, locked: boolean, label: string) {
+  const copy = tx()
+  const hidden = gone ? `<span class="visually-hidden">${copy.gone}</span>` : ''
+  const classes = ['go', gone ? 'on go-secondary' : ''].filter(Boolean).join(' ')
+  return `<button type="button" class="${classes}" data-testid="go" data-act="attend" data-date="${state.today}" aria-pressed="${gone ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>
+      <span class="go-label">${label}</span>${hidden}
+    </button>`
+}
+
+function hoyHero(state: Estado, gone: boolean, locked: boolean, hero: 'a' | 'b' | 'c') {
+  const copy = tx()
+  if (hero === 'b') {
+    return `<section class="hoy-hero estado-b ${gone ? 'on' : ''}" data-testid="hoy-hero">
+      <p class="hoy-band" data-testid="hoy-status">${gone ? copy.bandOn : copy.bandOff}</p>
+      ${goButton(state, gone, locked, gone ? copy.unmarkLong : copy.markLong)}
+    </section>`
+  }
+  if (hero === 'c') {
+    return `<section class="hoy-hero estado-c ${gone ? 'on' : ''}" data-testid="hoy-hero">
+      <p class="hoy-split-status" data-testid="hoy-status">${gone ? copy.gone : copy.splitOff}</p>
+      ${goButton(state, gone, locked, gone ? copy.splitUndo : copy.go)}
+    </section>`
+  }
+  return `<section class="hoy-hero estado-a ${gone ? 'on' : ''}" data-testid="hoy-hero">
+    <p class="hoy-status" data-testid="hoy-status">${gone ? copy.attendedLine : copy.pendingLine}</p>
+    ${goButton(state, gone, locked, gone ? copy.unmark : copy.go)}
+  </section>`
+}
+
 export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
   const copy = tx()
   const today = state.calendar[0]
-  const gone = today?.mine_attendance
+  const gone = Boolean(today?.mine_attendance)
+  const hero = ui.hero === 'b' || ui.hero === 'c' ? ui.hero : 'a'
   const past = state.past.map((day) => {
     const f = fecha(day.date)
     return `<li class="${day.sunday ? 'sunday' : ''}" data-date="${day.date}">
@@ -145,9 +176,7 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
   return `
     ${riskLine(state.risk)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
-    <button type="button" class="go ${gone ? 'on' : ''}" data-testid="go" data-act="attend" data-date="${state.today}" aria-pressed="${gone ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>
-      <span class="go-label">${gone ? copy.gone : copy.go}</span>
-    </button>
+    ${hoyHero(state, gone, locked, hero)}
     <section class="past" data-testid="past">
       <h2 class="streak-title">${copy.recentDays}</h2>
       <ol class="past-list">${past}</ol>
@@ -263,19 +292,22 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
   </aside>`
 }
 
+export function monthSpan(state: Estado, mode: StreakMode, fromDelta: number, toDelta: number) {
+  const [year, month] = state.today.split('-').map(Number)
+  const run = runDates(state, mode)
+  const html: string[] = []
+  const step = fromDelta <= toDelta ? 1 : -1
+  for (let delta = fromDelta; step > 0 ? delta <= toDelta : delta >= toDelta; delta += step) {
+    const part = addMonth(year, month - 1, delta)
+    html.push(monthBlock(state, part.y, part.m, mode, run, delta === 0))
+  }
+  return html.join('')
+}
+
 function streakPopup(state: Estado, mode: StreakMode, before: number, after: number, historyDate: string, locked: boolean) {
   if (!mode) return ''
   const copy = tx()
-  const { y, m } = (() => {
-    const [year, month] = state.today.split('-').map(Number)
-    return { y: year, m: month - 1 }
-  })()
-  const run = runDates(state, mode)
-  const months = []
-  for (let delta = -before; delta <= after; delta += 1) {
-    const part = addMonth(y, m, delta)
-    months.push(monthBlock(state, part.y, part.m, mode, run, delta === 0))
-  }
+  const months = monthSpan(state, mode, -before, after)
   const legend = mode === 'all' ? `<ul class="legend" data-testid="legend">
     <li><i class="dot mine"></i>${copy.legendMine}</li>
     <li><i class="dot ten"></i>${copy.legendTen}</li>
@@ -289,7 +321,7 @@ function streakPopup(state: Estado, mode: StreakMode, before: number, after: num
         <button type="button" class="pop-close" data-act="streak-close" aria-label="${copy.close}"><span aria-hidden="true">×</span></button>
       </header>
       ${legend}
-      <div class="month-scroll" data-testid="month-scroll">${months.join('')}</div>
+      <div class="month-scroll" data-testid="month-scroll">${months}</div>
       <div class="pop-foot"></div>
       ${mode === 'all' ? historyDetail(state, historyDate, locked) : ''}
     </section>`
