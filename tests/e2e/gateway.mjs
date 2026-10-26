@@ -51,6 +51,8 @@ function userFromAuth(header) {
   if (!part) return null
   try {
     const payload = JSON.parse(Buffer.from(part, 'base64url').toString())
+    // Como GoTrue/PostgREST: un token caducado no vale.
+    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) return null
     return typeof payload.sub === 'string' ? payload.sub : null
   } catch {
     return null
@@ -341,14 +343,10 @@ async function handleRest(req, res, url) {
     if (url.pathname === '/rest/v1/members' && req.method === 'PATCH') {
       const body = await readBody(req)
       const query = filters(url)
-      const name = String(body.display_name ?? '').trim()
-      if (name.length < 1 || name.length > 40) {
-        json(res, 400, { message: 'nombre' })
-        return
-      }
+      // Como PostgREST: el valor llega tal cual y la política decide.
       await asRole(header, (client) => client.query(
         'update public.members set display_name = $2 where id = $1',
-        [query.id, name],
+        [query.id, body.display_name],
       ))
       empty(res, 204)
       return
@@ -368,7 +366,7 @@ async function handleRest(req, res, url) {
       const body = await readBody(req)
       await asRole(header, (client) => client.query(
         'insert into public.intentions (member_id, body) values ($1, $2)',
-        [body.member_id, String(body.body ?? '').slice(0, 280)],
+        [body.member_id, body.body],
       ))
       empty(res, 201)
       return
@@ -460,7 +458,7 @@ async function handleRest(req, res, url) {
         body.member_id,
         body.empty_day,
         body.couple,
-        body.locale === 'pt' || body.locale === 'es' ? body.locale : null,
+        body.locale ?? null,
         body.updated_at ?? null,
       ]))
       empty(res, 201)
@@ -588,6 +586,21 @@ async function handleAuth(req, res, url) {
       return
     }
     inbox.delete(email)
+    json(res, 200, session(user))
+    return
+  }
+
+  if (url.pathname === '/auth/v1/token' && req.method === 'POST' && url.searchParams.get('grant_type') === 'refresh_token') {
+    const body = await readBody(req)
+    const id = /^refresh-(.+)$/.exec(String(body?.refresh_token ?? ''))?.[1] ?? ''
+    const user = id ? await admin(async (client) => (await client.query(
+      'select id::text, email from auth.users where id::text = $1',
+      [id],
+    )).rows[0]) : null
+    if (!user) {
+      json(res, 400, { msg: 'Invalid Refresh Token', error_code: 'refresh_token_not_found' })
+      return
+    }
     json(res, 200, session(user))
     return
   }
@@ -730,6 +743,11 @@ export function startGateway(port = 54321) {
         return
       }
       if (url.pathname.startsWith('/rest/')) {
+        const bearer = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '')
+        if (bearer && bearer !== anonKey && !userFromAuth(req.headers.authorization)) {
+          json(res, 401, { code: 'PGRST301', message: 'JWT expired', details: null, hint: null })
+          return
+        }
         await handleRest(req, res, url)
         return
       }

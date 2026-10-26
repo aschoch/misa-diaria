@@ -78,6 +78,17 @@ La semilla del repositorio crea `persona1@example.com` … `persona12@example.co
 
 Quien no esté en esa lista no entra. La página le dice lo mismo que a los demás: si el correo está en la lista, llegará un mensaje. No dice si el correo existe.
 
+### Invitar al curso
+
+No hace falta mandar invitaciones de Supabase ni enlaces mágicos. Con los doce correos ya en **Authentication → Users** (sin contraseña) y en `members`:
+
+1. Manda a cada matrimonio, por el canal de siempre, el enlace `https://aschoch.github.io/misa-diaria/` y una línea: «Escribe tu correo y pulsa *¿Primera vez u olvidaste la contraseña?*».
+2. La app le manda un código de 6 dígitos (la plantilla de arriba). Lo escribe y entra.
+3. Justo después la app le ofrece crear una contraseña. Si la crea, la próxima vez entra con correo y contraseña y el Llavero del iPhone la recuerda. Si pulsa *Ahora no*, puede seguir entrando con código siempre.
+4. Después, que la añada a la pantalla de inicio desde **Ajustes → Ver cómo instalar como app** y active el aviso de la tarde.
+
+Así nadie recibe una contraseña por mensaje y quien la olvide usa el mismo botón.
+
 ## 5. GitHub Pages
 
 1. En el repositorio `aschoch/misa-diaria`, **Settings → Pages**.

@@ -3,10 +3,19 @@ name: Pruebas
 on:
   pull_request:
   push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   base:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -24,7 +33,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
       - run: npm run test:db
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
@@ -32,6 +43,7 @@ jobs:
 
   navegador:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -49,8 +61,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+          cache: npm
+      - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
         env:
+          CI: 'true'
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

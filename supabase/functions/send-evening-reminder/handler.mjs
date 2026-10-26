@@ -5,8 +5,8 @@ export async function handleReminder(request, deps) {
   if (request.method !== 'POST') {
     return Response.json({ error: 'Método no permitido' }, { status: 405 })
   }
-  const provided = request.headers.get('x-cron-secret')
-  if (!deps.cronSecret || provided !== deps.cronSecret) {
+  const provided = request.headers.get('x-cron-secret') ?? ''
+  if (!deps.cronSecret || !sameSecret(provided, deps.cronSecret)) {
     return Response.json({ error: 'No autorizado' }, { status: 401 })
   }
 
@@ -17,18 +17,32 @@ export async function handleReminder(request, deps) {
     const claimed = await deps.claim(row.member_id, massDate)
     if (!claimed) continue
     deps.log?.({ member_id: row.member_id, slot: 'evening' })
-    const subs = await deps.subscriptions(row.member_id)
-    if (!subs.length) continue
-    let failures = 0
-    for (const sub of subs) {
-      const result = await deps.send(sub, row.body, row.title)
-      if (result.status === 404 || result.status === 410) await deps.dropSubscription(sub.endpoint)
-      if (result.status >= 400) failures += 1
-      else sent += 1
+    try {
+      const subs = await deps.subscriptions(row.member_id)
+      if (!subs.length) continue
+      let failures = 0
+      for (const sub of subs) {
+        const result = await deps.send(sub, row.body, row.title)
+        if (result.status === 404 || result.status === 410) await deps.dropSubscription(sub.endpoint)
+        if (result.status >= 400) failures += 1
+        else sent += 1
+      }
+      if (failures === subs.length) await deps.release(row.member_id, massDate)
+    } catch {
+      // Si algo falla tras reclamar, se suelta para que el intento de las 21:05 lo repita.
+      await deps.release(row.member_id, massDate).catch(() => undefined)
     }
-    if (failures === subs.length) await deps.release(row.member_id, massDate)
   }
   return Response.json({ sent })
+}
+
+// Compara sin cortar en el primer carácter distinto.
+function sameSecret(a, b) {
+  const left = new TextEncoder().encode(a)
+  const right = new TextEncoder().encode(b)
+  let diff = left.length ^ right.length
+  for (let i = 0; i < right.length; i += 1) diff |= (left[i] ?? 0) ^ right[i]
+  return diff === 0
 }
 
 export function liveDeps(env, send) {

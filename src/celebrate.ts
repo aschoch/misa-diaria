@@ -1,5 +1,6 @@
 import type { Pending } from './types'
 import { esc } from './format'
+import { tx } from './i18n'
 
 const root = () => document.querySelector<HTMLElement>('#celeb')!
 
@@ -81,7 +82,7 @@ export function showCelebration(item: Pending) {
       <p class="celeb-line" data-testid="celeb-line" role="status">${esc(item.line)}</p>
       ${seeds(item.motif)}
     </div>
-    <button type="button" class="skip" data-act="skip" aria-label="Saltar la celebración">×</button>
+    <button type="button" class="skip" data-act="skip" aria-label="${esc(tx().skipCelebration)}">×</button>
   `
   requestAnimationFrame(() => {
     placeCrest(node)

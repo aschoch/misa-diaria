@@ -11,6 +11,7 @@ const vite = spawn('npx', ['vite', '--host', '127.0.0.1', '--port', '5173'], {
     ...process.env,
     VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
     VITE_SUPABASE_ANON_KEY: anonKey,
+    VITE_SUPABASE_PUBLISHABLE_KEY: anonKey,
     VITE_E2E: 'true',
   },
 })

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 const gate = 'http://127.0.0.1:54321'
-const storeShots = '/cursor/stores/bc-fef1ad98-c19e-5bc7-b9ff-40b2959a5f47/media/app'
+const storeShots = process.env.MISA_SHOTS ?? join(tmpdir(), 'misa-shots')
 let shots = storeShots
 
 function ensureShots() {
@@ -84,7 +84,7 @@ async function login(page: Page, email: string) {
 }
 
 async function setRecoveryPassword(page: Page) {
-  await expect(page.getByRole('heading', { name: 'Fija tu nueva contraseña' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Crea tu contraseña' })).toBeVisible()
   await page.getByLabel('Nueva contraseña').fill('misa-2026')
   await page.getByRole('button', { name: 'Guardar contraseña' }).click()
 }
@@ -118,7 +118,7 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/misa-diaria/')
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover')
-  await page.getByRole('button', { name: 'Olvidé mi contraseña' }).click()
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await page.getByLabel('Tu correo').fill('nadie@example.com')
   await page.getByRole('button', { name: 'Enviar código' }).click()
   await expect(page.getByText('Si tu correo está en la lista, te llegará un mensaje.')).toBeVisible()
@@ -132,7 +132,14 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   await expect(page.getByTestId('go')).toContainText('Has ido a Misa')
   await expect(page.getByTestId('go')).toContainText('Desmarcar')
   await expect(page.getByRole('heading', { name: 'Rachas' })).toHaveCount(0)
-  await expect(page.getByTestId('total')).toHaveCount(0)
+  await expect(page.getByTestId('total')).toContainText('Total de Misas del curso')
+  expect(Number(await page.getByTestId('total-num').textContent())).toBeGreaterThan(0)
+  expect(await page.evaluate(() => {
+    const hero = document.querySelector('[data-testid="hoy-hero"]')?.getBoundingClientRect()
+    const total = document.querySelector('[data-testid="total"]')?.getBoundingClientRect()
+    const past = document.querySelector('[data-testid="past"]')?.getBoundingClientRect()
+    return Boolean(hero && total && past && total.top >= hero.bottom && past.top >= total.bottom)
+  })).toBe(true)
   await expect(page.getByRole('heading', { name: 'Últimos días' })).toBeVisible()
   const pastLegend = page.getByTestId('past-legend')
   await expect(pastLegend).toBeVisible()
@@ -190,13 +197,13 @@ test('el correo sigue ahí al volver y el código pedido entra sin pedir otro', 
   await page.goto('/misa-diaria/')
   await expect(page.locator('#password')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Olvidé mi contraseña' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /olvidaste la contraseña/ })).toBeVisible()
   await expect(page.getByLabel('Código')).toHaveCount(0)
   await page.getByLabel('Tu correo').fill('Persona1@Example.com')
   await page.getByLabel('Tu correo').press('Enter')
   await expect(page.getByLabel('Tu correo')).toHaveValue('Persona1@Example.com')
   await expect(page.getByText('Si tu correo está en la lista, te llegará un mensaje.')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Olvidé mi contraseña' }).click()
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await expect(page.getByLabel('Tu correo')).toHaveValue('persona1@example.com')
   await page.getByRole('button', { name: 'Enviar código' }).click()
   await expect(page.getByText('Si tu correo está en la lista, te llegará un mensaje.')).toBeVisible()
@@ -204,7 +211,7 @@ test('el correo sigue ahí al volver y el código pedido entra sin pedir otro', 
   await page.reload()
   await expect(page.getByLabel('Tu correo')).toHaveValue('persona1@example.com')
   await expect(page.getByLabel('Código')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Olvidé mi contraseña' }).click()
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await expect(page.getByRole('button', { name: 'Ya tengo un código' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Enviar código' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Volver' })).toBeVisible()
@@ -226,7 +233,7 @@ test('enviar código muestra que está en camino', async ({ page }) => {
   })
   await page.goto('/misa-diaria/')
   await page.getByLabel('Tu correo').fill('persona3@example.com')
-  await page.getByRole('button', { name: 'Olvidé mi contraseña' }).click()
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await page.getByRole('button', { name: 'Enviar código' }).click()
   await expect(page.locator('[data-act="send-code"]')).toBeDisabled()
   await expect(page.locator('.send-wait')).toBeVisible()
@@ -239,12 +246,12 @@ test('un segundo envío no dice que salió y deja entrar el código', async ({ p
   const errors = watchConsole(page)
   await page.goto('/misa-diaria/')
   await page.getByLabel('Tu correo').fill('persona2@example.com')
-  await page.getByRole('button', { name: 'Olvidé mi contraseña' }).click()
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await page.getByRole('button', { name: 'Enviar código' }).click()
   await expect(page.getByText('Si tu correo está en la lista, te llegará un mensaje.')).toBeVisible()
   const code = await codeFor('persona2@example.com')
   await page.getByRole('button', { name: 'Volver' }).click()
-  await page.getByRole('button', { name: 'Olvidé mi contraseña' }).click()
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await page.getByRole('button', { name: 'Enviar código' }).click()
   await expect(page.getByText('Acabamos de enviar un código. Escríbelo abajo.')).toBeVisible()
   await expect(page.getByText('Si tu correo está en la lista, te llegará un mensaje.')).toHaveCount(0)
@@ -1068,16 +1075,6 @@ test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ pa
   expect(errors).toEqual([])
 })
 
-async function showHero(page: Page, hero: 'a' | 'b' | 'c') {
-  await page.evaluate((value) => {
-    if (value === 'a') delete document.documentElement.dataset.estado
-    else document.documentElement.dataset.estado = value
-  }, hero)
-  await page.locator('nav.tabs a[data-nav="calendario"]').click()
-  await page.locator('nav.tabs a[data-nav="hoy"]').click()
-  await expect(page.locator('.hoy-hero')).toHaveClass(new RegExp(`estado-${hero}`))
-}
-
 test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   test.setTimeout(120_000)
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)
@@ -1107,11 +1104,6 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await save(page, 'hoy.png')
   await page.evaluate(() => window.scrollTo(0, 0))
   await save(page, 'estado-a-off.png')
-  await showHero(page, 'b')
-  await save(page, 'estado-b-off.png')
-  await showHero(page, 'c')
-  await save(page, 'estado-c-off.png')
-  await showHero(page, 'a')
   await page.getByTestId('go').click()
   await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   const skip = page.getByRole('button', { name: 'Saltar la celebración' })
@@ -1125,11 +1117,6 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.waitForTimeout(280)
   await save(page, 'hoy-on.png')
   await save(page, 'estado-a-on.png')
-  await showHero(page, 'b')
-  await save(page, 'estado-b-on.png')
-  await showHero(page, 'c')
-  await save(page, 'estado-c-on.png')
-  await showHero(page, 'a')
   await save(page, 'nav-es.png')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
@@ -1299,7 +1286,7 @@ test('en portugués se ven las sequências y el calendario', async ({ page, brow
   await page.getByRole('button', { name: 'Português' }).click()
   await expect(page.getByRole('heading', { name: 'Definições' })).toBeVisible()
   await page.getByRole('link', { name: 'Hoje' }).click()
-  await expect(page.getByTestId('hoy-date')).toHaveText('Sexta, 23 de outubro de 2026')
+  await expect(page.getByTestId('hoy-date')).toHaveText('Sexta-feira, 23 de outubro de 2026')
   await expect(page.getByRole('heading', { name: 'Sequências' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Últimos dias' })).toBeVisible()
   const pastLegendPt = page.getByTestId('past-legend')
@@ -1308,7 +1295,7 @@ test('en portugués se ven las sequências y el calendario', async ({ page, brow
   await expect(pastLegendPt).toContainText('Foste tu')
   await expect(pastLegendPt).toContainText('Cada casal')
   await expect(pastLegendPt).toContainText('Todos')
-  await expect(page.getByTestId('total')).toHaveCount(0)
+  await expect(page.getByTestId('total')).toContainText('Total de Missas do curso')
   await expect(page.getByTestId('go')).toContainText('Fui à Missa')
   await expect(page.getByTestId('risk')).toHaveCount(0)
   await expect(page.locator('.streaks li')).toHaveCount(0)
@@ -1542,6 +1529,8 @@ test('tocar un día deja el mes donde estaba', async ({ page }) => {
   await page.getByTestId('open-past-cal').click()
   const scroller = page.getByTestId('month-scroll')
   await expect(scroller.locator('[data-current="true"] h3')).toHaveText('octubre 2026')
+  // El popup entra con un muelle; un dedo toca cuando ya está quieto.
+  await expect(page.locator('.streak-pop.entering')).toHaveCount(0)
   const before = await scroller.evaluate((node) => ({
     top: node.scrollTop,
     months: node.querySelectorAll('.month').length,
@@ -1746,3 +1735,153 @@ async function writeShot(page: Page, name: string, animations: 'disabled' | 'all
     expect(bytes.readUInt32BE(20)).toBe(844)
   }
 }
+
+test('una contraseña mal escrita lo dice claro', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/misa-diaria/')
+  await page.getByLabel('Tu correo').fill('persona1@example.com')
+  await page.locator('#password').fill('otra-cosa')
+  await page.locator('#password').press('Enter')
+  await expect(page.getByText('Correo o contraseña incorrectos.')).toBeVisible()
+  await expect(page.getByText('Ese código no vale. Pide otro.')).toHaveCount(0)
+  await page.locator('#password').fill('abc')
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
+  await expect(page.getByText('La contraseña tiene al menos 6 caracteres.')).toBeVisible()
+  expect(errors.filter((error) => !/failed to load resource|400/i.test(error))).toEqual([])
+})
+
+test('entrar con código ofrece crear contraseña y deja seguir sin ella', async ({ page }) => {
+  await page.goto('/misa-diaria/')
+  await page.getByLabel('Tu correo').fill('persona3@example.com')
+  await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
+  await page.getByRole('button', { name: 'Enviar código' }).click()
+  const code = await codeFor('persona3@example.com')
+  await page.getByLabel('Código').fill(code)
+  await page.getByLabel('Código').press('Enter')
+  await expect(page.getByRole('heading', { name: 'Crea tu contraseña' })).toBeVisible()
+  await page.getByRole('button', { name: 'Ahora no' }).click()
+  await expect(page.getByRole('heading', { name: 'Hoy' })).toBeVisible()
+  await expect(page.getByTestId('go')).toBeVisible()
+})
+
+test('marcar hoy sube el total del curso al momento y se queda al volver', async ({ page }) => {
+  await login(page, 'persona12@example.com')
+  const total = page.getByTestId('total-num')
+  await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
+  const before = Number(await total.textContent())
+  await page.getByTestId('go').click()
+  await expect(total).toHaveText(String(before + 1))
+  await page.reload()
+  await expect(page.getByTestId('total-num')).toHaveText(String(before + 1))
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+})
+
+test('dos «Voy a ir» seguidos quedan los dos', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  const dates = await page.locator('.row-commit[aria-pressed="false"]').evaluateAll((nodes) => nodes.slice(1, 3).map((node) => (node as HTMLElement).dataset.date ?? ''))
+  expect(dates.length).toBe(2)
+  await page.route('**/rest/v1/commitments**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await route.continue()
+  })
+  await page.locator(`.row-commit[data-date="${dates[0]}"]`).click()
+  await page.locator(`.row-commit[data-date="${dates[1]}"]`).click()
+  for (const date of dates) await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(900)
+  await page.unroute('**/rest/v1/commitments**')
+  await page.reload()
+  await page.getByTestId('calendar').waitFor()
+  for (const date of dates) await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('borrar una intención se puede deshacer', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Intenciones' }).click()
+  const text = 'Por quienes no pueden salir de casa.'
+  await page.getByRole('link', { name: /Por quienes no pueden salir de casa/ }).click()
+  await page.getByRole('button', { name: 'Eliminar' }).click()
+  await expect(page.getByTestId('toast')).toContainText('Intención eliminada')
+  await expect(page.getByText(text)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Deshacer' }).click()
+  await expect(page.getByText(text)).toBeVisible()
+  await page.reload()
+  await expect(page.getByText(text)).toBeVisible()
+  await page.getByRole('link', { name: /Por quienes no pueden salir de casa/ }).click()
+  await page.getByRole('button', { name: 'Eliminar' }).click()
+  await expect(page.getByTestId('toast')).toHaveCount(0, { timeout: 9000 })
+  await page.reload()
+  await expect(page.getByTestId('muro')).toBeVisible()
+  await expect(page.getByText(text)).toHaveCount(0)
+})
+
+test('si publicar falla, lo escrito sigue ahí', async ({ page }) => {
+  await login(page, 'persona2@example.com')
+  await page.getByRole('link', { name: 'Intenciones' }).click()
+  const publish = page.getByTestId('muro').getByRole('button', { name: 'Publicar' })
+  await expect(publish).toBeDisabled()
+  await page.route('**/rest/v1/intentions', (route) => (route.request().method() === 'POST' ? route.abort() : route.continue()))
+  await page.locator('#intention').fill('Por la salud de mi madre <3')
+  await publish.click()
+  await expect(page.getByText('No se ha guardado. Prueba otra vez.')).toBeVisible()
+  await expect(page.locator('#intention')).toHaveValue('Por la salud de mi madre <3')
+  await page.unroute('**/rest/v1/intentions')
+  await page.getByTestId('muro').getByRole('button', { name: 'Publicar' }).click()
+  await expect(page.locator('.notes').getByText('Por la salud de mi madre <3')).toBeVisible()
+  await expect(page.locator('#intention')).toHaveValue('')
+})
+
+test('al día siguiente la app se pone al día sola', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-23T20:00:00Z') })
+  await reset('2026-10-23T20:00:00Z')
+  await login(page, 'persona12@example.com')
+  await expect(page.getByTestId('hoy-date')).toHaveText('Viernes, 23 de octubre de 2026')
+  await clock('2026-10-24T07:30:00Z')
+  await page.clock.fastForward('11:30:00')
+  await expect(page.getByTestId('hoy-date')).toHaveText('Sábado, 24 de octubre de 2026')
+  await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
+})
+
+test('en el mes los días futuros no se tocan; Escape y Atrás cierran', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  await page.getByTestId('open-past-cal').click()
+  const scroller = page.getByTestId('month-scroll')
+  await expect(scroller.locator('[data-current="true"] .cell.future').first()).toBeVisible()
+  await expect(scroller.locator('[data-act="history-day"][data-date="2026-10-30"]')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
+  await page.getByTestId('open-past-cal').click()
+  await expect(page.getByTestId('streak-calendar')).toBeVisible()
+  await page.goBack()
+  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Hoy' })).toBeVisible()
+  await expect(page).toHaveURL(/\/misa-diaria\/?$/)
+})
+
+test('el lunes sale el resumen de la semana bajo el total', async ({ page }) => {
+  await reset('2026-10-26T10:00:00Z')
+  await login(page, 'persona1@example.com')
+  await expect(page.getByTestId('monday')).toContainText('La semana pasada')
+  await expect(page.getByTestId('total').getByTestId('monday')).toBeVisible()
+})
+
+test('en pantalla pequeña el popup del mes cabe entero y nada se sale de lado', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByTestId('open-past-cal').click()
+  await expect(page.locator('.streak-pop.entering')).toHaveCount(0)
+  await page.getByTestId('month-scroll').locator('[data-act="history-day"][data-date="2026-10-22"]').click()
+  await expect(page.getByTestId('history-detail')).toBeVisible()
+  const fits = await page.evaluate(() => {
+    const pop = document.querySelector('.streak-pop')!.getBoundingClientRect()
+    const detail = document.querySelector('[data-testid="history-detail"]')!.getBoundingClientRect()
+    return detail.bottom <= pop.bottom + 1 && pop.bottom <= window.innerHeight
+  })
+  expect(fits).toBe(true)
+  for (const route of ['Calendario', 'Intenciones', 'Ajustes']) {
+    await page.keyboard.press('Escape')
+    await page.getByRole('link', { name: route }).click()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+})
