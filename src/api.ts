@@ -168,6 +168,31 @@ export async function updatePassword(password: string) {
   return data
 }
 
+function usagePlatform(): 'ios' | 'android' | 'other' {
+  const ua = navigator.userAgent || ''
+  const apple = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  if (apple) return 'ios'
+  if (/android/i.test(ua)) return 'android'
+  return 'other'
+}
+
+function standaloneApp() {
+  const nav = navigator as Navigator & { standalone?: boolean }
+  return window.matchMedia('(display-mode: standalone)').matches || Boolean(nav.standalone)
+}
+
+export function registrarEvento(memberId: string, eventName: string, route: string, props: Record<string, unknown> = {}) {
+  if (!supabase || !memberId || !eventName) return
+  void supabase.from('usage_events').insert({
+    member_id: memberId,
+    event_name: eventName.slice(0, 80),
+    route: route.slice(0, 40),
+    platform: usagePlatform(),
+    standalone: standaloneApp(),
+    props,
+  }).then(() => undefined, () => undefined)
+}
+
 export async function salir() {
   const { data } = await supabase!.auth.getSession()
   const userId = data.session?.user.id

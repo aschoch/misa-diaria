@@ -183,7 +183,7 @@ async function seedActivity(client) {
     truncate public.intention_comments, public.intention_reactions,
       public.attendance, public.commitments, public.intentions,
       public.celebrations, public.notification_prefs, public.notification_log,
-      public.push_subscriptions, public.feedback
+      public.push_subscriptions, public.feedback, public.usage_events
   `)
   await client.query(`
     insert into public.attendance (member_id, mass_date)
@@ -484,6 +484,36 @@ async function handleRest(req, res, url) {
         return keys
       })
       json(res, 201, inserted)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/usage_events' && req.method === 'POST') {
+      const body = await readBody(req)
+      const inserted = await asRole(header, async (client) => (await client.query(`
+        insert into public.usage_events (member_id, event_name, route, platform, standalone, props)
+        values ($1, $2, $3, $4, $5, $6::jsonb)
+        returning id, member_id, event_name, route, platform, standalone, props, created_at
+      `, [
+        body.member_id,
+        body.event_name,
+        body.route ?? '',
+        body.platform ?? 'other',
+        Boolean(body.standalone),
+        JSON.stringify(body.props ?? {}),
+      ])).rows)
+      const prefer = String(req.headers.prefer ?? '')
+      if (prefer.includes('return=minimal')) empty(res, 201)
+      else json(res, 201, inserted)
+      return
+    }
+
+    if (url.pathname === '/rest/v1/usage_events' && req.method === 'GET') {
+      const rows = await asRole(header, async (client) => (await client.query(`
+        select id, member_id, event_name, route, platform, standalone, props, created_at
+        from public.usage_events
+        order by created_at asc
+      `)).rows)
+      json(res, 200, rows)
       return
     }
 

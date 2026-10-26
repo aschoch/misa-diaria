@@ -100,6 +100,15 @@ async function tokenOf(page: Page) {
   })
 }
 
+async function usageRows(page: Page) {
+  const token = await tokenOf(page)
+  const response = await fetch(`${gate}/rest/v1/usage_events?select=event_name,route,props`, {
+    headers: { apikey: 'sb_test_anon_misa', Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(await response.text())
+  return response.json() as Promise<Array<{ event_name: string; route: string; props: { on?: boolean; source?: string; to?: string } }>>
+}
+
 test.beforeEach(async ({ page }) => {
   await reset()
   await page.context().clearCookies()
@@ -324,7 +333,8 @@ test('la celebración sale una vez y dice el motivo', async ({ page }) => {
   await page.getByTestId('go').click()
   await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   await expect(page.getByTestId('go')).toContainText('Has ido a Misa')
-  await expect(page.getByTestId('go')).toHaveClass(/just-tapped/)
+  await expect(page.getByTestId('go')).toContainText('Desmarcar')
+  await expect(page.getByTestId('go')).toHaveClass(/go-secondary/)
   await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
   await expect(page.getByTestId('celeb-line')).toHaveCount(0)
   expect(errors).toEqual([])
@@ -856,6 +866,61 @@ test('la lente sigue el dedo por la barra', async ({ page, browserName, viewport
   expect(errors).toEqual([])
 })
 
+test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', async ({ page }) => {
+  const errors = watchConsole(page)
+  await login(page, 'persona12@example.com')
+  const go = page.getByTestId('go')
+  await expect(go).toBeVisible()
+  expect(await go.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(30, 92, 56)')
+  await page.evaluate(() => {
+    ;(window as unknown as { __hero?: Element | null }).__hero = document.querySelector('[data-testid="hoy-hero"]')
+  })
+  const settled = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
+  await go.click()
+  await settled
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+  const same = await page.evaluate(() => {
+    const node = document.querySelector('[data-testid="hoy-hero"]')
+    const held = (window as unknown as { __hero?: Element | null }).__hero
+    return Boolean(node && held && node.isSameNode(held) && node.classList.contains('on'))
+  })
+  expect(same).toBe(true)
+  const skip = page.getByRole('button', { name: 'Saltar la celebración' })
+  if (await skip.isVisible()) await skip.click()
+  await page.waitForTimeout(320)
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+  const still = await page.evaluate(() => {
+    const node = document.querySelector('[data-testid="hoy-hero"]')
+    const held = (window as unknown as { __hero?: Element | null }).__hero
+    return Boolean(node && held && node.isSameNode(held))
+  })
+  expect(still).toBe(true)
+
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await expect(page.getByTestId('calendar')).toBeVisible()
+  await expect.poll(async () => {
+    const rows = await usageRows(page)
+    const names = rows.map((row) => row.event_name)
+    const attend = rows.find((row) => row.event_name === 'attendance_toggle')
+    const tab = rows.find((row) => row.event_name === 'tab_view' && row.props?.to === 'calendario')
+    return names.includes('app_open') && Boolean(tab) && attend?.props?.on === true && attend.props.source === 'hoy_main'
+  }).toBe(true)
+
+  await page.goto('/misa-diaria/ajustes?plataforma=ios')
+  const ios = page.getByTestId('install-guide')
+  await expect(ios).toHaveAttribute('data-platform', 'ios')
+  await expect(ios).toContainText('Añadir a pantalla de inicio')
+  await expect(ios).toContainText('Añadir')
+  await expect(ios).not.toContainText('Instalar aplicación')
+  await page.goto('/misa-diaria/ajustes?plataforma=android')
+  const android = page.getByTestId('install-guide')
+  await expect(android).toHaveAttribute('data-platform', 'android')
+  await expect(android).toContainText('Instalar aplicación')
+  await expect(android).toContainText('Añadir a pantalla de inicio')
+  await expect(android).toContainText('Instalar')
+  expect(errors).toEqual([])
+})
+
 test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'persona12@example.com')
@@ -890,18 +955,28 @@ test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ pa
     const go = page.getByTestId('go')
     await expect(go).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
+    expect(await go.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(30, 92, 56)')
+    await page.evaluate(() => {
+      const held = document.querySelector('[data-testid="hoy-hero"]')
+      ;(window as unknown as { __hero?: Element | null }).__hero = held
+    })
     await go.click()
     await expect(go).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
     await expect(page.locator('.hoy-hero')).toHaveClass(/\bon\b/)
-    await expect(go).toHaveClass(/just-tapped/)
-    expect(await go.evaluate((node) => getComputedStyle(node).animationName)).toContain('go-spring')
     await expect.poll(() => seen).toBe(2)
     const settled = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
     release()
     await settled
     const skipNow = page.getByRole('button', { name: 'Saltar la celebración' })
     if (await skipNow.isVisible()) await skipNow.click()
+    const sameHero = await page.evaluate(() => {
+      const node = document.querySelector('[data-testid="hoy-hero"]')
+      const held = (window as unknown as { __hero?: Element | null }).__hero
+      return Boolean(node && held && node.isSameNode(held) && node.classList.contains('on'))
+    })
+    expect(sameHero).toBe(true)
+    await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   } finally {
     release()
     await page.unroute('**/rest/v1/attendance**').catch(() => undefined)
@@ -948,6 +1023,7 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await expect(page.getByTestId('go')).not.toHaveClass(/\bon\b/)
   await expect(page.locator('.hoy-hero')).toHaveClass(/estado-a/)
   await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
+  expect(await page.getByTestId('go').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(30, 92, 56)')
   await save(page, 'hoy.png')
   await save(page, 'estado-a-off.png')
   await showHero(page, 'b')
@@ -956,16 +1032,16 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await save(page, 'estado-c-off.png')
   await showHero(page, 'a')
   await page.getByTestId('go').click()
-  await expect(page.getByTestId('go')).toHaveClass(/just-tapped/)
-  await page.waitForTimeout(160)
-  await saveLive(page, 'hoy-glow.png')
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   const skip = page.getByRole('button', { name: 'Saltar la celebración' })
   if (await skip.isVisible()) await skip.click()
   await expect(page.getByTestId('go')).toHaveClass(/\bon\b/)
+  await expect(page.getByTestId('go')).toHaveClass(/go-secondary/)
+  await expect(page.getByTestId('go')).toContainText('Desmarcar')
   await expect(page.getByTestId('go')).toContainText('Has ido a Misa')
   await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
-  await page.waitForTimeout(560)
+  await page.waitForTimeout(280)
   await save(page, 'hoy-on.png')
   await save(page, 'estado-a-on.png')
   await showHero(page, 'b')
@@ -1069,6 +1145,16 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await page.getByTestId('ajustes').waitFor()
   await save(page, 'ajustes-es.png')
+  await page.goto('/misa-diaria/ajustes?plataforma=ios')
+  await expect(page.getByTestId('install-guide')).toContainText('Añadir a pantalla de inicio')
+  await expect(page.getByTestId('install-guide')).not.toContainText('Instalar aplicación')
+  await page.getByTestId('install-guide').evaluate((node) => node.scrollIntoView({ block: 'start' }))
+  await save(page, 'ajustes-instalar-ios.png')
+  await page.goto('/misa-diaria/ajustes?plataforma=android')
+  await expect(page.getByTestId('install-guide')).toContainText('Instalar aplicación')
+  await expect(page.getByTestId('install-guide')).toContainText('Añadir a pantalla de inicio')
+  await page.getByTestId('install-guide').evaluate((node) => node.scrollIntoView({ block: 'start' }))
+  await save(page, 'ajustes-instalar-android.png')
   await page.getByRole('button', { name: 'Cerrar sesión' }).click()
   await expect(page.getByLabel('Tu correo')).toBeVisible()
   await scene('diez')
