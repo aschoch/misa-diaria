@@ -8,7 +8,7 @@ Se entra con un enlace que llega al correo. No hay contraseñas ni página para 
 
 El proyecto de Supabase ya existe. La guía de clics está en `docs/puesta-en-marcha.md`. Al final de esta nota está lo que solo puedes hacer tú. GitHub Pages se activa cuando el flujo de publicación esté en `main`.
 
-Los avisos al móvil nacen apagados. Hay uno, y cada persona lo enciende si quiere: si mañana no hay nadie. Como mucho sale uno, la tarde de antes, y nunca en domingo ni a propósito del domingo. No nombra a un matrimonio ni a una persona. Hoy lo dice cuando el día está vacío, sin nombres y sin intenciones en la pantalla de bloqueo.
+Los avisos al móvil nacen apagados. Hay uno, y cada persona lo enciende si quiere: si mañana no hay nadie. Como mucho sale uno, la tarde de antes, cualquier día de la semana (también el sábado para el domingo y el domingo para el lunes). No nombra a un matrimonio ni a una persona. Hoy lo dice cuando el día está vacío, sin nombres y sin intenciones en la pantalla de bloqueo.
 
 Las rachas van en hora de Madrid. En Hoy la cifra del curso es grande, con «Misas del curso» o «Missas do curso», y debajo van las cinco bajo el título «Rachas» o «Sequências»: la tuya (con tu nombre), la de tu matrimonio, la del curso, la de cada matrimonio y la de días con al menos diez personas. El domingo cuenta. Si ese día la racha falla, se rompe. Lo que no hacemos el domingo es avisar.
 
@@ -76,7 +76,7 @@ La semilla SQL es la opción. Doce personas estables no justifican una pantalla 
 
 El día empieza a las 00:00 y termina a las 00:00 siguientes en Europe/Madrid, con el horario de verano que trae la base de tiempos. No usamos la zona del teléfono ni un corte fijo en UTC. En el cambio de hora sigue habiendo un solo día civil. Todas las funciones escriben la zona en la consulta, `(now() at time zone 'Europe/Madrid')::date`, y aceptan una fecha de prueba para no depender del calendario real.
 
-Hoy todavía no rompe nada. Si hoy ya cumples, la racha lo incluye. Si aún no, la racha sigue siendo la de ayer hasta medianoche. Se rompe un día ya cerrado en el que la meta falla. El domingo entra en esa regla: cuenta si la meta se cumple y rompe si falla. Lo que el domingo no tiene es estado de riesgo ni aviso.
+Hoy todavía no rompe nada. Si hoy ya cumples, la racha lo incluye. Si aún no, la racha sigue siendo la de ayer hasta medianoche. Se rompe un día ya cerrado en el que la meta falla. El domingo entra en esa regla: cuenta si la meta se cumple y rompe si falla. Lo que el domingo no tiene es estado de riesgo en la aplicación; el aviso de la tarde sí sale si nadie se ha apuntado.
 
 | Racha | Sigue el día en que… | Se rompe si, en un día ya cerrado… |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ Contrato con Diseño: se puede saltar desde el primer instante, dura alrededor d
 
 Una persona cubre el día si tiene «Voy a ir» o «He ido». Un día que no es domingo está en riesgo solo si nadie cubre. De uno a cinco matrimonios cubiertos no es riesgo. `dia_en_riesgo` ya no mira el hueco de un matrimonio. La asistencia cuenta como cobertura.
 
-El domingo nunca está en riesgo. Tampoco se envía nada en domingo, ni siquiera para avisar del lunes. El sábado por la tarde no se avisa del domingo. El aviso del lunes es la línea de dentro de la aplicación, que el domingo ya se puede leer.
+El domingo nunca está en riesgo dentro de la aplicación. El aviso del móvil, en cambio, sale cualquier tarde si mañana nadie se ha apuntado: también el sábado (para el domingo) y el domingo (para el lunes). Decisión del 26 de octubre de 2026.
 
 Dentro de la aplicación hay una línea en Hoy y en el día del calendario, de lunes a sábado, sin ventana modal, solo cuando no hay nadie cubierto: «Nadie se ha apuntado.» o «En riesgo». El calendario enseña `X de 12`, `Y de 6 matrimonios` y si alguien se ha apuntado. No dice qué matrimonio falta. En pt-PT: «Ninguém se apontou.», «Em risco» y «casais». El domingo no se marca. No hace falta tener el aviso del móvil encendido para verla.
 
@@ -121,7 +121,7 @@ Al móvil, una sola Edge Function, `send-evening-reminder`, llamada por `pg_cron
 
 Como mucho un envío por persona y fecha, anotado en `notification_log` antes de enviar. Si el envío falla, no hay reintentos en ráfaga: a las doce personas les basta el siguiente paso de la hora, y a la noche siguiente ya es otro día. Un 404 o un 410 del servicio push borra esa suscripción.
 
-A quién, solo si mañana es de lunes a sábado y no hay nadie cubierto, y solo quien tenga encendido el aviso. Nace apagado. Como mucho sale uno por persona: «Mañana nadie ha dicho que va a Misa.» En pt-PT: «Amanhã ninguém disse que vai à Missa.» El título es «Misa diaria» o «Missa diária». No se nombra a un matrimonio ni a una persona. La columna `notification_prefs.couple` se queda en la base y la aplicación ya no la enseña ni la usa para enviar.
+A quién, cualquier día, solo si mañana no hay nadie cubierto, y solo quien tenga encendido el aviso. Nace apagado. Como mucho sale uno por persona: «Mañana nadie ha dicho que va a Misa.» En pt-PT: «Amanhã ninguém disse que vai à Missa.» El título es «Misa diaria» o «Missa diária». No se nombra a un matrimonio ni a una persona. La columna `notification_prefs.couple` se queda en la base y la aplicación ya no la enseña ni la usa para enviar.
 
 El texto no lleva nombres, rachas ni intenciones. Caduca a las cuatro horas, para que no aparezca a la mañana siguiente como si fuera nuevo. iPhone: PWA instalada en la pantalla de inicio, iOS 16.4 o posterior. Android: PWA instalada. El permiso del sistema se pide al encender un interruptor en Ajustes, nunca al abrir la aplicación. Sin permiso, la preferencia se guarda y no se envía nada. La aplicación se usa igual con los avisos apagados.
 
@@ -151,7 +151,7 @@ Playwright en WebKit y en Chromium, a 390×844 y a 1280×800. La suite falla si 
 - **RLS, la prueba que manda.** Con la clave publicable, y con un usuario de Auth que no está en `members`, leer y escribir asistencia, intenciones y suscripciones falla. El miembro no lee suscripciones de otros ni el registro de envíos, y no escribe la asistencia de otra persona. Esto corre contra Postgres local, además de lo que se vea en el navegador.
 - **Rachas.** Domingo que falla y rompe. Domingo con asistencia y sigue. Hoy sin marca y la racha de ayer sigue en pie. Cruce de medianoche en Madrid, incluido el cambio de hora. Corregir dentro de los 7 días recompone. El día 8 y el futuro se rechazan. Matrimonio con uno solo. Grupo con una persona. Diez personas distintas, y un segundo toque de la misma persona que no suma. El contador coincide con las filas.
 - **Celebraciones.** La primera inserción es la única que anima. Recargar no repite. Un día con diez personas y no doce guarda `celeb:diez:<fecha>` y muestra «10 misas hoy» una vez. Un día con doce guarda también `celeb:todos:<fecha>` y una sola línea. Poco movimiento guarda la fila y deja la cresta quieta con la misma línea. Saltarla no la reprograma. Quitar la asistencia no la borra.
-- **Aviso.** La función pura de «mañana en riesgo», con reloj fijo: domingo no envía, sábado no envía, un día con alguien cubierto no envía aunque falte un matrimonio, el interruptor apagado no recibe nada, el texto no nombra a nadie, y un segundo paso de la hora no duplica. Sin enviar a un servicio push real en la suite. El push de verdad se comprueba al instalar, en un iPhone y en un Android.
+- **Aviso.** La función pura de «mañana en riesgo», con reloj fijo: envía cualquier día de la semana, un día con alguien cubierto no envía aunque falte un matrimonio, el interruptor apagado no recibe nada, el texto no nombra a nadie, y un segundo paso de la hora no duplica. Sin enviar a un servicio push real en la suite. El push de verdad se comprueba al instalar, en un iPhone y en un Android.
 - **Apariencia.** `prefers-color-scheme: dark` y `prefers-reduced-motion: reduce` en los dos motores y los dos tamaños. El botón de hoy se puede pulsar mientras la celebración está fuera.
 
 La semilla de prueba solo usa `@example.com`.

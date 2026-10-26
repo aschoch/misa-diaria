@@ -18,7 +18,7 @@ En este orden. Si hay que elegir, manda la de más arriba.
 2. **Si no puede ser, cada matrimonio.** Al menos una persona de cada matrimonio va cada día.
 3. **Como mínimo, alguien.** Al menos una persona del curso va cada día.
 
-El domingo cuenta como cualquier día para las rachas y para el recuento. El domingo nunca es un día en riesgo y no dispara avisos. Avisar en domingo gasta el único aviso al que el curso va a hacer caso.
+El domingo cuenta como cualquier día para las rachas y para el recuento. El domingo nunca se marca en riesgo dentro de la aplicación. El aviso de la tarde sí sale cualquier día de la semana si mañana nadie se ha apuntado (decisión del 26 de octubre de 2026).
 
 ## El bucle
 
