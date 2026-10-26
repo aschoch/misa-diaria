@@ -596,13 +596,22 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   await page.getByRole('button', { name: 'Cerrar' }).click()
 
   await page.getByRole('link', { name: 'Ajustes' }).click()
-  await expect(page.getByRole('heading', { name: 'Contraseña' })).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Tu cuenta' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Notificaciones' })).toBeVisible()
   await expect(page.getByText('Si mañana nadie se ha comprometido')).toBeVisible()
   await expect(page.locator('.notify-note')).toHaveText('Notificación push en este dispositivo a las 20:05 (requiere tener la app añadida a la pantalla de inicio)')
   await expect(page.getByText(/de lunes a sábado|sobre las 20:00/)).toHaveCount(0)
+  await expect(page.locator('#current-password')).toHaveCount(0)
+  await expect(page.locator('#new-password')).toHaveCount(0)
+  await expect(page.getByTestId('open-password-screen')).toBeVisible()
+  await page.getByTestId('open-password-screen').click()
+  await expect(page.getByTestId('password-screen')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ajustes' })).toBeVisible()
   await expect(page.getByLabel('Contraseña actual')).toHaveAttribute('name', 'current_password')
   await expect(page.getByLabel('Nueva contraseña')).toHaveAttribute('id', 'new-password')
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await expect(page.getByTestId('ajustes')).toBeVisible()
+  await expect(page.locator('#current-password')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Português' }).click()
   await page.getByRole('link', { name: 'Hoje' }).click()
@@ -712,6 +721,15 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   if (!box) throw new Error('sin fila')
   const startX = Math.max(box.x + 48, 48)
   const y = box.y + box.height / 2
+  await page.evaluate(() => {
+    const mark = window as unknown as { __hapticDefault?: boolean | null }
+    mark.__hapticDefault = null
+    document.querySelector('#app')?.addEventListener('click', (event) => {
+      const target = event.target
+      if (!(target instanceof Element) || !target.closest('label[data-haptic-trigger]')) return
+      mark.__hapticDefault = event.defaultPrevented
+    })
+  })
   await page.mouse.move(startX, y)
   await page.mouse.down()
   await page.mouse.move(startX + 36, y + 4, { steps: 6 })
@@ -725,6 +743,7 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   await page.mouse.move(startX + 20, y + 4, { steps: 6 })
   await expect(row).not.toHaveClass(/swipe-armed/)
   await page.mouse.up()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __hapticDefault?: boolean | null }).__hapticDefault)).toBe(true)
   await expect(row.locator('.num')).not.toHaveClass(/planned/)
   const quit = page.locator('[data-testid="calendar"] li[data-date="2026-10-24"]')
   await quit.scrollIntoViewIfNeeded()
@@ -742,6 +761,14 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   const armedFace = await quit.locator('.swipe-face').evaluate((node) => getComputedStyle(node).backgroundColor)
   const refreshed = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
   await page.mouse.up()
+  const prevented = await page.evaluate(() => {
+    const label = document.querySelector('li[data-date="2026-10-24"] label[data-haptic-trigger]')
+    if (!(label instanceof HTMLLabelElement)) return null
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    label.dispatchEvent(click)
+    return click.defaultPrevented
+  })
+  expect(prevented).toBe(false)
   const drawn = await quit.locator('.swipe-face').elementHandle()
   await refreshed
   if (drawn) await expect.poll(() => drawn.evaluate((node) => node.isConnected).catch(() => false)).toBe(false)
@@ -1190,11 +1217,22 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.getByRole('button', { name: 'Cerrar' }).click()
   await page.getByRole('button', { name: 'Ver más' }).click()
   await page.getByTestId('legend').waitFor()
+  await expect(page.locator('[data-testid="month-scroll"] [data-current="true"] h3')).toHaveText('octubre 2026')
+  await page.locator('[data-act="history-day"][data-date="2026-10-12"]').click()
+  await expect(page.getByTestId('history-detail')).toBeVisible()
+  await expect(page.getByTestId('month-scroll')).not.toContainText('2023')
   await save(page, 'ver-todo-es.png')
   await page.getByRole('button', { name: 'Cerrar' }).click()
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await page.getByTestId('ajustes').waitFor()
+  await expect(page.locator('#current-password')).toHaveCount(0)
+  await expect(page.getByTestId('open-password-screen')).toBeVisible()
   await save(page, 'ajustes-es.png')
+  await page.getByTestId('open-password-screen').click()
+  await expect(page.getByTestId('password-screen')).toBeVisible()
+  await expect(page.locator('#current-password')).toBeVisible()
+  await save(page, 'ajustes-contrasena.png')
+  await page.getByRole('button', { name: 'Ajustes' }).click()
   await page.goto('/misa-diaria/ajustes?plataforma=ios')
   const guide = page.getByTestId('install-guide')
   await expect(guide.locator('details.install-details')).not.toHaveAttribute('open')
@@ -1493,10 +1531,42 @@ test('se edita la intención propia y el comentario propio', async ({ page }) =>
   expect(errors).toEqual([])
 })
 
+test('tocar un día deja el mes donde estaba', async ({ page }) => {
+  const errors = watchConsole(page)
+  await login(page, 'persona1@example.com')
+  await page.getByTestId('open-past-cal').click()
+  const scroller = page.getByTestId('month-scroll')
+  await expect(scroller.locator('[data-current="true"] h3')).toHaveText('octubre 2026')
+  const before = await scroller.evaluate((node) => ({
+    top: node.scrollTop,
+    months: node.querySelectorAll('.month').length,
+    text: node.textContent ?? '',
+  }))
+  expect(before.top).toBeGreaterThan(0)
+  expect(before.text).not.toContain('2023')
+  await scroller.locator('[data-act="history-day"][data-date="2026-10-12"]').click()
+  await expect(page.getByTestId('history-detail')).toBeVisible()
+  await expect(page.getByTestId('history-detail')).toContainText('12 de octubre')
+  const after = await scroller.evaluate((node) => ({
+    top: node.scrollTop,
+    months: node.querySelectorAll('.month').length,
+    text: node.textContent ?? '',
+  }))
+  expect(Math.abs(after.top - before.top)).toBeLessThan(8)
+  expect(after.months).toBe(before.months)
+  expect(after.text).not.toContain('2023')
+  expect(after.text).toContain('octubre 2026')
+  expect(errors).toEqual([])
+})
+
 test('la contraseña se guarda y el comentario de feedback entra', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Ajustes' }).click()
+  await expect(page.locator('#current-password')).toHaveCount(0)
+  await page.getByTestId('open-password-screen').click()
+  await expect(page.getByTestId('password-screen')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ajustes' })).toBeVisible()
   await page.locator('#current-password').fill('erronea')
   await page.locator('#new-password').fill('secreto')
   await page.getByRole('button', { name: 'Guardar contraseña' }).click()
@@ -1505,6 +1575,8 @@ test('la contraseña se guarda y el comentario de feedback entra', async ({ page
   await page.locator('#new-password').fill('secreto')
   await page.getByRole('button', { name: 'Guardar contraseña' }).click()
   await expect(page.getByTestId('password-saved')).toHaveText('Contraseña guardada.')
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await expect(page.getByTestId('ajustes')).toBeVisible()
   await page.locator('#feedback').fill('Una nota breve.')
   await page.getByRole('button', { name: 'Enviar comentario' }).click()
   await expect(page.getByTestId('feedback-thanks')).toHaveText('¡Gracias! Se ha enviado.')

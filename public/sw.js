@@ -1,4 +1,4 @@
-const CACHE = 'misa-v12'
+const CACHE = 'misa-v13'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(['./', './index.html', './manifest.webmanifest'])))
