@@ -1215,7 +1215,8 @@ function classifySwitch(start: NonNullable<typeof gesture>, x: number, y: number
 }
 
 let lastTouchEnd = 0
-let cancelledSwitch: HTMLInputElement | null = null
+// Gesto que iOS canceló a medias: al levantar el dedo se decide con el touchend.
+let cancelledSwitch: { input: HTMLInputElement; row: HTMLElement | null; x: number } | null = null
 // Tras un deslizamiento o un scroll, el clic simulado del switch no es un toque.
 let ignoreSwitchClickUntil = 0
 
@@ -1240,13 +1241,17 @@ function finishRelease() {
   else window.setTimeout(() => { if (switchRelease === release) switchRelease = null }, 600)
 }
 
-function routeRowTap(input: HTMLInputElement, x: number, y: number) {
+function rowTapTarget(input: HTMLInputElement, x: number, y: number) {
   input.style.pointerEvents = 'none'
   const under = document.elementFromPoint(x, y)
   input.style.pointerEvents = ''
   const row = input.closest<HTMLElement>('li')
   const acted = under?.closest<HTMLElement>('[data-act]')
-  const node = acted && row?.contains(acted) ? acted : row?.querySelector<HTMLElement>('[data-act="select"]')
+  return acted && row?.contains(acted) ? acted : row?.querySelector<HTMLElement>('[data-act="select"]') ?? null
+}
+
+function routeRowTap(input: HTMLInputElement, x: number, y: number) {
+  const node = rowTapTarget(input, x, y)
   if (!node) return
   node.dataset.pointer = '1'
   void actOn(node.dataset.act ?? '', node)
@@ -1286,27 +1291,54 @@ app.addEventListener('touchstart', (event) => {
 }, { capture: true, passive: true })
 
 // El touchend es gesto del usuario en Safari: ahí vibra el swipe que confirma
-// (marcado en pointerup, que en iOS llega antes) y el toque quieto en el día.
+// (marcado en pointerup, que en iOS llega antes). Tocar un día no vibra.
 // Desde iOS 26.5 el clic por código ya no vibra: solo sirve en iPhone anteriores.
 // «Voy a ir» vibra con su capa tocable (hapticOverlay), como el resto de botones.
 // Va antes que el manejo nativo del switch: quitar el atributo aquí evita el clic
 // simulado (y su vibración) cuando el gesto fue un scroll o un deslizamiento que no cambia nada.
 app.addEventListener('touchend', (event) => {
   lastTouchEnd = performance.now()
+  const touch = event.changedTouches?.[0]
   if (cancelledSwitch) {
-    const input = cancelledSwitch
+    const { input, row, x } = cancelledSwitch
     cancelledSwitch = null
-    traceSwipe('te:cancel')
     ignoreSwitchClickUntil = performance.now() + 400
+    // Un swipe muy rápido que iOS canceló: si al soltar pasó el umbral, cuenta.
+    const dx = touch ? touch.clientX - x : 0
+    const armed = dx >= SWIPE_CONFIRM_PX ? 'right' : dx <= -SWIPE_CONFIRM_PX ? 'left' : ''
+    if (row && swipeCommits(row, armed)) {
+      traceSwipe(`te:cancel:commit:${Math.round(dx)}`)
+      input.disabled = true
+      input.disabled = false
+      suppressRowClick = true
+      window.setTimeout(() => { suppressRowClick = false }, 350)
+      const date = row.dataset.date ?? ''
+      window.setTimeout(() => void setCommitment(date, armed === 'right', 'swipe'), 0)
+      return
+    }
+    traceSwipe('te:cancel')
     input.removeAttribute('switch')
     window.setTimeout(() => input.setAttribute('switch', ''), 0)
     return
   }
-  const touch = event.changedTouches?.[0]
   const pending = switchRelease && !switchRelease.done ? switchRelease : null
   const kind = pending?.kind ?? (gesture?.rowSwitch && touch ? classifySwitch(gesture, touch.clientX, touch.clientY) : null)
   const input = pending?.input ?? gesture?.rowSwitch ?? null
   if (kind && input) {
+    // Un toque quieto solo vibra en «Voy a ir»; en el resto de la fila abre el día sin vibrar.
+    const x = pending?.x ?? touch?.clientX ?? 0
+    const y = pending?.y ?? touch?.clientY ?? 0
+    if (kind === 'tap' && !rowTapTarget(input, x, y)?.closest('.row-commit')) {
+      traceSwipe('te:tap:quiet')
+      if (pending) switchRelease = null
+      ignoreSwitchClickUntil = performance.now() + 400
+      input.removeAttribute('switch')
+      window.setTimeout(() => {
+        input.setAttribute('switch', '')
+        routeRowTap(input, x, y)
+      }, 0)
+      return
+    }
     traceSwipe(`te:${kind}${pending ? '' : ':first'}`)
     if (kind !== 'tap') ignoreSwitchClickUntil = performance.now() + 400
     if (kind === 'silent') input.removeAttribute('switch')
@@ -1330,12 +1362,6 @@ app.addEventListener('touchend', (event) => {
     switchHaptic()
     return
   }
-  const target = event.target
-  if (!(target instanceof Element) || !target.closest('.days .select-day')) return
-  if (gesture && gesture.lockedAxis !== '') return
-  const touch = event.changedTouches?.[0]
-  if (!rowTouch || !touch || Math.hypot(touch.clientX - rowTouch.x, touch.clientY - rowTouch.y) > 10) return
-  switchHaptic()
 }, true)
 
 window.addEventListener('pointermove', (event) => {
@@ -1477,9 +1503,9 @@ app.addEventListener('pointercancel', (event) => {
     // iOS cancela a veces un deslizamiento corto: el clic que el switch manda al
     // levantar el dedo no es un toque y no debe apuntarte ni abrir el día.
     if (gesture.lockedAxis !== '' || gesture.scrolling) {
-      const input = gesture.rowSwitch
-      cancelledSwitch = input
-      window.setTimeout(() => { if (cancelledSwitch === input) cancelledSwitch = null }, 600)
+      const cancelled = { input: gesture.rowSwitch, row: gesture.lockedAxis === 'x' ? gesture.row : null, x: gesture.x }
+      cancelledSwitch = cancelled
+      window.setTimeout(() => { if (cancelledSwitch === cancelled) cancelledSwitch = null }, 600)
     }
     const ownTrace = swipeTrace
     window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
