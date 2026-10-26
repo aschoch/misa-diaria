@@ -2071,3 +2071,33 @@ test('si iOS cancela un deslizamiento corto, el clic del switch no apunta ni abr
   await page.waitForTimeout(400)
   await expect(pill).toHaveAttribute('aria-pressed', 'false')
 })
+
+test('un swipe muy rápido que iOS cancela cuenta si al soltar pasó el umbral', async ({ page, viewport }) => {
+  test.skip((viewport?.width ?? 0) > 600)
+  await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  const date = await page.locator('.row-commit[aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
+  const row = page.locator(`[data-testid="calendar"] li[data-date="${date}"]`)
+  await row.scrollIntoViewIfNeeded()
+  const box = await row.boundingBox()
+  if (!box) throw new Error('sin fila')
+  const x = box.x + 60
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 20, y, { steps: 3 })
+  // iOS cancela el puntero; el dedo sigue y se levanta 130 px a la derecha.
+  await page.evaluate(({ x, y }) => {
+    const input = document.elementFromPoint(x + 20, y) as HTMLInputElement
+    input.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
+    // Safari no deja crear un Touch: basta con un touchend que diga dónde se levantó el dedo.
+    const end = new Event('touchend', { bubbles: true, cancelable: true })
+    Object.defineProperty(end, 'changedTouches', { value: [{ clientX: x + 130, clientY: y }] })
+    input.dispatchEvent(end)
+    input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x + 130, clientY: y }))
+  }, { x, y })
+  await page.mouse.up()
+  await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
+})
