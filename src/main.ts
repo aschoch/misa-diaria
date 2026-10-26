@@ -63,7 +63,9 @@ let gesture: {
   pop: boolean
   month: boolean
   haptic: HTMLLabelElement | null
+  hapticInput: HTMLInputElement | null
 } | null = null
+const SWIPE_CONFIRM_PX = 88
 let suppressRowClick = false
 let rowCommitClick = false
 let streakClosing = false
@@ -327,7 +329,26 @@ function heroVariant(): 'a' | 'b' | 'c' {
 function syncRoute() {
   openIntention = intentionFromPath(location.pathname)
   emojiFor = ''
+  if (!(routeFromPath(location.pathname) === 'ajustes' && history.state?.passwordScreen)) {
+    passwordScreen = false
+  }
+}
+
+function openPasswordScreen() {
+  passwordScreen = true
+  history.pushState({ passwordScreen: true }, '', `${href('ajustes')}${location.search}`)
+  depth += 1
+  paint()
+}
+
+function closePasswordScreen() {
   passwordScreen = false
+  passwordSaved = false
+  passwordError = ''
+  if (history.state?.passwordScreen) {
+    history.replaceState({}, '', `${href('ajustes')}${location.search}`)
+  }
+  paint()
 }
 
 function pushRoute(pathname: string) {
@@ -576,6 +597,8 @@ function blurRow(row: HTMLElement | null) {
 function resetRow(row: HTMLElement | null) {
   if (!row) return
   row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
+  const inputs = row.querySelectorAll<HTMLInputElement>('input[data-row-haptic]')
+  window.setTimeout(() => inputs.forEach((input) => input.removeAttribute('switch')), 0)
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) cue.textContent = cue.dataset.cue ?? ''
   const face = row.querySelector<HTMLElement>('.swipe-face')
   blurRow(row)
@@ -594,7 +617,7 @@ function trackRow(event: PointerEvent) {
   if (gesture.lockedAxis !== 'x') {
     if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       gesture.lockedAxis = 'x'
-      const cap = gesture.haptic
+      const cap = gesture.hapticInput ?? gesture.haptic
       if (cap) {
         try { cap.setPointerCapture(event.pointerId) } catch { /* el dedo sigue sobre la etiqueta */ }
       }
@@ -616,26 +639,36 @@ function trackRow(event: PointerEvent) {
     if (gesture.peakX > 0) gesture.peakX = 0
     gesture.peakX = Math.min(gesture.peakX, dx)
   }
-  const wasArmed = gesture.armed
-  if (dx >= 52) gesture.armed = 'right'
-  else if (dx <= -52) gesture.armed = 'left'
+  if (dx >= SWIPE_CONFIRM_PX) gesture.armed = 'right'
+  else if (dx <= -SWIPE_CONFIRM_PX) gesture.armed = 'left'
   else gesture.armed = ''
-  if (gesture.armed && gesture.armed !== wasArmed) {
+  const committed = row.dataset.committed === 'true'
+  const willCommit = (gesture.armed === 'right' && !committed) || (gesture.armed === 'left' && committed)
+  const wasArmed = row.classList.contains('swipe-armed')
+  row.classList.toggle('swipe-armed', willCommit)
+  if (willCommit && !wasArmed) {
     triggerHaptic()
     tickIfRunning()
   }
-  row.classList.toggle('swipe-armed', gesture.armed !== '')
+  const hapticInput = gesture.hapticInput
+  if (hapticInput) {
+    if (willCommit) {
+      hapticInput.setAttribute('switch', '')
+      void hapticInput.offsetWidth
+    } else {
+      hapticInput.removeAttribute('switch')
+    }
+  }
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
     const side = cue.closest('.swipe-under.left') ? 'left' : 'right'
     if (gesture.armed === 'right' && side === 'right') cue.textContent = '✓'
     else if (gesture.armed === 'left' && side === 'left') cue.textContent = '✕'
     else cue.textContent = cue.dataset.cue ?? ''
   }
-  const committed = row.dataset.committed === 'true'
   row.classList.toggle('swiping-right', dx > 8)
   row.classList.toggle('swiping-left', dx < -8 && committed)
   row.classList.toggle('swiping-muted', dx < -8 && !committed)
-  const shown = Math.max(-168, Math.min(dx, 148))
+  const shown = Math.max(-176, Math.min(dx, 168))
   face.style.transform = `translateX(${shown}px)`
 }
 
@@ -730,13 +763,13 @@ app.addEventListener('pointerdown', (event) => {
   }
   const button = target.closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
-  if (target.closest('input, textarea, select, [contenteditable="true"]')) return
+  if (target.closest('input:not([data-haptic-switch]):not([data-row-haptic]), textarea, select, [contenteditable="true"]')) return
   const month = Boolean(target.closest('.month-scroll'))
   const rowNode = target.closest('.days li.swipeable')
   const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
   const popNode = streakMode && !month ? target.closest<HTMLElement>('.streak-pop, .streak-back') : null
   const pop = Boolean(popNode)
-  if (popNode && !target.closest('button.pop-close')) popNode.setPointerCapture?.(event.pointerId)
+  if (popNode && !target.closest('button.pop-close, .history-seg button')) popNode.setPointerCapture?.(event.pointerId)
   gesture = {
     x: event.clientX,
     y: event.clientY,
@@ -753,8 +786,32 @@ app.addEventListener('pointerdown', (event) => {
       const label = target.closest('label[data-haptic-trigger]')
       return label instanceof HTMLLabelElement ? label : null
     })(),
+    hapticInput: (() => {
+      if (target instanceof HTMLInputElement && target.hasAttribute('data-row-haptic')) return target
+      const found = row?.querySelector('input[data-row-haptic]')
+      return found instanceof HTMLInputElement ? found : null
+    })(),
   }
 })
+
+let rowTouch: { x: number; y: number } | null = null
+app.addEventListener('touchstart', (event) => {
+  const touch = event.changedTouches[0]
+  rowTouch = touch ? { x: touch.clientX, y: touch.clientY } : null
+}, { capture: true, passive: true })
+
+app.addEventListener('touchend', (event) => {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement) || !target.hasAttribute('data-row-haptic')) return
+  if (!target.closest('.row-commit, .select-day')) return
+  if (gesture && gesture.lockedAxis !== '') return
+  // En iOS el pointerup llega antes: solo un toque quieto cuenta como tap.
+  const touch = event.changedTouches[0]
+  if (!rowTouch || !touch || Math.hypot(touch.clientX - rowTouch.x, touch.clientY - rowTouch.y) > 10) return
+  target.setAttribute('switch', '')
+  void target.offsetWidth
+  window.setTimeout(() => target.removeAttribute('switch'), 0)
+}, true)
 
 window.addEventListener('pointermove', (event) => {
   if (tabScrub?.id === event.pointerId) moveTabScrub(event)
@@ -821,8 +878,8 @@ app.addEventListener('pointerup', (event) => {
     suppressRowClick = true
     window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
     resetRow(start.row)
-    if (willCommit && start.armed === 'right') void setCommitment(date, true, 'swipe')
-    else if (willCommit && start.armed === 'left') void setCommitment(date, false, 'swipe')
+    // El repintado espera al touchend: WebKit vibra con el switch de la fila si sigue en el DOM.
+    if (willCommit) window.setTimeout(() => void setCommitment(date, start.armed === 'right', 'swipe'), 0)
     return
   }
   const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
@@ -844,6 +901,11 @@ app.addEventListener('pointerup', (event) => {
   }
   const route = routeFromPath(location.pathname)
   const top = route === 'calendario' || route === 'muro' || route === 'ajustes'
+  const passwordSwipe = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
+  if (passwordScreen && (passwordSwipe || (start.scroll <= 8 && downDetail))) {
+    closePasswordScreen()
+    return
+  }
   if (!onDetail && top && start.x <= 36 && horizontal) {
     if (depth > 0) history.back()
     else go('hoy')
@@ -993,6 +1055,22 @@ app.addEventListener('click', (event) => {
     event.stopPropagation()
     return
   }
+  if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-row-haptic')) {
+    const input = event.target
+    window.setTimeout(() => input.removeAttribute('switch'), 0)
+    if (suppressRowClick) {
+      suppressRowClick = false
+      rowCommitClick = false
+      event.stopPropagation()
+      return
+    }
+    if (input.hasAttribute('data-face-haptic') && !input.closest('button[data-act]')) {
+      const select = input.closest('li')?.querySelector<HTMLElement>('[data-act="select"]')
+      if (select) void actOn(select.dataset.act ?? 'select', select)
+      event.stopPropagation()
+      return
+    }
+  }
   const hapticTarget = event.target
   if (
     hapticTarget instanceof Element
@@ -1074,6 +1152,9 @@ document.querySelector('#celeb')?.addEventListener('click', (event) => {
 window.addEventListener('popstate', () => {
   depth = Math.max(0, depth - 1)
   syncRoute()
+  if (routeFromPath(location.pathname) === 'ajustes') {
+    passwordScreen = Boolean(history.state?.passwordScreen)
+  }
   paint()
 })
 window.addEventListener('keydown', (event) => {
@@ -1395,13 +1476,11 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     return
   }
   if (act === 'open-password-screen') {
-    passwordScreen = true
-    paint()
+    openPasswordScreen()
     return
   }
   if (act === 'close-password-screen') {
-    passwordScreen = false
-    paint()
+    closePasswordScreen()
     return
   }
   if (act === 'cancel-edit') {
@@ -1417,6 +1496,14 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'attend') {
     queueAttendance(node)
+    return
+  }
+  if (act === 'attend-set') {
+    if (!current || locked) return
+    const date = node.dataset.date ?? ''
+    const wantOn = node.dataset.on === 'true'
+    const currentOn = attendanceRows(date)[0]?.mine_attendance ?? false
+    if (wantOn !== currentOn) queueAttendance(node)
     return
   }
   if (busy && act !== 'select') return

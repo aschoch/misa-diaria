@@ -186,6 +186,8 @@ const copy = {
     legendAll: 'Todos',
     wentLabel: 'Has ido',
     absentLabel: 'No has ido',
+    absentChoice: 'No he ido',
+    attendedChoice: '✓ He ido a Misa',
   },
   pt: {
     brand: 'Missa diária',
@@ -317,6 +319,8 @@ const copy = {
     legendAll: 'Todos',
     wentLabel: 'Foste',
     absentLabel: 'Não foste',
+    absentChoice: 'Não fui',
+    attendedChoice: '✓ Fui à Missa',
   },
 } as const
 
