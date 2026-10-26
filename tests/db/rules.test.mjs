@@ -370,16 +370,18 @@ async function main() {
         `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, 'Ajeno.')`,
         [intention.id, P(2)],
       ))
-      await expectFail(() => q(
-        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, '<b>no</b>')`,
+      await q(
+        `insert into public.intention_comments (intention_id, member_id, body) values ($1, $2, 'Gracias <3')`,
         [intention.id, P(1)],
-      ))
+      )
       const state = await one(`select public.estado() as e`)
       const row = state.e.intentions[0]
       assert(row.id === intention.id, 'la actividad nueva queda arriba')
       assert(typeof row.created_at === 'string', 'la intención trae su hora')
-      assert(row.comments[0].body === 'Primero.' && row.comments[0].mine === true, 'el comentario es mío')
-      assert(typeof row.comments[0].created_at === 'string', 'el comentario trae su hora')
+      const first = row.comments.find((comment) => comment.body === 'Primero.')
+      assert(first && first.mine === true, 'el comentario es mío')
+      assert(typeof first.created_at === 'string', 'el comentario trae su hora')
+      assert(row.comments.some((comment) => comment.body === 'Gracias <3'), 'el comentario acepta <3')
       assert(row.reactions[0].emoji === '🙏' && row.reactions[0].mine === true, 'la reacción es mía')
       const older = await one(
         `insert into public.intentions (member_id, body, created_at) values ($1, 'Vieja.', now() - interval '2 days') returning id`,
@@ -414,6 +416,52 @@ async function main() {
         `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '   ')`,
         [intention.id, P(1)],
       ))
+      await expectFail(() => q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, 'hola')`,
+        [intention.id, P(1)],
+      ))
+      for (const emoji of ['😀', '🌿', '🌹', '🌸']) {
+        await q(
+          `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, $3)`,
+          [intention.id, P(1), emoji],
+        )
+      }
+      await expectFail(() => q(
+        `insert into public.intention_reactions (intention_id, member_id, emoji) values ($1, $2, '⭐')`,
+        [intention.id, P(1)],
+      ))
+    })
+
+    for (let n = 2; n <= 4; n += 1) {
+      await q(`insert into public.attendance (member_id, mass_date) values ($1, '2026-10-22') on conflict do nothing`, [P(n)])
+      await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-30') on conflict do nothing`, [P(n)])
+    }
+    await asUser(P(1), async () => {
+      assert((await one(`select count(*)::int as n from public.attendance where member_id <> $1`, [P(1)])).n === 0, 'no ve la asistencia de otros')
+      assert((await one(`select count(*)::int as n from public.commitments where member_id <> $1`, [P(1)])).n === 0, 'no ve los compromisos de otros')
+      await expectFail(() => q(`select public.persona_cubre($1, '2026-10-22')`, [P(2)]))
+      await expectFail(() => q(`select public.racha_individual($1, '2026-10-22')`, [P(2)]))
+      await expectFail(() => q(`select public.racha_pareja($1, '2026-10-22')`, [P(2)]))
+      await expectFail(() => q(`select public.celebraciones_pendientes($1, '2026-10-22')`, [P(2)]))
+      await expectFail(() => q(`select public.marcas_dia('2026-10-22')`))
+      const state = await one(`select public.estado() as e`)
+      const ayer = state.e.past.find((day) => day.date === '2026-10-22')
+      assert(ayer && ayer.went === 3 && ayer.mine_attendance === false, 'estado sigue contando a los demás')
+      const viernes = state.e.calendar.find((day) => day.date === '2026-10-30')
+      assert(viernes && viernes.covered === 3 && viernes.mine_commitment === false, 'estado sigue contando compromisos')
+      assert(!JSON.stringify(state.e.calendar).includes(P(2)), 'el calendario no lleva ids ajenos')
+      await expectFail(() => q(
+        `insert into public.commitments (member_id, mass_date) values ($1, public.madrid_today() + 400)`,
+        [P(1)],
+      ))
+      await expectFail(() => q(
+        `insert into public.push_subscriptions (member_id, endpoint, p256dh, auth_secret) values ($1, 'https://atacante.example/x', 'p', 'a')`,
+        [P(1)],
+      ))
+      await q(
+        `insert into public.push_subscriptions (member_id, endpoint, p256dh, auth_secret) values ($1, 'https://web.push.apple.com/abc', 'p', 'a')`,
+        [P(1)],
+      )
     })
 
     const ajena = await one(
@@ -439,7 +487,7 @@ async function main() {
       await expectFail(() => q(`insert into public.feedback (member_id, body) values ($1, 'Ajena.')`, [P(2)]))
       await expectFail(() => q(`insert into public.feedback (member_id, body) values ($1, '   ')`, [P(1)]))
       await q(`select set_config('request.jwt.claim.sub', $1, true)`, [P(2)])
-      assert((await one(`select count(*)::int as n from public.feedback`)).n === 1, 'cualquier miembro lee el feedback')
+      assert((await one(`select count(*)::int as n from public.feedback`)).n === 0, 'nadie lee el feedback de otro')
     })
 
     await asUser(P(1), async () => {

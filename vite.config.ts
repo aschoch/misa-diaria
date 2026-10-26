@@ -1,5 +1,8 @@
 import { defineConfig, type Plugin } from 'vite'
 
+// Solo un build contra Supabase local (pruebas) abre conexiones a 127.0.0.1.
+const local = /127\.0\.0\.1|localhost/.test(process.env.VITE_SUPABASE_URL ?? '')
+
 function csp(): Plugin {
   const content = [
     "default-src 'self'",
@@ -7,7 +10,7 @@ function csp(): Plugin {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:* http://localhost:*",
+    `connect-src 'self' https://*.supabase.co wss://*.supabase.co${local ? ' http://127.0.0.1:* http://localhost:*' : ''}`,
     "worker-src 'self'",
     "manifest-src 'self'",
   ].join('; ')

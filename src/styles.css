@@ -161,9 +161,7 @@ p.risk {
   border: 1px solid var(--linea);
   transition: background-color 260ms cubic-bezier(0.22, 1, 0.36, 1), border-color 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.hoy-status,
-.hoy-band,
-.hoy-split-status {
+.hoy-status {
   margin: 0 0 14px;
   font-size: 15px;
   line-height: 1.35;
@@ -185,67 +183,6 @@ p.risk {
   border: 1px solid var(--linea);
   box-shadow: none;
 }
-.hoy-hero.estado-b {
-  padding: 0;
-  background: transparent;
-  border: 0;
-}
-.hoy-band {
-  padding: 14px 16px;
-  border-radius: 16px;
-  text-align: center;
-  background: var(--lienzo);
-  border: 1px solid var(--linea);
-}
-.hoy-hero.estado-b:not(.on) .go {
-  background-color: var(--olivo);
-  color: var(--sobre-olivo);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 12px 28px rgba(30, 92, 56, 0.28);
-}
-.hoy-hero.estado-b.on .hoy-band {
-  color: var(--olivo);
-  font-weight: 700;
-  background: color-mix(in srgb, var(--olivo) 14%, var(--papel));
-  border-color: color-mix(in srgb, var(--olivo) 38%, var(--linea));
-}
-.hoy-hero.estado-b.on .go {
-  color: var(--tinta);
-  background: var(--papel);
-  border: 1px solid var(--linea);
-  box-shadow: none;
-}
-.hoy-hero.estado-c {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.hoy-hero.estado-c .hoy-split-status {
-  flex: 1;
-  margin: 0;
-}
-.hoy-hero.estado-c .go {
-  width: auto;
-  flex: none;
-  min-height: 44px;
-  padding: 10px 16px;
-  font-size: 15px;
-}
-.hoy-hero.estado-c.on {
-  background: color-mix(in srgb, var(--olivo) 14%, var(--papel));
-  border-color: color-mix(in srgb, var(--olivo) 38%, var(--linea));
-}
-.hoy-hero.estado-c.on .hoy-split-status {
-  color: var(--olivo);
-  font-weight: 700;
-}
-.hoy-hero.estado-c.on .go {
-  color: var(--tinta);
-  background: var(--papel);
-  border: 1px solid var(--linea);
-  box-shadow: none;
-}
-
 .go {
   position: relative;
   z-index: 1;
@@ -1711,3 +1648,199 @@ input.row-swipe-haptic {
 }
 .history-status { margin: 10px 0 0; font-weight: 700; }
 .history-status.on { color: var(--olivo); }
+
+/* ── Contador del curso, debajo del botón de hoy ── */
+.total {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 0 0 22px;
+  text-align: center;
+}
+.total-num {
+  font-family: "Fraunces Variable", serif;
+  font-weight: 560;
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--vela);
+  transform-origin: 50% 70%;
+}
+.total-label { color: var(--suave); font-size: 15px; }
+.week-note {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  color: var(--suave);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.total-num.bump { animation: total-bump 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.total-num.dip { animation: total-dip 360ms ease-out; }
+@keyframes total-bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.14); color: var(--olivo); }
+  100% { transform: scale(1); }
+}
+@keyframes total-dip {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(3px); opacity: 0.7; }
+  100% { transform: translateY(0); }
+}
+
+/* Cifras sin el cero tachado de Atkinson. */
+.past-count, .meta .count em, .day .count, .history-detail-meta span, .wall-time, .react b, .streak-pop header b,
+.month-grid .cell, .month h3, .past-main > span:first-child, .total-label {
+  font-family: "Fraunces Variable", serif;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* ── Aviso de hoy con su acción ── */
+p.risk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.risk-cta {
+  position: relative;
+  flex: none;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--olivo);
+  border-radius: 999px;
+  background: var(--papel);
+  color: var(--olivo);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.risk-cta:active { transform: scale(0.97); }
+
+/* ── Al marcar hoy: el estado da un salto y un halo sale del botón ── */
+.hoy-hero { position: relative; }
+.hoy-hero.just-on .hoy-status { animation: status-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.hoy-hero.just-on::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--olivo) 45%, transparent);
+  animation: hero-halo 820ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes status-pop {
+  0% { transform: scale(0.92); opacity: 0.4; }
+  60% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes hero-halo {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--olivo) 45%, transparent); }
+  100% { box-shadow: 0 0 0 18px color-mix(in srgb, var(--olivo) 0%, transparent); }
+}
+
+/* ── Cambio de pestaña: fundido corto, sin mover nada de sitio ── */
+main.route-enter { animation: route-in 200ms ease-out; }
+@keyframes route-in { from { opacity: 0.001; } to { opacity: 1; } }
+
+/* ── Popup del mes: entra con el mismo muelle con el que sale, y cabe en un iPhone SE ── */
+.streak-pop {
+  max-height: calc(100dvh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+  top: max(12px, env(safe-area-inset-top));
+}
+.month-scroll { flex: none; height: clamp(180px, calc(100dvh - 340px), 360px); }
+.streak-pop .history-detail { flex: none; }
+.streak-pop.entering { animation: pop-in 320ms cubic-bezier(0.32, 0.72, 0, 1); }
+.streak-back.entering, .sheet-back.entering { animation: fade-in 260ms ease-out; }
+.sheet.entering { animation: sheet-in 300ms cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes pop-in {
+  from { transform: translate(-50%, 40px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+@keyframes sheet-in {
+  from { transform: translate(-50%, -16px) scale(0.98); opacity: 0; }
+  to { transform: translate(-50%, 0) scale(1); opacity: 1; }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.month-grid .cell.future { color: color-mix(in srgb, var(--suave) 55%, transparent); }
+
+/* ── Calendario: el número se cierra con un pulso al apuntarte ── */
+.num.pulse { animation: num-pulse 560ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes num-pulse {
+  0% { transform: scale(0.82); box-shadow: 0 0 0 0 color-mix(in srgb, var(--olivo) 50%, transparent); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); box-shadow: 0 0 0 10px color-mix(in srgb, var(--olivo) 0%, transparent); }
+}
+
+/* ── Lo nuevo en Intenciones entra suave ── */
+.notes article.fresh, .comments li.fresh { animation: fresh-in 360ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes fresh-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── El composer ocupa poco hasta que escribes ── */
+.composer textarea { min-height: 56px; transition: min-height 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.composer:focus-within textarea { min-height: 104px; }
+button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
+
+/* ── Deshacer al borrar ── */
+#toast {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  width: min(420px, calc(100% - 32px));
+  transform: translate(-50%, 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1), opacity 200ms ease;
+}
+#toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.toast-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 16px;
+  background: var(--tinta);
+  color: var(--lienzo);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--tinta) 24%, transparent);
+}
+.toast-inner button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--miel-fuerte);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── Login como formulario real (el Llavero ofrece guardar la contraseña) ── */
+.login-form { display: grid; gap: 8px; }
+.login-note { margin: 0 0 4px; color: var(--suave); }
+.login .secondary { margin-top: 4px; }
+.notify-warn { color: var(--arcilla); }
+
+/* ── Arranque: la marca respira mientras llega el estado ── */
+.top.splash { min-height: 60dvh; display: grid; place-content: center; }
+.top.splash .brand-icon { animation: splash-breathe 1400ms ease-in-out infinite; }
+@keyframes splash-breathe { 50% { transform: scale(1.04); opacity: 0.85; } }
+
+/* ── Dianas de 44 pt ── */
+.days .row-commit { min-height: 44px; font-size: 13px; }
+.pop-close { width: 44px; height: 44px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .total-num.bump, .total-num.dip, .hoy-hero.just-on .hoy-status, .hoy-hero.just-on::after,
+  main.route-enter, .streak-pop.entering, .streak-back.entering, .sheet-back.entering, .sheet.entering,
+  .num.pulse, .notes article.fresh, .comments li.fresh, .top.splash .brand-icon { animation: none; }
+  .composer textarea, #toast { transition: none; }
+}

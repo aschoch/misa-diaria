@@ -18,9 +18,13 @@ export type UiState = {
   nameSaved?: boolean
   feedbackSaved?: boolean
   calendarDays?: number
-  hero?: 'a' | 'b' | 'c'
   installOpen?: boolean
   passwordScreen?: boolean
+  enter?: boolean
+  popupEnter?: boolean
+  pulseDate?: string
+  fresh?: Set<string>
+  notifyNote?: string
 }
 
 export type Route = 'hoy' | 'calendario' | 'muro' | 'ajustes'
@@ -91,7 +95,7 @@ export function brandMark() {
   </svg>`
 }
 
-function shell(route: Route, body: string, offline = '', refreshing = false) {
+function shell(route: Route, body: string, offline = '', refreshing = false, enter = false) {
   const copy = tx()
   const pull = refreshing ? '<span class="pull" data-testid="refreshing"></span>' : ''
   return `
@@ -102,7 +106,7 @@ function shell(route: Route, body: string, offline = '', refreshing = false) {
       <h1>${copy[titles[route]]}</h1>
     </header>
     ${offline}
-    <main>${body}</main>
+    <main class="${enter ? 'route-enter' : ''}">${body}</main>
     ${nav(route)}
   `
 }
@@ -128,9 +132,10 @@ const cal = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width
 const note = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9l3 3v13H6z"/><path d="M15 4v4h4"/></svg>'
 const gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>'
 
-function riskLine(risk: Estado['risk']) {
-  if (risk !== 'empty') return ''
-  return `<p class="risk" data-testid="risk">${tx().riskEmpty}</p>`
+function riskLine(state: Estado, locked: boolean) {
+  if (state.risk !== 'empty') return ''
+  const copy = tx()
+  return `<p class="risk" data-testid="risk"><span>${copy.riskEmpty}</span><button type="button" class="risk-cta" data-act="commit" data-date="${state.today}" data-testid="risk-commit" ${locked ? 'disabled' : ''}>${copy.riskCta}${hapticOverlay()}</button></p>`
 }
 
 export function dayMarks(day: { went: number; mine_attendance: boolean; couples_went: number }) {
@@ -164,20 +169,8 @@ function goButton(state: Estado, gone: boolean, locked: boolean, label: string) 
     </button>`
 }
 
-function hoyHero(state: Estado, gone: boolean, locked: boolean, hero: 'a' | 'b' | 'c') {
+function hoyHero(state: Estado, gone: boolean, locked: boolean) {
   const copy = tx()
-  if (hero === 'b') {
-    return `<section class="hoy-hero estado-b ${gone ? 'on' : ''}" data-testid="hoy-hero">
-      <p class="hoy-band" data-testid="hoy-status">${gone ? copy.bandOn : copy.bandOff}</p>
-      ${goButton(state, gone, locked, gone ? copy.unmarkLong : copy.markLong)}
-    </section>`
-  }
-  if (hero === 'c') {
-    return `<section class="hoy-hero estado-c ${gone ? 'on' : ''}" data-testid="hoy-hero">
-      <p class="hoy-split-status" data-testid="hoy-status">${gone ? copy.gone : copy.splitOff}</p>
-      ${goButton(state, gone, locked, gone ? copy.splitUndo : copy.go)}
-    </section>`
-  }
   return `<section class="hoy-hero estado-a ${gone ? 'on' : ''}" data-testid="hoy-hero">
     <p class="hoy-status" data-testid="hoy-status">${gone ? copy.attendedLine : copy.pendingLine}</p>
     ${goButton(state, gone, locked, gone ? copy.unmark : copy.go)}
@@ -188,7 +181,6 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
   const copy = tx()
   const today = state.calendar[0]
   const gone = Boolean(today?.mine_attendance)
-  const hero = ui.hero === 'b' || ui.hero === 'c' ? ui.hero : 'a'
   const past = state.past.map((day) => {
     const f = fecha(day.date)
     return `<li class="${day.sunday ? 'sunday' : ''}" data-date="${day.date}">
@@ -197,9 +189,10 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     </li>`
   }).join('')
   return `
-    ${riskLine(state.risk)}
+    ${riskLine(state, locked)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
-    ${hoyHero(state, gone, locked, hero)}
+    ${hoyHero(state, gone, locked)}
+    ${totalBlock(state)}
     <section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
       <h2 class="streak-title">${copy.recentDays}</h2>
       <div class="month-legend past-legend" data-testid="past-legend">
@@ -211,8 +204,20 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
       <ol class="past-list">${past}</ol>
       <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
     </section>
-    ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked) : ''}
+    ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked, Boolean(ui.popupEnter)) : ''}
   `
+}
+
+export function totalBlock(state: Estado) {
+  const copy = tx()
+  const week = state.monday
+    ? `<p class="week-note" data-testid="monday">${esc(copy.week(state.monday.people, state.monday.couples, state.monday.empty_days))}</p>`
+    : ''
+  return `<section class="total" data-testid="total">
+      <b class="total-num" data-testid="total-num">${state.streaks.total}</b>
+      <span class="total-label">${copy.totalLabel}</span>
+      ${week}
+    </section>`
 }
 
 function shiftDate(iso: string, days: number) {
@@ -282,6 +287,9 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
     const hit = meets(row, mode)
     const classes = ['cell', hit ? 'hit' : '', run.has(iso) ? 'run' : '', iso === state.today ? 'today' : ''].filter(Boolean).join(' ')
     const mark = row ? dayMarks(row) : ''
+    if (mode === 'all' && iso > state.today) {
+      return `<span class="${classes} future" aria-disabled="true">${day}</span>`
+    }
     if (mode === 'all') {
       const picked = iso === selected
       return `<button type="button" class="${classes}${picked ? ' picked' : ''}" data-act="history-day" data-date="${iso}" ${picked ? 'aria-pressed="true"' : ''}>${day}${mark}${hapticOverlay()}</button>`
@@ -334,7 +342,7 @@ export function monthSpan(state: Estado, mode: StreakMode, fromDelta: number, to
   return html.join('')
 }
 
-function streakPopup(state: Estado, mode: StreakMode, before: number, after: number, historyDate: string, locked: boolean) {
+function streakPopup(state: Estado, mode: StreakMode, before: number, after: number, historyDate: string, locked: boolean, enter = false) {
   if (!mode) return ''
   const copy = tx()
   const months = monthSpan(state, mode, -before, after, historyDate)
@@ -344,11 +352,11 @@ function streakPopup(state: Estado, mode: StreakMode, before: number, after: num
     <li><i class="dot couples"></i>${copy.legendCouples}</li>
     <li><i class="dot star" aria-label="${esc(copy.legendAll)}">★</i>${copy.legendAll}</li>
   </ul>` : ''
-  return `<div class="streak-back" data-act="streak-close"></div>
-    <section class="streak-pop" data-testid="streak-calendar" role="dialog" aria-label="${esc(streakTitle(state, mode))}">
+  return `<div class="streak-back${enter ? ' entering' : ''}" data-act="streak-close"></div>
+    <section class="streak-pop${enter ? ' entering' : ''}" data-testid="streak-calendar" role="dialog" aria-modal="true" aria-label="${esc(streakTitle(state, mode))}">
       <header>
         <h2>${esc(streakTitle(state, mode))}</h2>
-        <b>${streakCount(state, mode)}</b>
+        <b title="${esc(tx().totalLabel)}">${streakCount(state, mode)}</b>
         <button type="button" class="pop-close" data-act="streak-close" aria-label="${copy.close}"><span aria-hidden="true">×</span></button>
       </header>
       ${legend}
@@ -410,7 +418,7 @@ function dayClass(day: Day) {
   return ''
 }
 
-function dayRow(day: Day, selected: string, locked: boolean) {
+function dayRow(day: Day, selected: string, locked: boolean, pulse = '') {
   const copy = tx()
   const f = fecha(day.date)
   const mine = day.mine_attendance ? 'gone' : day.mine_commitment ? 'planned' : ''
@@ -423,7 +431,7 @@ function dayRow(day: Day, selected: string, locked: boolean) {
       <div class="swipe-face">
         ${swipeHapticInput('data-face-haptic')}
         <button type="button" class="select-day" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
-          <span class="num ${mine}">${f.d}</span>
+          <span class="num ${mine}${pulse === day.date ? ' pulse' : ''}">${f.d}</span>
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
           ${swipeHapticInput()}
         </button>
@@ -433,7 +441,7 @@ function dayRow(day: Day, selected: string, locked: boolean) {
     </li>`
 }
 
-export function renderCalendario(state: Estado, selected: string, locked: boolean, locale: Locale, daysAhead = 28) {
+export function renderCalendario(state: Estado, selected: string, locked: boolean, locale: Locale, daysAhead = 28, pulse = '') {
   const copy = tx()
   const days = getCalendarDays(state, daysAhead)
   const groups: { key: string; days: Day[] }[] = []
@@ -443,7 +451,7 @@ export function renderCalendario(state: Estado, selected: string, locked: boolea
     if (!last || last.key !== key) groups.push({ key, days: [day] })
     else last.days.push(day)
   }
-  const sections = groups.map((group) => monthSection(group.key, locale, group.days.map((day) => dayRow(day, selected, locked)).join(''))).join('')
+  const sections = groups.map((group) => monthSection(group.key, locale, group.days.map((day) => dayRow(day, selected, locked, pulse)).join(''))).join('')
   const day = days.find((item) => item.date === selected) ?? days[0]
   const f = fecha(day.date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
@@ -533,11 +541,11 @@ function whenLine(iso: string | undefined) {
   return `<time class="wall-time" datetime="${esc(iso ?? '')}">${esc(text)}</time>`
 }
 
-function card(item: Intention, locked: boolean) {
+function card(item: Intention, locked: boolean, fresh?: Set<string>) {
   const copy = tx()
   const href = hrefIntention(item.id)
   return `
-    <article>
+    <article class="${fresh?.has(item.id) ? 'fresh' : ''}">
       <a class="card-open wall-open" href="${href}">
         <span class="who"><strong>${esc(item.display_name)}</strong>${whenLine(item.created_at)}</span>
         <p>${esc(item.body)}</p>
@@ -551,7 +559,7 @@ function editor(kind: 'intention' | 'comment', id: string, body: string, max: nu
   const copy = tx()
   const act = kind === 'intention' ? 'save-intention' : 'save-comment'
   return `<form class="editor" data-act="${act}" data-id="${id}">
-    <textarea name="body" maxlength="${max}" rows="3" ${locked ? 'disabled' : ''}>${esc(body)}</textarea>
+    <textarea name="body" maxlength="${max}" rows="3" data-draft="edit-${kind}-${id}" ${locked ? 'disabled' : ''}>${esc(body)}</textarea>
     <span class="editor-actions">
       <button type="submit" ${locked ? 'disabled' : ''}>${copy.save}</button>
       <button type="button" class="text-link" data-act="cancel-edit">${copy.cancel}</button>
@@ -559,13 +567,13 @@ function editor(kind: 'intention' | 'comment', id: string, body: string, max: nu
   </form>`
 }
 
-function detail(item: Intention, locked: boolean, editing: EditTarget) {
+function detail(item: Intention, locked: boolean, editing: EditTarget, fresh?: Set<string>) {
   const copy = tx()
   const editingIntention = editing?.kind === 'intention' && editing.id === item.id
   const comments = item.comments.map((comment) => {
     const editingComment = editing?.kind === 'comment' && editing.id === comment.id
     return `
-    <li>
+    <li class="${fresh?.has(comment.id) ? 'fresh' : ''}">
       <div class="comment-line">
         <strong>${esc(comment.display_name)}</strong>
         ${whenLine(comment.created_at)}
@@ -586,8 +594,8 @@ function detail(item: Intention, locked: boolean, editing: EditTarget) {
       <ol class="comments">${comments}</ol>
       <form class="reply" data-act="comment" data-id="${item.id}">
         <label for="comment-${item.id}">${copy.comment}</label>
-        <textarea id="comment-${item.id}" name="body" maxlength="200" rows="2" placeholder="${copy.commentHint}" ${locked ? 'disabled' : ''}></textarea>
-        <button type="submit" ${locked ? 'disabled' : ''}>${copy.publish}</button>
+        <textarea id="comment-${item.id}" name="body" maxlength="200" rows="2" placeholder="${copy.commentHint}" data-draft="comment-${item.id}" ${locked ? 'disabled' : ''}></textarea>
+        <button type="submit" data-needs-text ${locked ? 'disabled' : ''}>${copy.publish}</button>
       </form>
     </article>`
 }
@@ -597,11 +605,11 @@ export function emojiGrid(intentionId: string, query: string) {
     <button type="button" data-act="react" data-id="${intentionId}" data-emoji="${emoji}" aria-label="${emoji}">${emoji}</button>`).join('')
 }
 
-function sheet(intentionId: string, query: string) {
+function sheet(intentionId: string, query: string, enter = false) {
   const copy = tx()
   return `
-    <div class="sheet-back" data-act="emoji-close"></div>
-    <section class="sheet" data-testid="emoji-sheet" role="dialog" aria-label="${copy.reactionSheet}">
+    <div class="sheet-back${enter ? ' entering' : ''}" data-act="emoji-close"></div>
+    <section class="sheet${enter ? ' entering' : ''}" data-testid="emoji-sheet" role="dialog" aria-modal="true" aria-label="${copy.reactionSheet}">
       <div class="sheet-head">
         <h2>${copy.reactionSheet}</h2>
         <button type="button" class="pop-close" data-act="emoji-close" aria-label="${copy.close}"><span aria-hidden="true">×</span></button>
@@ -616,19 +624,19 @@ export function renderMuro(state: Estado, locked: boolean, openId: string, emoji
   const copy = tx()
   const open = openId ? state.intentions.find((item) => item.id === openId) : undefined
   if (open) {
-    return `${detail(open, locked, ui.editing ?? null)}${emojiFor === open.id ? sheet(open.id, ui.emojiQuery ?? '') : ''}`
+    return `${detail(open, locked, ui.editing ?? null, ui.fresh)}${emojiFor === open.id ? sheet(open.id, ui.emojiQuery ?? '', Boolean(ui.popupEnter)) : ''}`
   }
-  const notes = state.intentions.map((item) => card(item, locked)).join('')
+  const notes = state.intentions.map((item) => card(item, locked, ui.fresh)).join('')
   const composer = `
     <form class="composer" data-testid="muro" data-act="publish">
       <label for="intention">${copy.oneIntention}</label>
-      <textarea id="intention" name="body" maxlength="280" rows="3" placeholder="${copy.intentionHint}" ${locked ? 'disabled' : ''}></textarea>
-      <button type="submit" ${locked ? 'disabled' : ''}>${copy.publish}</button>
+      <textarea id="intention" name="body" maxlength="280" rows="2" placeholder="${copy.intentionHint}" data-draft="intention" ${locked ? 'disabled' : ''}></textarea>
+      <button type="submit" data-needs-text ${locked ? 'disabled' : ''}>${copy.publish}</button>
     </form>`
   return `
     ${composer}
     <div class="notes">${notes || `<p class="empty">${copy.emptyWall}</p>`}</div>
-    ${emojiFor ? sheet(emojiFor, ui.emojiQuery ?? '') : ''}
+    ${emojiFor ? sheet(emojiFor, ui.emojiQuery ?? '', Boolean(ui.popupEnter)) : ''}
   `
 }
 
@@ -735,6 +743,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
       <section class="settings-card">
         <h2>${copy.alerts}</h2>
         <p class="notify-note">${copy.notifyNote}</p>
+        ${ui.notifyNote ? `<p class="hint notify-warn" data-testid="notify-warn" role="status">${esc(ui.notifyNote)}</p>` : ''}
         <div class="switches">
           <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
             <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
@@ -751,8 +760,8 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
       <section class="settings-card">
         <form class="stack" data-act="feedback">
           <h2 id="feedback-title">${copy.feedbackTitle}</h2>
-          <textarea id="feedback" name="body" maxlength="1000" rows="4" aria-labelledby="feedback-title"></textarea>
-          <button type="submit">${copy.sendFeedback}</button>
+          <textarea id="feedback" name="body" maxlength="1000" rows="4" aria-labelledby="feedback-title" data-draft="feedback"></textarea>
+          <button type="submit" data-needs-text>${copy.sendFeedback}</button>
         </form>
         ${ui.feedbackSaved ? `<p class="hint" data-testid="feedback-thanks">${copy.feedbackThanks}</p>` : ''}
       </section>
@@ -762,45 +771,45 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
 
 export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '', refreshing = false, ui: UiState = {}) {
   const body = route === 'calendario'
-    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28)
+    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28, ui.pulseDate ?? '')
     : route === 'muro'
       ? renderMuro(state, locked, openId, emojiFor, ui)
       : route === 'ajustes'
         ? renderAjustes(state, locale, ui)
         : renderHoy(state, locked, ui)
   const banner = offline ? `<p class="offline">${esc(offline)}</p>` : ''
-  return shell(route, body, banner, refreshing)
+  return shell(route, body, banner, refreshing, Boolean(ui.enter))
 }
 
 export type LoginMode = 'password' | 'forgot' | 'code'
 
 export function renderLogin(message: string, email: string, code: string, mode: LoginMode = 'password', sending = false) {
   const copy = tx()
-  const hint = message ? `<p class="hint">${esc(message)}</p>` : ''
+  const hint = message ? `<p class="hint" role="status">${esc(message)}</p>` : ''
   const emailField = `
       <label for="email">${copy.email}</label>
-      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" value="${esc(email)}" />`
+      <input id="email" name="email" type="email" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" value="${esc(email)}" />`
   let fields = ''
   if (mode === 'password') {
     fields = `
       ${emailField}
       <label for="password">${copy.password}</label>
       <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" />
-      <button type="button" data-act="login-password">${copy.enter}</button>
-      <button type="button" class="secondary" data-act="forgot-start">${copy.forgotPassword}</button>
-      ${hint}`
+      <button type="submit" data-act="login-password">${copy.enter}</button>
+      ${hint}
+      <button type="button" class="secondary" data-act="forgot-start">${copy.forgotPassword}</button>`
   } else if (mode === 'forgot') {
     fields = `
       ${emailField}
-      <button type="button" data-act="send-code" ${sending ? 'disabled aria-busy="true"' : ''}>${sending ? `<span class="send-wait" aria-hidden="true"><i></i><i></i><i></i></span><span class="visually-hidden">${copy.sendCode}</span>` : copy.sendCode}</button>
+      <button type="submit" data-act="send-code" ${sending ? 'disabled aria-busy="true"' : ''}>${sending ? `<span class="send-wait" aria-hidden="true"><i></i><i></i><i></i></span><span class="visually-hidden">${copy.sendCode}</span>` : copy.sendCode}</button>
       <button type="button" class="secondary" data-act="login-back">${copy.back}</button>
       ${hint}`
   } else {
     fields = `
       ${emailField}
       <label for="code">${copy.code}</label>
-      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" value="${esc(code)}" />
-      <button type="button" data-act="verify">${copy.enterCode}</button>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" value="${esc(code)}" />
+      <button type="submit" data-act="verify">${copy.enterCode}</button>
       <button type="button" class="secondary" data-act="login-back">${copy.back}</button>
       ${hint}`
   }
@@ -810,11 +819,13 @@ export function renderLogin(message: string, email: string, code: string, mode: 
       <h1>${copy.brand}</h1>
     </header>
     <main class="login" data-testid="login">
-      ${fields}
+      <form class="login-form" data-act="login-submit" data-mode="${mode}" novalidate>
+        ${fields}
+      </form>
     </main>`
 }
 
-export function renderResetPassword() {
+export function renderResetPassword(message = '', email = '') {
   const copy = tx()
   return `
     <header class="top">
@@ -822,10 +833,26 @@ export function renderResetPassword() {
       <h1>${copy.setPasswordTitle}</h1>
     </header>
     <main class="login" data-testid="reset-password">
-      <label for="reset-password">${copy.newPassword}</label>
-      <input id="reset-password" name="password" type="password" minlength="6" autocomplete="new-password" />
-      <button type="button" data-act="set-new-password">${copy.savePassword}</button>
+      <form class="login-form" data-act="set-new-password" novalidate>
+        <p class="login-note">${copy.setPasswordNote}</p>
+        <input type="email" name="email" autocomplete="username" value="${esc(email)}" hidden />
+        <label for="reset-password">${copy.newPassword}</label>
+        <input id="reset-password" name="password" type="password" minlength="6" autocomplete="new-password" />
+        <button type="submit">${copy.savePassword}</button>
+        <button type="button" class="secondary" data-act="skip-password">${copy.skipPassword}</button>
+        ${message ? `<p class="hint" role="status">${esc(message)}</p>` : ''}
+      </form>
     </main>`
+}
+
+export function renderSplash() {
+  const copy = tx()
+  return `
+    <header class="top splash" aria-busy="true">
+      ${brandMark()}
+      <p class="mark">${copy.brand}</p>
+      <span class="visually-hidden">${copy.loading}</span>
+    </header>`
 }
 
 export function renderSetup() {

@@ -4,9 +4,11 @@ import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
 import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
+import { loadEmojis } from './emoji'
+import { esc } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, dayMarks, emojiGrid, historyDetail, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, dayMarks, emojiGrid, historyDetail, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, renderSplash, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -91,6 +93,75 @@ let lastProgrammaticY = Number.NaN
 let applyingScroll = false
 let calendarDays = 28
 let commitChain: Promise<void> = Promise.resolve()
+let commitEpoch = 0
+// Hasta saber si hay sesión se pinta la marca, no el formulario de entrada.
+let booting = false
+let loadedOnce = false
+let loadedDay = ''
+let lastLoad = 0
+let resetMessage = ''
+let lastRouteKey = ''
+let popupEnter = false
+let pulseDate = ''
+let expectFresh: Set<string> | null = null
+let notifyNote = ''
+let pushRenewed = false
+let skipNextPop = false
+let updateReady = false
+const drafts = new Map<string, string>()
+const hiddenIds = new Set<string>()
+let pendingDelete: { kind: 'intention' | 'comment'; id: string; timer: number } | null = null
+const SNAPSHOT_KEY = 'misa-estado'
+let authRetry = false
+
+function madridDay() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+// El día del teléfono en Madrid cambió desde la última carga: lo que se ve es de ayer.
+function staleDay() {
+  return Boolean(loadedDay) && loadedDay !== madridDay()
+}
+
+function readSnapshot(): { at: string; day: string; data: Estado } | null {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { at?: string; day?: string; data?: Estado }
+    if (!parsed?.data?.me?.id || !parsed.data.today) return null
+    return { at: parsed.at ?? '', day: parsed.day ?? '', data: parsed.data }
+  } catch {
+    return null
+  }
+}
+
+function writeSnapshot(state: Estado) {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ at: state.clock, day: madridDay(), data: state }))
+  } catch { /* sin espacio: la próxima apertura irá a la red */ }
+}
+
+function clearSnapshot() {
+  try { localStorage.removeItem(SNAPSHOT_KEY) } catch { /* nada guardado */ }
+  try { sessionStorage.removeItem(SNAPSHOT_KEY) } catch { /* nada guardado */ }
+}
+
+function hasStoredSession() {
+  try {
+    return Object.keys(localStorage).some((key) => key.startsWith('sb-') && key.endsWith('-auth-token'))
+  } catch {
+    return false
+  }
+}
+
+function networkError(error: unknown) {
+  if (!error || typeof error !== 'object') return !navigator.onLine
+  const item = error as { status?: number; name?: string; message?: string }
+  return !navigator.onLine
+    || item.status === 0
+    || item.name === 'AuthRetryableFetchError'
+    || /failed to fetch|network|load failed/i.test(item.message ?? '')
+}
 
 function rememberedEmail() {
   try {
@@ -138,6 +209,62 @@ function rateLimited(error: unknown) {
   return item.status === 429 || text.includes('rate limit') || text.includes('rate_limit') || text.includes('too many')
 }
 
+function captureDrafts() {
+  const active = document.activeElement
+  const focused = active instanceof HTMLElement ? active.dataset.draft ?? '' : ''
+  for (const node of document.querySelectorAll<HTMLTextAreaElement>('[data-draft]')) {
+    const key = node.dataset.draft ?? ''
+    if (!key) continue
+    if (node.value.trim()) drafts.set(key, node.value)
+    else drafts.delete(key)
+  }
+  return focused
+}
+
+function restoreDrafts(focused: string) {
+  for (const node of document.querySelectorAll<HTMLTextAreaElement>('[data-draft]')) {
+    const value = drafts.get(node.dataset.draft ?? '')
+    if (value != null) node.value = value
+    if (focused && node.dataset.draft === focused && !node.disabled) {
+      node.focus({ preventScroll: true })
+      node.setSelectionRange(node.value.length, node.value.length)
+    }
+  }
+  updateNeedsText()
+}
+
+function clearDraft(key: string) {
+  drafts.delete(key)
+  const node = document.querySelector<HTMLTextAreaElement>(`[data-draft="${key}"]`)
+  if (node) node.value = ''
+}
+
+function updateNeedsText(scope: ParentNode = document) {
+  for (const button of scope.querySelectorAll<HTMLButtonElement>('button[data-needs-text]')) {
+    const field = button.closest('form')?.querySelector<HTMLTextAreaElement>('textarea')
+    button.disabled = locked || !field || field.disabled || !field.value.trim()
+  }
+}
+
+function knownIds(state: Estado) {
+  const ids = new Set<string>()
+  for (const item of state.intentions) {
+    ids.add(item.id)
+    for (const comment of item.comments) ids.add(comment.id)
+  }
+  return ids
+}
+
+function visibleState(state: Estado): Estado {
+  if (!hiddenIds.size) return state
+  return {
+    ...state,
+    intentions: state.intentions
+      .filter((item) => !hiddenIds.has(item.id))
+      .map((item) => ({ ...item, comments: item.comments.filter((comment) => !hiddenIds.has(comment.id)) })),
+  }
+}
+
 function paint() {
   stopScrollAnim()
   setLocale(locale)
@@ -152,8 +279,12 @@ function paint() {
     return
   }
   if (mustResetPassword) {
-    app.innerHTML = renderResetPassword()
+    app.innerHTML = renderResetPassword(resetMessage, rememberedEmail())
     document.title = tx().brand
+    return
+  }
+  if (!current && booting) {
+    app.innerHTML = renderSplash()
     return
   }
   if (!current) {
@@ -173,7 +304,18 @@ function paint() {
   const y = window.scrollY
   const monthScroll = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
   const savedMonthTop = monthScroll && !streakAlign ? monthScroll.scrollTop : null
-  app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling, {
+  const focusedDraft = captureDrafts()
+  const routeKey = `${route}:${intention}:${passwordScreen ? 'pw' : ''}`
+  const enter = Boolean(lastRouteKey) && routeKey !== lastRouteKey
+  lastRouteKey = routeKey
+  let fresh: Set<string> | undefined
+  if (expectFresh) {
+    const before = expectFresh
+    fresh = new Set([...knownIds(current)].filter((id) => !before.has(id)))
+    expectFresh = null
+  }
+  const opening = popupEnter
+  app.innerHTML = renderApp(route, visibleState(current), selected, locked, offline, intention, locale, emojiFor, pulling, {
     streak: streakMode,
     monthsBefore,
     monthsAfter,
@@ -185,10 +327,23 @@ function paint() {
     nameSaved,
     feedbackSaved,
     calendarDays,
-    hero: heroVariant(),
     installOpen,
     passwordScreen,
+    enter,
+    popupEnter: opening,
+    pulseDate,
+    fresh,
+    notifyNote,
   })
+  popupEnter = false
+  pulseDate = ''
+  if (opening) {
+    for (const node of document.querySelectorAll<HTMLElement>('.entering')) {
+      node.addEventListener('animationend', () => node.classList.remove('entering'), { once: true })
+    }
+  }
+  restoreDrafts(focusedDraft)
+  if (opening) focusDialog()
   if (keepScroll) window.scrollTo(0, y)
   document.title = tx().brand
   const popup = Boolean(streakMode)
@@ -221,17 +376,23 @@ function alignStreak() {
 }
 
 async function refresh(celebrate = false) {
-  const snapshot = sessionStorage.getItem('misa-estado')
   const epoch = localeEpoch
   const attEpoch = attendanceEpoch
+  const comEpoch = commitEpoch
   try {
     const next = await estado()
-    if (attEpoch !== attendanceEpoch) return
+    if (attEpoch !== attendanceEpoch || comEpoch !== commitEpoch) return
     const localeBefore = locale
+    const prev = current
+    const wasLocked = locked
     current = next
     denied = false
     offline = ''
     locked = false
+    booting = false
+    loadedOnce = true
+    loadedDay = madridDay()
+    lastLoad = Date.now()
     if (epoch === localeEpoch) {
       const saved = current.prefs.locale
       if (saved === 'es' || saved === 'pt') locale = saved
@@ -239,38 +400,85 @@ async function refresh(celebrate = false) {
       rememberLocale(locale)
       if (!saved) {
         current.prefs.locale = locale
-        await guardarPreferencias(current.me.id, current.prefs)
+        // Si no se guarda ahora, se guardará en la próxima apertura; no es un fallo de conexión.
+        void guardarPreferencias(current.me.id, current.prefs).catch(() => undefined)
       }
     }
     if (epoch !== localeEpoch) current.prefs.locale = locale
-    sessionStorage.setItem('misa-estado', JSON.stringify({ at: current.clock, data: current }))
+    writeSnapshot(current)
     if (!appOpened && !demo) {
       appOpened = true
       registrarEvento(current.me.id, 'app_open', routeFromPath(location.pathname), {})
     }
-    if (locale !== localeBefore || !patchHoyAttendance(current, locked)) paint()
+    renewPush(current)
+    const idle = (window as Window & { requestIdleCallback?: (fn: () => void) => void }).requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 1500))
+    idle(() => void loadEmojis())
+    const shapeChanged = !prev
+      || prev.today !== current.today
+      || prev.risk !== current.risk
+      || Boolean(prev.monday) !== Boolean(current.monday)
+      || prev.me.id !== current.me.id
+      || wasLocked
+    if (selected && prev && prev.today !== current.today && selected < current.today) selected = current.today
+    if (locale !== localeBefore || shapeChanged || !patchHoyAttendance(current, locked)) paint()
     else document.querySelector('.offline')?.remove()
     if (celebrate) await celebratePending(current)
   } catch (error) {
     const code = typeof error === 'object' && error && 'code' in error ? String((error as { code: string }).code) : ''
+    if ((code === 'PGRST301' || code === 'PGRST303') && supabase && !authRetry) {
+      // Sesión caducada (el teléfono durmió días): se renueva una vez y se reintenta.
+      authRetry = true
+      try {
+        const { error: renewError } = await supabase.auth.refreshSession()
+        if (!renewError) {
+          await refresh(celebrate)
+          return
+        }
+        if (!networkError(renewError)) {
+          await supabase.auth.signOut({ scope: 'local' })
+          return
+        }
+      } finally {
+        authRetry = false
+      }
+    }
     if (code === '42501' || /no eres del (grupo|curso)/i.test(String(error))) {
       current = null
       denied = true
+      booting = false
+      clearSnapshot()
       paint()
       return
     }
-    if (snapshot) {
-      const saved = JSON.parse(snapshot) as { at: string; data: Estado }
-      current = saved.data
-      offline = tx().offline(saved.at)
+    const saved = current ? null : readSnapshot()
+    if (current || saved) {
+      if (!current && saved) current = saved.data
+      offline = tx().offline(saved?.at || current?.clock || '')
       locked = true
+      booting = false
       paint()
       return
     }
+    booting = false
+    loadedOnce = false
     loginMessage = tx().openFail
     current = null
     paint()
   }
+}
+
+function renewPush(state: Estado) {
+  if (pushRenewed || demo || !state.prefs.empty_day) return
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  pushRenewed = true
+  // iOS caduca la suscripción sin avisar: al abrir se vuelve a dejar escrita.
+  void suscribirPush(state.me.id).catch(() => { pushRenewed = false })
+}
+
+function maybeRefresh(force = false) {
+  if (!current || demo || !configured || !loadedOnce) return
+  if (busy || pulling || gesture || tabScrub || mustResetPassword) return
+  if (force || staleDay() || Date.now() - lastLoad > 60_000) void refresh(false)
 }
 
 async function celebratePending(state: Estado) {
@@ -295,35 +503,58 @@ async function boot() {
     if (item) showCelebration(item)
     return
   }
+  if (configured && supabase && hasStoredSession()) {
+    // Abre al instante con lo último que se vio; estado() lo pone al día detrás.
+    const snap = readSnapshot()
+    if (snap) {
+      current = snap.data
+      selected = current.today
+      loadedDay = snap.day
+      const saved = current.prefs.locale
+      if (saved === 'es' || saved === 'pt') locale = saved
+    } else {
+      booting = true
+    }
+  }
   paint()
   if (!configured || !supabase) return
   supabase.auth.onAuthStateChange((event, session) => {
     if (!session) {
-      if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
+        const hadSomething = Boolean(current) || booting
         current = null
         denied = false
-        paint()
+        booting = false
+        loadedOnce = false
+        clearSnapshot()
+        if (event === 'SIGNED_OUT' || hadSomething) paint()
       }
       return
     }
     if (mustResetPassword || recoverySignIn) return
-    if (!current && !signingIn) window.setTimeout(() => void refresh(true), 0)
+    if (!loadedOnce && !signingIn) window.setTimeout(() => void refresh(true), 0)
   })
   refreshServiceWorker()
 }
 
 function refreshServiceWorker() {
   if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
+  const hadController = Boolean(navigator.serviceWorker.controller)
   navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((reg) => {
     void reg.update()
   }).catch(() => undefined)
+  if (hadController && !refreshServiceWorker.watching) {
+    refreshServiceWorker.watching = true
+    navigator.serviceWorker.addEventListener('controllerchange', () => { updateReady = true })
+  }
 }
+refreshServiceWorker.watching = false
 
-function heroVariant(): 'a' | 'b' | 'c' {
-  const query = new URLSearchParams(location.search).get('estado')
-  const hooked = document.documentElement.dataset.estado
-  const value = query || hooked || ''
-  return value === 'b' || value === 'c' ? value : 'a'
+// Una versión nueva se carga al volver a la app, nunca en mitad de un gesto o de un texto.
+function reloadIfUpdated() {
+  if (!updateReady || gesture || tabScrub || drafts.size || pendingDelete) return
+  if (document.querySelector<HTMLTextAreaElement>('[data-draft]')?.value.trim()) return
+  location.reload()
 }
 
 function syncRoute() {
@@ -331,6 +562,54 @@ function syncRoute() {
   emojiFor = ''
   if (!(routeFromPath(location.pathname) === 'ajustes' && history.state?.passwordScreen)) {
     passwordScreen = false
+  }
+}
+
+function pushModal(kind: 'streak' | 'emoji') {
+  history.pushState({ ...(history.state ?? {}), modal: kind }, '', `${location.pathname}${location.search}`)
+  depth += 1
+}
+
+function popModal(kind: 'streak' | 'emoji') {
+  if (history.state?.modal !== kind) return
+  skipNextPop = true
+  history.back()
+}
+
+function closeSheet() {
+  if (!emojiFor) return
+  emojiFor = ''
+  emojiQuery = ''
+  popModal('emoji')
+  paint()
+}
+
+function dialogNode() {
+  if (streakMode) return document.querySelector<HTMLElement>('.streak-pop')
+  if (emojiFor) return document.querySelector<HTMLElement>('.sheet')
+  return null
+}
+
+function focusDialog() {
+  const dialog = dialogNode()
+  dialog?.querySelector<HTMLElement>('.pop-close')?.focus({ preventScroll: true })
+}
+
+function trapFocus(event: KeyboardEvent) {
+  const dialog = dialogNode()
+  if (!dialog) return
+  const items = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([type="checkbox"]):not([disabled]), [tabindex="0"]')]
+    .filter((node) => node.offsetParent !== null)
+  if (!items.length) return
+  const first = items[0]
+  const last = items[items.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || !dialog.contains(active))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+    event.preventDefault()
+    first.focus()
   }
 }
 
@@ -705,11 +984,14 @@ function unlockStreakScroll() {
   window.scrollTo(0, streakScroll)
 }
 
-function closeStreakPopupWithAnimation() {
+function closeStreakPopupWithAnimation(fromHistory = false) {
   if (!streakMode || streakClosing) return
   streakClosing = true
+  if (!fromHistory) popModal('streak')
   const pop = document.querySelector<HTMLElement>('.streak-pop')
   const back = document.querySelector<HTMLElement>('.streak-back')
+  pop?.classList.remove('entering')
+  back?.classList.remove('entering')
   const finish = () => {
     if (!streakClosing && !streakMode) return
     streakClosing = false
@@ -718,6 +1000,7 @@ function closeStreakPopupWithAnimation() {
     unlockStreakScroll()
     paint()
     window.scrollTo(0, streakScroll)
+    document.querySelector<HTMLElement>('[data-testid="open-past-cal"]')?.focus({ preventScroll: true })
   }
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (reduce || !pop) {
@@ -904,8 +1187,7 @@ app.addEventListener('pointerup', (event) => {
   const downRefresh = dy > 80 && dy > Math.abs(dx) * 1.5
   const onDetail = Boolean(intentionFromPath(location.pathname))
   if (start.sheet && emojiFor && downDetail) {
-    emojiFor = ''
-    paint()
+    closeSheet()
     return
   }
   if (onDetail && horizontal) {
@@ -1015,6 +1297,16 @@ window.addEventListener('scroll', () => {
 
 app.addEventListener('input', (event) => {
   const node = event.target
+  if (node instanceof HTMLTextAreaElement) {
+    const key = node.dataset.draft
+    if (key) {
+      if (node.value.trim()) drafts.set(key, node.value)
+      else drafts.delete(key)
+    }
+    const form = node.closest('form')
+    if (form) updateNeedsText(form)
+    return
+  }
   if (!(node instanceof HTMLInputElement)) return
   if (node.dataset.act === 'emoji-search') {
     const emoji = isEmoji(node.value)
@@ -1033,32 +1325,6 @@ app.addEventListener('input', (event) => {
   if (!emoji) return
   node.value = ''
   void actOn('react', node, emoji)
-})
-
-app.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return
-  const target = event.target
-  if (!(target instanceof HTMLInputElement)) return
-  if (target.id === 'password') {
-    event.preventDefault()
-    void actOn('login-password', target)
-    return
-  }
-  if (target.id === 'reset-password') {
-    event.preventDefault()
-    void actOn('set-new-password', target)
-    return
-  }
-  if (target.id === 'email') {
-    if (loginMode !== 'forgot') return
-    event.preventDefault()
-    void actOn('send-code', target)
-    return
-  }
-  if (target.id === 'code') {
-    event.preventDefault()
-    void actOn('verify', target)
-  }
 })
 
 app.addEventListener('toggle', (event) => {
@@ -1153,6 +1419,15 @@ app.addEventListener('submit', (event) => {
   event.preventDefault()
   const body = (form.elements.namedItem('body') as HTMLTextAreaElement | null)?.value ?? ''
   const act = form.dataset.act ?? ''
+  if (act === 'login-submit') {
+    const mode = form.dataset.mode
+    void actOn(mode === 'forgot' ? 'send-code' : mode === 'code' ? 'verify' : 'login-password', form)
+    return
+  }
+  if (act === 'set-new-password') {
+    void actOn(act, form)
+    return
+  }
   if (act === 'comment' || act === 'save-intention' || act === 'save-comment' || act === 'feedback' || act === 'save-password' || act === 'save-name') {
     void actOn(act, form, body)
     return
@@ -1167,6 +1442,21 @@ document.querySelector('#celeb')?.addEventListener('click', (event) => {
 
 window.addEventListener('popstate', () => {
   depth = Math.max(0, depth - 1)
+  if (skipNextPop) {
+    skipNextPop = false
+    return
+  }
+  // Atrás en Android cierra primero lo que esté abierto encima.
+  if (streakMode && history.state?.modal !== 'streak') {
+    closeStreakPopupWithAnimation(true)
+    return
+  }
+  if (emojiFor && history.state?.modal !== 'emoji' && routeFromPath(location.pathname) === 'muro') {
+    emojiFor = ''
+    emojiQuery = ''
+    paint()
+    return
+  }
   syncRoute()
   if (routeFromPath(location.pathname) === 'ajustes') {
     passwordScreen = Boolean(history.state?.passwordScreen)
@@ -1174,12 +1464,24 @@ window.addEventListener('popstate', () => {
   paint()
 })
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') hideCelebration()
+  if (event.key === 'Tab' && (streakMode || emojiFor)) {
+    trapFocus(event)
+    return
+  }
+  if (event.key !== 'Escape') return
+  hideCelebration()
+  if (streakMode) closeStreakPopupWithAnimation()
+  else if (emojiFor) closeSheet()
+  else if (editing) {
+    clearDraft(`edit-${editing.kind}-${editing.id}`)
+    editing = null
+    paint()
+  } else if (passwordScreen) closePasswordScreen()
 })
 
 function plain(value: string, max: number) {
   const text = value.trim()
-  if (!text || text.length > max || /[<>]/.test(text)) return ''
+  if (!text || text.length > max) return ''
   return text
 }
 
@@ -1208,27 +1510,39 @@ function ensureCommitmentDay(date: string) {
 
 async function setCommitment(date: string, on: boolean, source: 'button' | 'swipe' = 'button') {
   if (!current || locked || !date || date < current.today) return
+  if (!demo && staleDay()) {
+    void refresh(false)
+    return
+  }
   const day = ensureCommitmentDay(date)
   if (!day || day.mine_commitment === on) return
+  const before = { mine_commitment: day.mine_commitment, committed: day.committed, covered: day.covered, risk: current.risk }
   day.mine_commitment = on
-  day.committed = on ? true : day.covered > 0
+  if (!day.mine_attendance) day.covered = Math.max(0, day.covered + (on ? 1 : -1))
+  day.committed = day.covered > 0
+  if (date === current.today) current.risk = day.covered > 0 || day.sunday ? null : 'empty'
   selected = date
+  if (on) pulseDate = date
+  const epoch = ++commitEpoch
   paint()
-  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', 'calendario', { date, on, source })
+  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', routeFromPath(location.pathname), { date, on, source })
   if (demo) return
   const member = current.me.id
   const run = commitChain.then(async () => {
-    busy = true
     try {
       await marcarCompromiso(member, date, on)
-      await refresh(false)
+      // Solo el último toque refresca: los anteriores no pisan lo que aún está en cola.
+      if (epoch === commitEpoch) await refresh(false)
     } catch {
       const currentDay = current?.calendar.find((item) => item.date === date)
-      if (currentDay) currentDay.mine_commitment = !on
+      if (currentDay && current && currentDay.mine_commitment === on) {
+        currentDay.mine_commitment = before.mine_commitment
+        currentDay.committed = before.committed
+        currentDay.covered = before.covered
+        if (date === current.today) current.risk = before.risk
+      }
       offline = tx().saveFail
       paint()
-    } finally {
-      busy = false
     }
   })
   commitChain = run.then(() => undefined, () => undefined)
@@ -1250,26 +1564,44 @@ function attendanceRows(date: string) {
   return rows
 }
 
+type AttendanceSnap = { rows: { mine_attendance: boolean; went: number }[]; total: number; covered: number | null; risk: Estado['risk'] }
+
 function flipAttendance(date: string) {
+  if (!current) return null
   const rows = attendanceRows(date)
   if (!rows.length) return null
-  const snaps = rows.map((row) => ({ mine_attendance: row.mine_attendance, went: row.went }))
+  const today = date === current.today ? current.calendar[0] : null
+  const snaps: AttendanceSnap = {
+    rows: rows.map((row) => ({ mine_attendance: row.mine_attendance, went: row.went })),
+    total: current.streaks.total,
+    covered: today ? today.covered : null,
+    risk: current.risk,
+  }
   const on = !rows[0].mine_attendance
   const delta = on ? 1 : -1
   for (const row of rows) {
     row.mine_attendance = on
     row.went = Math.max(0, row.went + delta)
   }
+  current.streaks.total = Math.max(0, current.streaks.total + delta)
+  if (today && !today.mine_commitment) {
+    today.covered = Math.max(0, today.covered + delta)
+    current.risk = today.covered > 0 || today.sunday ? null : 'empty'
+  }
   return { on, snaps }
 }
 
-function restoreAttendance(date: string, snaps: { mine_attendance: boolean; went: number }[]) {
+function restoreAttendance(date: string, snaps: AttendanceSnap) {
+  if (!current) return
   attendanceRows(date).forEach((row, index) => {
-    const snap = snaps[index]
+    const snap = snaps.rows[index]
     if (!snap) return
     row.mine_attendance = snap.mine_attendance
     row.went = snap.went
   })
+  current.streaks.total = snaps.total
+  if (snaps.covered != null && current.calendar[0]?.date === date) current.calendar[0].covered = snaps.covered
+  current.risk = snaps.risk
 }
 
 function streakTotal(state: Estado) {
@@ -1337,16 +1669,9 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
   if (!hero) return false
   const copy = tx()
   const gone = Boolean(state.calendar[0]?.mine_attendance)
-  const kind = hero.classList.contains('estado-b') ? 'b' : hero.classList.contains('estado-c') ? 'c' : 'a'
   hero.classList.toggle('on', gone)
   const status = hero.querySelector<HTMLElement>('[data-testid="hoy-status"]')
-  if (status) {
-    status.textContent = kind === 'b'
-      ? (gone ? copy.bandOn : copy.bandOff)
-      : kind === 'c'
-        ? (gone ? copy.gone : copy.splitOff)
-        : (gone ? copy.attendedLine : copy.pendingLine)
-  }
+  if (status) status.textContent = gone ? copy.attendedLine : copy.pendingLine
   const button = hero.querySelector<HTMLButtonElement>('button.go')
   if (button) {
     button.classList.toggle('on', gone)
@@ -1354,13 +1679,7 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
     button.setAttribute('aria-pressed', gone ? 'true' : 'false')
     button.disabled = isLocked
     const label = button.querySelector('.go-label')
-    if (label) {
-      label.textContent = kind === 'b'
-        ? (gone ? copy.unmarkLong : copy.markLong)
-        : kind === 'c'
-          ? (gone ? copy.splitUndo : copy.go)
-          : (gone ? copy.unmark : copy.go)
-    }
+    if (label) label.textContent = gone ? copy.unmark : copy.go
     let hidden = button.querySelector('.visually-hidden')
     if (gone) {
       if (!hidden) {
@@ -1373,6 +1692,8 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
       hidden?.remove()
     }
   }
+  const total = document.querySelector<HTMLElement>('[data-testid="total-num"]')
+  if (total) countTo(total, state.streaks.total)
   const list = document.querySelector('[data-testid="past"]')
   if (list) {
     for (const day of state.past) {
@@ -1398,6 +1719,37 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
   return true
 }
 
+// La cifra rueda hasta el valor nuevo en vez de cambiar de golpe.
+function countTo(node: HTMLElement, target: number) {
+  const from = Number(node.textContent) || 0
+  if (from === target) return
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce || Math.abs(target - from) > 40) {
+    node.textContent = String(target)
+    return
+  }
+  node.classList.remove('bump')
+  void node.offsetWidth
+  node.classList.add(target > from ? 'bump' : 'dip')
+  const t0 = performance.now()
+  const step = (now: number) => {
+    const t = Math.min(1, (now - t0) / 420)
+    node.textContent = String(Math.round(from + (target - from) * (1 - (1 - t) ** 3)))
+    if (t < 1) requestAnimationFrame(step)
+    else window.setTimeout(() => node.classList.remove('bump', 'dip'), 200)
+  }
+  requestAnimationFrame(step)
+}
+
+function celebrateMark(on: boolean) {
+  const hero = document.querySelector<HTMLElement>('[data-testid="hoy-hero"]')
+  if (!hero || !on || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  hero.classList.remove('just-on')
+  void hero.offsetWidth
+  hero.classList.add('just-on')
+  window.setTimeout(() => hero.classList.remove('just-on'), 900)
+}
+
 function attendanceSource(node: HTMLElement) {
   if (node.dataset.testid === 'go') return 'hoy_main'
   if (node.closest('[data-testid="past"]')) return 'hoy_past'
@@ -1407,11 +1759,18 @@ function attendanceSource(node: HTMLElement) {
 
 function queueAttendance(node: HTMLElement) {
   if (!current || locked) return
+  if (!demo && staleDay()) {
+    // Lo que se ve es de ayer: primero se pone al día y no se marca el día equivocado.
+    void refresh(false)
+    return
+  }
   const date = node.dataset.date ?? current.today
+  const riskBefore = current.risk
   const flipped = flipAttendance(date)
   if (!flipped) return
   const epoch = ++attendanceEpoch
-  if (!patchHoyAttendance(current, locked)) paint()
+  if (riskBefore !== current.risk || !patchHoyAttendance(current, locked)) paint()
+  if (date === current.today) celebrateMark(flipped.on)
   const source = attendanceSource(node)
   if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { date, on: flipped.on, source })
   if (demo) return
@@ -1424,9 +1783,11 @@ function queueAttendance(node: HTMLElement) {
       await refresh(true)
     } catch {
       if (epoch !== attendanceEpoch) return
+      const riskBefore = current?.risk
       restoreAttendance(date, snaps)
       offline = tx().saveFail
-      if (current && !patchHoyAttendance(current, locked)) paint()
+      if (current) paint()
+      void riskBefore
     }
   })
   attendChain = run.then(() => undefined, () => undefined)
@@ -1458,22 +1819,30 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'emoji-open') {
     emojiFor = node.dataset.id ?? ''
     emojiQuery = ''
+    popupEnter = true
+    pushModal('emoji')
     paint()
+    void loadEmojis().then(() => {
+      const grid = document.querySelector('.sheet-grid')
+      if (grid && emojiFor) grid.innerHTML = emojiGrid(emojiFor, emojiQuery)
+    })
     const touch = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
     if (!touch) document.querySelector<HTMLInputElement>('#emoji-search')?.focus()
     return
   }
   if (act === 'emoji-close') {
-    emojiFor = ''
-    emojiQuery = ''
-    paint()
+    closeSheet()
     return
   }
   if (act === 'streak' || act === 'open-past-cal') {
     if (act === 'open-past-cal' && current && !demo) registrarEvento(current.me.id, 'past_calendar_open', 'hoy', {})
     const key = act === 'open-past-cal' ? 'all' : node.dataset.key
     streakMode = key === 'couple' || key === 'group' || key === 'six' || key === 'all' || key === 'individual' ? key : ''
-    if (streakMode) lockStreakScroll()
+    if (streakMode) {
+      lockStreakScroll()
+      popupEnter = true
+      pushModal('streak')
+    }
     monthsBefore = 6
     monthsAfter = 6
     historyDate = ''
@@ -1500,6 +1869,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     return
   }
   if (act === 'cancel-edit') {
+    if (editing) clearDraft(`edit-${editing.kind}-${editing.id}`)
     editing = null
     paint()
     return
@@ -1512,6 +1882,55 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'attend') {
     queueAttendance(node)
+    return
+  }
+  if (act === 'commit') {
+    if (!current || locked) return
+    const date = node.dataset.date ?? ''
+    const day = current.calendar.find((item) => item.date === date)
+    await setCommitment(date, day ? !day.mine_commitment : true)
+    return
+  }
+  if (act === 'undo-delete') {
+    undoDelete()
+    return
+  }
+  if (act === 'skip-password') {
+    mustResetPassword = false
+    recoverySignIn = false
+    resetMessage = ''
+    booting = true
+    paint()
+    await refresh(true)
+    return
+  }
+  if (act === 'logout') {
+    hideCelebration()
+    await flushDelete()
+    drafts.clear()
+    hiddenIds.clear()
+    notifyNote = ''
+    pushRenewed = false
+    pendingCode = ''
+    loginMessage = ''
+    loginMode = 'password'
+    mustResetPassword = false
+    recoverySignIn = false
+    busy = false
+    loadedOnce = false
+    if (demo) {
+      current = null
+      demo = false
+      calendarDays = 28
+      go('hoy')
+      return
+    }
+    try { await salir() } catch { /* sin conexión: la sesión local se cierra igual */ }
+    clearSnapshot()
+    current = null
+    denied = false
+    calendarDays = 28
+    go('hoy')
     return
   }
   if (act === 'attend-set') {
@@ -1568,19 +1987,35 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'login-password') {
     const next = loginEmail()
-    const password = document.querySelector<HTMLInputElement>('#password')?.value ?? ''
+    const field = document.querySelector<HTMLInputElement>('#password')
+    const password = field?.value ?? ''
     if (!next) {
       loginMessage = tx().needEmail
       paint()
       return
     }
-    if (!supabase || password.length < 6) return
+    if (!supabase) return
+    if (!password) {
+      field?.focus()
+      return
+    }
+    if (password.length < 6) {
+      loginMessage = tx().shortPassword
+      paint()
+      document.querySelector<HTMLInputElement>('#password')?.focus()
+      return
+    }
     signingIn = true
     busy = true
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: next, password })
+      let error: unknown = null
+      try {
+        ({ error } = await supabase.auth.signInWithPassword({ email: next, password }))
+      } catch (thrown) {
+        error = thrown
+      }
       if (error) {
-        loginMessage = tx().badCode
+        loginMessage = networkError(error) ? tx().netFail : tx().badPassword
         paint()
         return
       }
@@ -1606,13 +2041,19 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     signingIn = true
     busy = true
     try {
-      const { error } = await supabase.auth.verifyOtp({ email: next, token, type: 'email' })
+      let error: unknown = null
+      try {
+        ({ error } = await supabase.auth.verifyOtp({ email: next, token, type: 'email' }))
+      } catch (thrown) {
+        error = thrown
+      }
       if (error) {
-        loginMessage = tx().badCode
+        loginMessage = networkError(error) ? tx().netFail : tx().badCode
         paint()
         return
       }
       pendingCode = ''
+      resetMessage = ''
       mustResetPassword = true
       loginMode = 'password'
       paint()
@@ -1625,40 +2066,28 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'set-new-password') {
     const password = document.querySelector<HTMLInputElement>('#reset-password')?.value ?? ''
-    if (!supabase || password.length < 6) return
+    if (!supabase) return
+    if (password.length < 6) {
+      resetMessage = tx().shortPassword
+      paint()
+      document.querySelector<HTMLInputElement>('#reset-password')?.focus()
+      return
+    }
     busy = true
     try {
       await updatePassword(password)
       mustResetPassword = false
       recoverySignIn = false
+      resetMessage = ''
+      booting = true
+      paint()
       await refresh(true)
-    } catch {
-      loginMessage = tx().saveFail
+    } catch (error) {
+      resetMessage = networkError(error) ? tx().netFail : tx().saveFail
       paint()
     } finally {
       busy = false
     }
-    return
-  }
-  if (act === 'logout') {
-    hideCelebration()
-    pendingCode = ''
-    loginMessage = ''
-    loginMode = 'password'
-    mustResetPassword = false
-    recoverySignIn = false
-    if (demo) {
-      current = null
-      demo = false
-      calendarDays = 28
-      go('hoy')
-      return
-    }
-    await salir()
-    current = null
-    denied = false
-    calendarDays = 28
-    go('hoy')
     return
   }
   if (!current || locked) return
@@ -1674,13 +2103,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   busy = true
   try {
-    if (act === 'commit') {
-      const date = node.dataset.date ?? ''
-      const day = current.calendar.find((item) => item.date === date)
-      busy = false
-      await setCommitment(date, day ? !day.mine_commitment : true)
-      return
-    }
     if (act === 'save-name') {
       if (!current || locked) return
       const form = node instanceof HTMLFormElement ? node : node.closest('form')
@@ -1747,6 +2169,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         return
       }
       await enviarFeedback(current.me.id, text)
+      clearDraft('feedback')
       feedbackSaved = true
       paint()
       return
@@ -1771,6 +2194,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       }
       if (act === 'save-intention') await editarIntencion(id, text)
       else await editarComentario(id, text)
+      clearDraft(`edit-${act === 'save-intention' ? 'intention' : 'comment'}-${id}`)
       editing = null
       await refresh(false)
       return
@@ -1780,30 +2204,28 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       if (!text) return
       if (!demo) registrarEvento(current.me.id, 'intention_publish', 'muro', {})
       if (demo) {
+        clearDraft('intention')
+        expectFresh = knownIds(current)
         current.intentions.unshift({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, created_at: new Date().toISOString(), comments: [], reactions: [] })
         paint()
         return
       }
       await publicarIntencion(current.me.id, text)
+      clearDraft('intention')
+      expectFresh = knownIds(current)
       await refresh(false)
       return
     }
     if (act === 'delete') {
       const id = node.dataset.id ?? ''
+      if (!id) return
       const open = intentionFromPath(location.pathname) === id || openIntention === id
-      if (demo) {
-        current.intentions = current.intentions.filter((item) => item.id !== id)
-        if (open) backToWall()
-        else paint()
-        return
-      }
-      await borrarIntencion(id)
       if (open) {
         openIntention = ''
         emojiFor = ''
         pushRoute(href('muro'))
       }
-      await refresh(false)
+      scheduleDelete('intention', id)
       return
     }
     if (act === 'thread') {
@@ -1820,6 +2242,8 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       if (demo) {
         const item = current.intentions.find((intention) => intention.id === intentionId)
         if (item) {
+          clearDraft(`comment-${intentionId}`)
+          expectFresh = knownIds(current)
           item.comments.push({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, created_at: new Date().toISOString() })
         }
         openIntention = intentionId
@@ -1827,26 +2251,26 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         return
       }
       await publicarComentario(current.me.id, intentionId, text)
+      clearDraft(`comment-${intentionId}`)
       openIntention = intentionId
+      expectFresh = knownIds(current)
       await refresh(false)
       return
     }
     if (act === 'delete-comment') {
       const id = node.dataset.id ?? ''
-      if (demo) {
-        for (const item of current.intentions) item.comments = item.comments.filter((comment) => comment.id !== id)
-        paint()
-        return
-      }
-      await borrarComentario(id)
-      await refresh(false)
+      if (id) scheduleDelete('comment', id)
       return
     }
     if (act === 'react') {
       const intentionId = node.dataset.id ?? ''
       const emoji = isEmoji(node.dataset.emoji || body)
       if (!emoji) return
-      emojiFor = ''
+      if (emojiFor) {
+        emojiFor = ''
+        emojiQuery = ''
+        popModal('emoji')
+      }
       const item = current.intentions.find((intention) => intention.id === intentionId)
       const mine = item?.reactions.some((reaction) => reaction.emoji === emoji && reaction.mine) ?? false
       if (!demo) registrarEvento(current.me.id, 'reaction_toggle', 'muro', { emoji, on: !mine })
@@ -1865,19 +2289,30 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (act === 'pref') {
       const key = node.dataset.key as 'empty_day' | 'couple'
       const next = !current.prefs[key]
-      if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'alert', key, on: next })
-      if (next && 'Notification' in window && Notification.permission === 'default') {
-        await Notification.requestPermission()
+      notifyNote = ''
+      if (next && !demo) {
+        const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
+        if (!supported) {
+          notifyNote = tx().pushNeedsInstall
+          paint()
+          return
+        }
+        if (Notification.permission === 'default') await Notification.requestPermission()
+        if (Notification.permission !== 'granted') {
+          notifyNote = tx().pushBlocked
+          paint()
+          return
+        }
       }
+      if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'alert', key, on: next })
       if (demo) {
         current.prefs[key] = next
         paint()
         return
       }
+      if (next) await suscribirPush(current.me.id)
       await guardarPreferencias(current.me.id, { ...current.prefs, [key]: next })
-      if (next && 'Notification' in window && Notification.permission === 'granted') {
-        try { await suscribirPush(current.me.id) } catch { /* la preferencia queda aunque el aviso no se registre */ }
-      }
+      pushRenewed = next
       await refresh(false)
     }
   } catch {
@@ -1898,7 +2333,100 @@ window.visualViewport?.addEventListener('resize', syncViewport)
 window.visualViewport?.addEventListener('scroll', syncViewport)
 syncViewport()
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') refreshServiceWorker()
+  if (document.visibilityState === 'visible') {
+    reloadIfUpdated()
+    refreshServiceWorker()
+    maybeRefresh()
+  } else {
+    void flushDelete()
+  }
 })
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) maybeRefresh()
+})
+window.addEventListener('pagehide', () => { void flushDelete() })
+window.addEventListener('online', () => maybeRefresh(true))
+// Si la app sigue abierta a medianoche, el día cambia sin esperar a un toque.
+window.setInterval(() => {
+  if (document.visibilityState === 'visible' && staleDay()) maybeRefresh(true)
+}, 30_000)
+
+function toastNode() {
+  let node = document.querySelector<HTMLElement>('#toast')
+  if (!node) {
+    node = document.createElement('div')
+    node.id = 'toast'
+    node.setAttribute('role', 'status')
+    node.setAttribute('aria-live', 'polite')
+    node.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('[data-act="undo-delete"]')) undoDelete()
+    })
+    document.body.appendChild(node)
+  }
+  return node
+}
+
+function showToast(text: string) {
+  const node = toastNode()
+  node.innerHTML = `<div class="toast-inner" data-testid="toast"><span>${esc(text)}</span><button type="button" data-act="undo-delete">${esc(tx().undo)}</button></div>`
+  node.classList.remove('show')
+  void node.offsetWidth
+  node.classList.add('show')
+}
+
+function hideToast() {
+  const node = document.querySelector<HTMLElement>('#toast')
+  if (!node) return
+  node.classList.remove('show')
+  window.setTimeout(() => {
+    if (!node.classList.contains('show')) node.innerHTML = ''
+  }, 240)
+}
+
+// Borrar espera cinco segundos con "Deshacer" a mano antes de ir a la base.
+function scheduleDelete(kind: 'intention' | 'comment', id: string) {
+  void flushDelete()
+  hiddenIds.add(id)
+  editing = null
+  pendingDelete = { kind, id, timer: window.setTimeout(() => void flushDelete(), 5000) }
+  paint()
+  showToast(kind === 'intention' ? tx().deletedIntention : tx().deletedComment)
+}
+
+function undoDelete() {
+  const item = pendingDelete
+  if (!item) return
+  pendingDelete = null
+  window.clearTimeout(item.timer)
+  hiddenIds.delete(item.id)
+  hideToast()
+  paint()
+}
+
+async function flushDelete() {
+  const item = pendingDelete
+  if (!item) return
+  pendingDelete = null
+  window.clearTimeout(item.timer)
+  hideToast()
+  if (demo || !current) {
+    if (current) {
+      if (item.kind === 'intention') current.intentions = current.intentions.filter((entry) => entry.id !== item.id)
+      else for (const entry of current.intentions) entry.comments = entry.comments.filter((comment) => comment.id !== item.id)
+    }
+    hiddenIds.delete(item.id)
+    return
+  }
+  try {
+    if (item.kind === 'intention') await borrarIntencion(item.id)
+    else await borrarComentario(item.id)
+    await refresh(false)
+    hiddenIds.delete(item.id)
+  } catch {
+    hiddenIds.delete(item.id)
+    offline = tx().saveFail
+    paint()
+  }
+}
 
 void boot()

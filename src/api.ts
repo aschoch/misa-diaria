@@ -4,10 +4,12 @@ import type { Estado } from './types'
 const PRODUCTION_URL = 'https://kryarzipdpvceocidgyw.supabase.co'
 const PRODUCTION_KEY = 'sb_publishable_C-xlRIF09NLWIi9Sf-7kdA__ZTp6f_z'
 
-const url = import.meta.env.VITE_SUPABASE_URL || PRODUCTION_URL
+// En pruebas nunca se cae a producción por olvidar una variable.
+const e2e = import.meta.env.VITE_E2E === 'true'
+const url = import.meta.env.VITE_SUPABASE_URL || (e2e ? '' : PRODUCTION_URL)
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
   || import.meta.env.VITE_SUPABASE_ANON_KEY
-  || PRODUCTION_KEY
+  || (e2e ? '' : PRODUCTION_KEY)
 
 export const configured = Boolean(url && key)
 
@@ -29,10 +31,15 @@ export async function estado(): Promise<Estado> {
   return data as Estado
 }
 
+// Ya estaba (otro dispositivo, otro toque): para quien toca, eso es éxito.
+function duplicate(error: { code?: string } | null) {
+  return error?.code === '23505'
+}
+
 export async function marcarAsistencia(memberId: string, date: string, on: boolean) {
   if (on) {
     const { error } = await supabase!.from('attendance').insert({ member_id: memberId, mass_date: date })
-    if (error) throw error
+    if (error && !duplicate(error)) throw error
     return
   }
   const { error } = await supabase!.from('attendance').delete().eq('member_id', memberId).eq('mass_date', date)
@@ -42,7 +49,7 @@ export async function marcarAsistencia(memberId: string, date: string, on: boole
 export async function marcarCompromiso(memberId: string, date: string, on: boolean) {
   if (on) {
     const { error } = await supabase!.from('commitments').insert({ member_id: memberId, mass_date: date })
-    if (error) throw error
+    if (error && !duplicate(error)) throw error
     return
   }
   const { error } = await supabase!.from('commitments').delete().eq('member_id', memberId).eq('mass_date', date)
@@ -94,7 +101,7 @@ export async function ponerReaccion(memberId: string, intentionId: string, emoji
     intention_id: intentionId,
     emoji,
   })
-  if (error) throw error
+  if (error && !duplicate(error)) throw error
 }
 
 export async function quitarReaccion(memberId: string, intentionId: string, emoji: string) {
@@ -194,16 +201,20 @@ export function registrarEvento(memberId: string, eventName: string, route: stri
 }
 
 export async function salir() {
-  const { data } = await supabase!.auth.getSession()
-  const userId = data.session?.user.id
-  if (userId && 'serviceWorker' in navigator) {
-    const registration = await navigator.serviceWorker.getRegistration()
-    const subscription = await registration?.pushManager.getSubscription()
-    if (subscription) {
-      await supabase!.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint)
-      await subscription.unsubscribe()
+  try {
+    const { data } = await supabase!.auth.getSession()
+    const userId = data.session?.user.id
+    if (userId && 'serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration()
+      const subscription = await registration?.pushManager?.getSubscription()
+      if (subscription) {
+        await supabase!.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint)
+        await subscription.unsubscribe()
+      }
     }
-  }
-  sessionStorage.removeItem('misa-estado')
-  await supabase!.auth.signOut()
+  } catch { /* sin conexión: el aviso de este teléfono se limpiará cuando falle el envío */ }
+  try { localStorage.removeItem('misa-estado') } catch { /* nada guardado */ }
+  try { sessionStorage.removeItem('misa-estado') } catch { /* nada guardado */ }
+  const { error } = await supabase!.auth.signOut()
+  if (error) await supabase!.auth.signOut({ scope: 'local' })
 }

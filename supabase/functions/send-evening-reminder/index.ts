@@ -16,7 +16,7 @@ const send = async (
   try {
     await webpush.sendNotification(
       { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_secret } },
-      JSON.stringify({ title, body }),
+      JSON.stringify({ title, body, lang: title === 'Missa diária' ? 'pt-PT' : 'es' }),
       { TTL: 60 * 60 * 4 },
     )
     return { status: 201 }

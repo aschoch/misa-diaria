@@ -1,7 +1,10 @@
 name: Publicar
 
+# Solo publica lo que ha pasado las pruebas en main.
 on:
-  push:
+  workflow_run:
+    workflows: [Pruebas]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -16,12 +19,16 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22

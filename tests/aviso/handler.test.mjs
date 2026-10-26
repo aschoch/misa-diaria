@@ -164,3 +164,18 @@ test('el cliente vivo solo habla con la base, no con un push real', async () => 
     globalThis.fetch = original
   }
 })
+
+test('si falla tras reclamar, suelta el registro para reintentar', async () => {
+  const box = deps({
+    subscriptions: async () => { throw new Error('la base no responde') },
+  })
+  const response = await handleReminder(post(), box)
+  assert.equal(response.status, 200)
+  assert.ok(box.calls.includes('release'))
+})
+
+test('un secreto con el mismo inicio pero más largo no vale', async () => {
+  const box = deps()
+  const response = await handleReminder(post('reloj-de-prueba-extra'), box)
+  assert.equal(response.status, 401)
+})

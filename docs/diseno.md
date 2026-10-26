@@ -177,7 +177,7 @@ Quien lo pide en el sistema no ve el recorrido ni el giro. Ve este mismo fotogra
 
 Dentro de la app el riesgo no se apaga: es la línea de Hoy y el día marcado en el calendario.
 
-En el móvil, solo si tú enciendes el aviso, y viene apagado. El sistema no pregunta al abrir. Pregunta cuando el interruptor pasa de no a sí. Como mucho un aviso al día, la tarde anterior, de lunes a sábado, y solo si mañana no hay nadie cubierto. No nombra a un matrimonio ni a una persona. El domingo no se avisa. La línea de hoy no añade un aviso de buena mañana.
+En el móvil, solo si tú enciendes el aviso, y viene apagado. El sistema no pregunta al abrir. Pregunta cuando el interruptor pasa de no a sí. Como mucho un aviso al día, la tarde anterior, cualquier día de la semana, y solo si mañana no hay nadie cubierto. No nombra a un matrimonio ni a una persona. La línea de hoy no añade un aviso de buena mañana.
 
 **Resumen del lunes: sí, una línea.** Solo el lunes, debajo del contador y encima de los seis días, en color suave. Tres cifras, sin tarjeta y sin correo: «La semana: 9 de 12 · 5 de 6 matrimonios · 0 días en cero.»
 

@@ -1,5 +1,5 @@
 -- El aviso de la tarde sale cualquier día, también sábado y domingo.
--- Este archivo todavía no está aplicado en producción. Lo aplicará quien lleva la base.
+-- Ya aplicada en producción el 26-10-2026. Este archivo solo la deja registrada; no volver a ejecutarla allí.
 -- No cambia dia_en_riesgo: el domingo del calendario sigue sin estar en riesgo.
 
 create or replace function public.aviso_tarde(p_now timestamptz default public.app_now())
