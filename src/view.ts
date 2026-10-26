@@ -30,6 +30,10 @@ export function hapticOverlay(id?: string) {
   return `<label class="haptic-overlay" data-haptic-trigger aria-hidden="true"><input${attr} type="checkbox" switch data-haptic-switch tabindex="-1" aria-hidden="true" /></label>`
 }
 
+export function swipeHapticInput(extraAttr = '') {
+  return `<input type="checkbox" class="row-swipe-haptic" data-row-haptic${extraAttr ? ` ${extraAttr}` : ''} ontouchstart="" tabindex="-1" aria-hidden="true" />`
+}
+
 const titles = {
   hoy: 'hoy',
   calendario: 'calendario',
@@ -302,15 +306,19 @@ export function historyDetail(state: Estado, date: string, locked: boolean) {
   const mine = row?.mine_attendance ?? past?.mine_attendance ?? today?.mine_attendance ?? false
   const f = fecha(date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
-  const toggle = inWindow(state.today, date)
-    ? `<button type="button" class="texty" data-act="attend" data-date="${date}" ${locked ? 'disabled' : ''}>${mine ? copy.gone : copy.go}${hapticOverlay()}</button>`
-    : ''
+  const marks = dayMarks({ went, mine_attendance: mine, couples_went: couples })
+  const control = inWindow(state.today, date)
+    ? `<div class="history-seg" role="group">
+        <button type="button" class="${mine ? '' : 'on absent'}" data-act="attend-set" data-date="${date}" data-on="false" aria-pressed="${mine ? 'false' : 'true'}" ${locked ? 'disabled' : ''}>${copy.absentChoice}${hapticOverlay()}</button>
+        <button type="button" class="${mine ? 'on attended' : ''}" data-act="attend-set" data-date="${date}" data-on="true" aria-pressed="${mine ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>${copy.attendedChoice}${hapticOverlay()}</button>
+      </div>`
+    : `<p class="history-status ${mine ? 'on' : ''}">${mine ? `✓ ${copy.wentLabel}` : copy.absentLabel}</p>`
   return `<aside class="history-detail" data-testid="history-detail">
-    <h3>${heading}</h3>
-    <p>${mine ? copy.wentLabel : copy.absentLabel}</p>
-    <p>${copy.of12(went)}</p>
-    ${dayMarks({ went, mine_attendance: mine, couples_went: couples })}
-    ${toggle}
+    <div class="history-detail-head">
+      <h3>${heading}</h3>
+      <div class="history-detail-meta"><span>${copy.of12(went)}</span>${marks}</div>
+    </div>
+    ${control}
   </aside>`
 }
 
@@ -413,13 +421,14 @@ function dayRow(day: Day, selected: string, locked: boolean) {
       <span class="swipe-under right"><span class="swipe-cue" data-cue="→" aria-hidden="true">→</span></span>
       <span class="swipe-under left"><span class="swipe-cue" data-cue="←" aria-hidden="true">←</span></span>
       <div class="swipe-face">
+        ${swipeHapticInput('data-face-haptic')}
         <button type="button" class="select-day" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
           <span class="num ${mine}">${f.d}</span>
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
-          ${hapticOverlay()}
+          ${swipeHapticInput()}
         </button>
-        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${hapticOverlay()}</button>
-        <span class="meta">${dayMeta(day)}${hapticOverlay()}</span>
+        <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${swipeHapticInput('data-commit-haptic')}</button>
+        <span class="meta">${dayMeta(day)}${swipeHapticInput()}</span>
       </div>
     </li>`
 }
