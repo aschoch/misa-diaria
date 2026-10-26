@@ -1668,16 +1668,6 @@ input.row-swipe-haptic {
   transform-origin: 50% 70%;
 }
 .total-label { color: var(--suave); font-size: 15px; }
-.week-note {
-  margin: 10px 0 0;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: var(--papel);
-  border: 1px solid var(--linea);
-  color: var(--suave);
-  font-size: 14px;
-  line-height: 1.4;
-}
 .total-num.bump { animation: total-bump 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 .total-num.dip { animation: total-dip 360ms ease-out; }
 @keyframes total-bump {

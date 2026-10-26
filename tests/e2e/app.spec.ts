@@ -1871,11 +1871,36 @@ test('en el mes los días futuros no se tocan; Escape y Atrás cierran', async (
   await expect(page).toHaveURL(/\/misa-diaria\/?$/)
 })
 
-test('el lunes sale el resumen de la semana bajo el total', async ({ page }) => {
+test('el lunes no sale el resumen de la semana', async ({ page }) => {
   await reset('2026-10-26T10:00:00Z')
   await login(page, 'persona1@example.com')
-  await expect(page.getByTestId('monday')).toContainText('La semana pasada')
-  await expect(page.getByTestId('total').getByTestId('monday')).toBeVisible()
+  await expect(page.getByTestId('total')).toBeVisible()
+  await expect(page.getByTestId('monday')).toHaveCount(0)
+  await expect(page.getByText(/La semana pasada/)).toHaveCount(0)
+})
+
+test('cambiar de pestaña llega arriba al instante; la misma pestaña sube con animación', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  await page.evaluate(() => { document.body.style.minHeight = '2400px' })
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
+  await page.locator('nav.tabs a[data-nav="calendario"]').click()
+  expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  await page.evaluate(() => window.scrollTo(0, 600))
+  const start = await page.evaluate(() => window.scrollY)
+  expect(start).toBeGreaterThan(200)
+  const samples = await page.evaluate(() => new Promise<number[]>((resolve) => {
+    const seen: number[] = []
+    document.querySelector<HTMLElement>('nav.tabs a[data-nav="calendario"]')!.click()
+    const tick = () => {
+      seen.push(window.scrollY)
+      if (seen.length < 30) requestAnimationFrame(tick)
+      else resolve(seen)
+    }
+    requestAnimationFrame(tick)
+  }))
+  expect(samples.some((y) => y > 0 && y < start)).toBe(true)
+  expect(samples.at(-1)).toBe(0)
 })
 
 test('en pantalla pequeña el popup del mes cabe entero y nada se sale de lado', async ({ page }) => {
@@ -1896,4 +1921,25 @@ test('en pantalla pequeña el popup del mes cabe entero y nada se sale de lado',
     await page.getByRole('link', { name: route }).click()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
+})
+
+test('«Voy a ir» vibra con un toque real: lleva su capa con switch y apunta una sola vez', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  const date = await page.locator('.row-commit[aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
+  const pill = page.locator(`.row-commit[data-date="${date}"]`)
+  const overlay = pill.locator('label.haptic-overlay[data-haptic-trigger] input[type="checkbox"][switch]')
+  await expect(overlay).toHaveCount(1)
+  // El dedo cae sobre la etiqueta, no sobre el texto: así iOS 26.5 cuenta el toque como real.
+  const hit = await pill.evaluate((node) => {
+    const box = node.getBoundingClientRect()
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return top?.classList.contains('haptic-overlay') ?? false
+  })
+  expect(hit).toBe(true)
+  await pill.click()
+  await expect(pill).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(400)
+  await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
 })
