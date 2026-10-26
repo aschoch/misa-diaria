@@ -77,6 +77,29 @@ const SWIPE_CONFIRM_PX = 88
 const SWIPE_DETENTS = [32, 60]
 type SwitchRelease = { input: HTMLInputElement; kind: 'commit' | 'silent' | 'tap'; x: number; y: number; run?: () => void; done: boolean }
 let switchRelease: SwitchRelease | null = null
+// Diagnóstico del swipe con vibración (solo con la opción encendida): un registro por gesto
+// en usage_events para ver en el iPhone real qué eventos llegan y en qué orden.
+let swipeTrace: { t0: number; log: string[]; pm: number; tm: number; ticks: number; data: Record<string, unknown> } | null = null
+let swipeTraceSent = 0
+
+function traceSwipe(step: string) {
+  if (!swipeTrace || swipeTrace.log.length > 40) return
+  swipeTrace.log.push(`${step}@${Math.round(performance.now() - swipeTrace.t0)}`)
+}
+
+function sendSwipeTrace() {
+  const trace = swipeTrace
+  swipeTrace = null
+  if (!trace || !current || demo || swipeTraceSent >= 40) return
+  swipeTraceSent += 1
+  registrarEvento(current.me.id, 'swipe_debug', 'calendario', {
+    ...trace.data,
+    pm: trace.pm,
+    tm: trace.tm,
+    ticks: trace.ticks,
+    log: trace.log.join(' ').slice(0, 900),
+  })
+}
 let suppressRowClick = false
 let rowCommitClick = false
 let streakClosing = false
@@ -923,10 +946,7 @@ function resetRow(row: HTMLElement | null) {
   if (!row) return
   row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
   resetSwitch(row.querySelector<HTMLInputElement>('input[data-row-switch]'))
-  for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
-    cue.textContent = cue.dataset.cue ?? ''
-    cue.classList.remove('tick')
-  }
+  for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) cue.textContent = cue.dataset.cue ?? ''
   const face = row.querySelector<HTMLElement>('.swipe-face')
   blurRow(row)
   if (!face) return
@@ -944,6 +964,7 @@ function trackRow(event: PointerEvent) {
   if (gesture.lockedAxis !== 'x') {
     if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       gesture.lockedAxis = 'x'
+      if (gesture.rowSwitch) traceSwipe('lockx')
       const cap = gesture.rowSwitch ?? gesture.hapticInput ?? gesture.haptic
       if (cap) {
         try { cap.setPointerCapture(event.pointerId) } catch { /* el dedo sigue sobre la etiqueta */ }
@@ -981,12 +1002,6 @@ function trackRow(event: PointerEvent) {
       gesture.detents = index + 1
       ticks += 1
       navigator.vibrate?.(6)
-      const cue = row.querySelector<HTMLElement>(committed ? '.swipe-under.left .swipe-cue' : '.swipe-under.right .swipe-cue')
-      if (cue) {
-        cue.classList.remove('tick')
-        void cue.offsetWidth
-        cue.classList.add('tick')
-      }
     }
   }
   if (willCommit !== wasArmed) ticks += 1
@@ -997,6 +1012,10 @@ function trackRow(event: PointerEvent) {
     navigator.vibrate?.(8)
   }
   gesture.ticks += ticks
+  if (swipeTrace && gesture.rowSwitch) {
+    swipeTrace.ticks = gesture.ticks
+    if (ticks) traceSwipe(`tick${gesture.ticks}:${Math.round(progress)}`)
+  }
   // Cada tope cambia de lado el switch bajo el dedo: WebKit vibra en ese cruce.
   if (gesture.rowSwitch) placeSwitch(gesture.rowSwitch, row, event.clientX, gesture.ticks % 2 === 1)
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
@@ -1110,6 +1129,27 @@ app.addEventListener('pointerdown', (event) => {
   stopMomentum()
   if (target.closest('input:not([data-haptic-switch]):not([data-row-haptic]):not([data-row-switch]), textarea, select, [contenteditable="true"]')) return
   const rowSwitch = target instanceof HTMLInputElement && target.hasAttribute('data-row-switch') ? target : null
+  if (rowSwitch) {
+    if (swipeTrace) sendSwipeTrace()
+    const style = getComputedStyle(rowSwitch)
+    swipeTrace = {
+      t0: performance.now(),
+      log: [],
+      pm: 0,
+      tm: 0,
+      ticks: 0,
+      data: {
+        ios: /OS (\d+[_\d]*)/.exec(navigator.userAgent)?.[1] ?? '',
+        standalone: Boolean((navigator as Navigator & { standalone?: boolean }).standalone),
+        attr: rowSwitch.hasAttribute('switch'),
+        prop: (rowSwitch as HTMLInputElement & { switch?: boolean }).switch ?? null,
+        appearance: style.appearance || style.getPropertyValue('-webkit-appearance'),
+        w: Math.round(rowSwitch.getBoundingClientRect().width),
+        type: event.pointerType,
+      },
+    }
+    traceSwipe('pd')
+  }
   const month = Boolean(target.closest('.month-scroll'))
   const rowNode = target.closest('.days li.swipeable')
   const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
@@ -1208,6 +1248,16 @@ function driveSwitchScroll(event: PointerEvent) {
 
 let rowTouch: { x: number; y: number } | null = null
 let swipeHaptic = false
+document.addEventListener('touchstart', (event) => {
+  const target = event.target
+  if (swipeTrace && target instanceof HTMLInputElement && target.hasAttribute('data-row-switch')) {
+    traceSwipe(`ts${event.targetTouches.length}${target.hasAttribute('switch') ? 's' : ''}`)
+  }
+}, { capture: true, passive: true })
+document.addEventListener('touchmove', () => {
+  if (swipeTrace) swipeTrace.tm += 1
+}, { capture: true, passive: true })
+
 app.addEventListener('touchstart', (event) => {
   const touch = event.changedTouches?.[0]
   rowTouch = touch ? { x: touch.clientX, y: touch.clientY } : null
@@ -1226,6 +1276,7 @@ app.addEventListener('touchend', (event) => {
   const kind = pending?.kind ?? (gesture?.rowSwitch && touch ? classifySwitch(gesture, touch.clientX, touch.clientY) : null)
   const input = pending?.input ?? gesture?.rowSwitch ?? null
   if (kind && input) {
+    traceSwipe(`te:${kind}${pending ? '' : ':first'}`)
     if (kind !== 'tap') ignoreSwitchClickUntil = performance.now() + 400
     if (kind === 'silent') input.removeAttribute('switch')
     window.setTimeout(finishRelease, 0)
@@ -1273,6 +1324,7 @@ app.addEventListener('pointermove', (event) => {
     followPopup(dy)
     return
   }
+  if (swipeTrace && gesture.rowSwitch) swipeTrace.pm += 1
   trackRow(event)
   driveSwitchScroll(event)
 })
@@ -1311,6 +1363,8 @@ app.addEventListener('pointerup', (event) => {
   const touch = event.pointerType === 'touch'
   if (start.rowSwitch) {
     const kind = classifySwitch(start, event.clientX, event.clientY)
+    traceSwipe(`pu:${kind}:${Math.round(dx)}:${start.lockedAxis || '-'}`)
+    window.setTimeout(sendSwipeTrace, 900)
     if (start.row && start.lockedAxis === 'x') {
       const date = start.row.dataset.date ?? ''
       suppressRowClick = true
@@ -1380,6 +1434,10 @@ app.addEventListener('pointercancel', (event) => {
     return
   }
   if (gesture?.id !== event.pointerId) return
+  if (gesture.rowSwitch) {
+    traceSwipe('pcancel')
+    window.setTimeout(sendSwipeTrace, 900)
+  }
   const row = gesture.row
   const pop = gesture.pop
   gesture = null
@@ -1456,6 +1514,11 @@ window.addEventListener('scroll', () => {
   })
 }, { passive: true })
 
+app.addEventListener('change', (event) => {
+  const node = event.target
+  if (node instanceof HTMLInputElement && node.hasAttribute('data-row-switch')) traceSwipe(`change:${node.checked ? 'on' : 'off'}`)
+})
+
 app.addEventListener('input', (event) => {
   const node = event.target
   if (node instanceof HTMLTextAreaElement) {
@@ -1500,6 +1563,7 @@ app.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
     const input = event.target
+    traceSwipe(`click:${input.checked ? 'on' : 'off'}:${event.isTrusted ? 't' : 'u'}`)
     const release = switchRelease
     if (release?.kind === 'tap' && release.input === input) {
       switchRelease = null
@@ -1512,6 +1576,17 @@ app.addEventListener('click', (event) => {
   }
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-haptic-switch')) {
     event.stopPropagation()
+    // Con el diagnóstico encendido, cada toque deja si el switch cambió de verdad (isTrusted).
+    if (swipeSwitchOn() && current && !demo && swipeTraceSent < 40) {
+      swipeTraceSent += 1
+      const owner = event.target.closest<HTMLElement>('[data-act]')
+      registrarEvento(current.me.id, 'tap_debug', routeFromPath(location.pathname), {
+        act: owner?.dataset.act ?? '',
+        trusted: event.isTrusted,
+        checked: event.target.checked,
+        ios: /OS (\d+[_\d]*)/.exec(navigator.userAgent)?.[1] ?? '',
+      })
+    }
     return
   }
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-row-haptic')) {

@@ -2,7 +2,8 @@
 -- los últimos 7. El futuro sigue cerrado. El suelo de 2020 solo evita fechas
 -- absurdas por error. Las celebraciones siguen mirando los últimos 7 días, así
 -- que corregir un día viejo no lanza fiestas antiguas.
--- Todavía no está aplicada en producción. Lo aplicará quien lleva la base.
+-- Ya aplicada en producción el 26-10-2026 (supabase/snippets/produccion-2026-10-26-asistencia.sql).
+-- Este archivo solo la deja registrada; no volver a ejecutarla allí.
 
 drop policy if exists attendance_insert on public.attendance;
 create policy attendance_insert on public.attendance

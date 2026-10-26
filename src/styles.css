@@ -1759,10 +1759,11 @@ main.route-enter { animation: route-in 200ms ease-out; }
 
 /* ── Calendario: el número se cierra con un pulso al apuntarte ── */
 .num.pulse { animation: num-pulse 560ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+/* Solo escala: un anillo de sombra quedaría recortado por el botón del día (se veía un cuadrado). */
 @keyframes num-pulse {
-  0% { transform: scale(0.82); box-shadow: 0 0 0 0 color-mix(in srgb, var(--olivo) 50%, transparent); }
-  55% { transform: scale(1.08); }
-  100% { transform: scale(1); box-shadow: 0 0 0 10px color-mix(in srgb, var(--olivo) 0%, transparent); }
+  0% { transform: scale(0.82); }
+  55% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 
 /* ── Lo nuevo en Intenciones entra suave ── */
@@ -1852,13 +1853,3 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Cada tope del arrastre da un pequeño latido a la flecha. */
-.days li .swipe-cue.tick { animation: cue-tick 180ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes cue-tick {
-  0% { transform: scale(1); }
-  45% { transform: scale(1.28); }
-  100% { transform: scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .days li .swipe-cue.tick { animation: none; }
-}
