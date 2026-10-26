@@ -1646,10 +1646,22 @@ test('el popup del mes elige si fuiste con dos botones', async ({ page }) => {
   await expect(second).toHaveAttribute('aria-pressed', 'true')
   const after = await scroller.evaluate((node) => node.scrollTop)
   expect(Math.abs(after - top)).toBeLessThan(8)
+  // Los días viejos también se corrigen, aunque ese día no fuera nadie.
   await scroller.locator('[data-act="history-day"][data-date="2026-10-12"]').click()
   await expect(detail).toContainText('12 de octubre')
-  await expect(detail.locator('.history-seg')).toHaveCount(0)
-  await expect(detail.locator('.history-status')).toHaveCount(1)
+  await expect(detail.locator('.history-seg')).toHaveCount(1)
+  await expect(detail.locator('.history-status')).toHaveCount(0)
+  const oldDay = scroller.locator('[data-act="history-day"][data-date="2026-09-03"]')
+  await oldDay.scrollIntoViewIfNeeded()
+  await oldDay.click()
+  await expect(detail).toContainText('3 de septiembre')
+  const oldAttended = detail.locator('.history-seg [data-act="attend-set"][data-on="true"]')
+  await expect(oldAttended).toHaveAttribute('aria-pressed', 'false')
+  await oldAttended.click()
+  await expect(oldAttended).toHaveAttribute('aria-pressed', 'true')
+  await expect(oldDay.locator('.dot.mine')).toHaveCount(1)
+  await page.waitForTimeout(600)
+  await expect(detail.locator('.history-seg [data-act="attend-set"][data-on="true"]')).toHaveAttribute('aria-pressed', 'true')
   expect(errors).toEqual([])
 })
 
@@ -1942,4 +1954,69 @@ test('«Voy a ir» vibra con un toque real: lleva su capa con switch y apunta un
   await expect(pill).toHaveAttribute('aria-pressed', 'true')
   await page.waitForTimeout(400)
   await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('con la vibración al deslizar, el switch marca los topes, el toque llega al botón y el scroll sigue', async ({ page, viewport }) => {
+  // Solo existe en teléfonos (iPhone); en escritorio no se pinta el switch.
+  test.skip((viewport?.width ?? 0) > 600)
+  await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  await expect(page.locator('[data-testid="calendar"] li input[data-row-switch]').first()).toBeAttached()
+
+  // Un toque quieto sobre «Voy a ir» cae en el switch y se reenvía al botón.
+  const dates = await page.locator('.row-commit[aria-pressed="false"]').evaluateAll((nodes) => nodes.slice(1, 3).map((node) => (node as HTMLElement).dataset.date ?? ''))
+  const tapPill = page.locator(`.row-commit[data-date="${dates[0]}"]`)
+  const pillBox = await tapPill.boundingBox()
+  if (!pillBox) throw new Error('sin píldora')
+  await page.mouse.click(pillBox.x + pillBox.width / 2, pillBox.y + pillBox.height / 2)
+  await expect(tapPill).toHaveAttribute('aria-pressed', 'true')
+  // Deja que llegue el estado del servidor antes de arrastrar (la lista se repinta).
+  await page.waitForTimeout(600)
+
+  // Arrastrar: el switch salta de lado en cada tope (32, 60) y al cruzar el umbral (88).
+  const row = page.locator(`[data-testid="calendar"] li[data-date="${dates[1]}"]`)
+  await row.scrollIntoViewIfNeeded()
+  const box = await row.boundingBox()
+  if (!box) throw new Error('sin fila')
+  const startX = box.x + 60
+  const y = box.y + box.height / 2
+  const side = (fingerX: number) => row.evaluate((li, finger) => {
+    const input = li.querySelector<HTMLInputElement>('input[data-row-switch]')!
+    const rect = input.getBoundingClientRect()
+    return finger - rect.left > rect.width / 2 ? 'on' : 'off'
+  }, fingerX)
+  await page.mouse.move(startX, y)
+  await page.mouse.down()
+  await page.mouse.move(startX + 20, y, { steps: 4 })
+  expect(await side(startX + 20)).toBe('off')
+  await page.mouse.move(startX + 40, y, { steps: 3 })
+  expect(await side(startX + 40)).toBe('on')
+  await page.mouse.move(startX + 70, y, { steps: 3 })
+  expect(await side(startX + 70)).toBe('off')
+  await page.mouse.move(startX + 100, y, { steps: 3 })
+  await expect(row).toHaveClass(/swipe-armed/)
+  expect(await side(startX + 100)).toBe('on')
+  await page.mouse.move(startX + 70, y, { steps: 3 })
+  await expect(row).not.toHaveClass(/swipe-armed/)
+  expect(await side(startX + 70)).toBe('off')
+  await page.mouse.move(startX + 110, y, { steps: 3 })
+  expect(await side(startX + 110)).toBe('on')
+  await page.mouse.up()
+  await expect(page.locator(`.row-commit[data-date="${dates[1]}"]`)).toHaveAttribute('aria-pressed', 'true')
+
+  // Arrastrar en vertical sobre una fila mueve la lista (scroll hecho por la app).
+  await expect(page.locator(`.row-commit[data-date="${dates[1]}"]`)).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(700)
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const fifth = page.locator('[data-testid="calendar"] li').nth(4)
+  await expect.poll(async () => Boolean(await fifth.boundingBox())).toBe(true)
+  const list = await fifth.boundingBox()
+  if (!list) throw new Error('sin lista')
+  await page.mouse.move(list.x + 200, list.y + 30)
+  await page.mouse.down()
+  await page.mouse.move(list.x + 200, list.y - 170, { steps: 10 })
+  await page.mouse.up()
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(120)
 })

@@ -1,6 +1,7 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
 import { esc, fecha, formatTimestamp, fullDate } from './format'
+import { swipeSwitchOn, swipeSwitchSupported } from './haptics'
 import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
 export type StreakMode = '' | 'individual' | 'couple' | 'group' | 'six' | 'all'
@@ -264,8 +265,9 @@ function streakCount(state: Estado, mode: StreakMode) {
   return state.streaks.total
 }
 
+// Cualquier día pasado (y hoy) se puede corregir; el futuro no.
 function inWindow(today: string, date: string) {
-  return date <= today && date >= shiftDate(today, -6)
+  return date <= today
 }
 
 function monthBlock(state: Estado, year: number, month: number, mode: StreakMode, run: Set<string>, current: boolean, selected = '') {
@@ -434,6 +436,7 @@ function dayRow(day: Day, selected: string, locked: boolean, pulse = '') {
         <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${hapticOverlay()}</button>
         <span class="meta">${dayMeta(day)}${swipeHapticInput()}</span>
       </div>
+      ${swipeSwitchOn() ? '<input type="checkbox" switch class="row-drag-switch" data-row-switch tabindex="-1" aria-hidden="true" />' : ''}
     </li>`
 }
 
@@ -744,6 +747,10 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
           <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
             <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
           </button>
+          ${swipeSwitchSupported() || swipeSwitchOn() ? `<button type="button" class="switch" role="switch" aria-checked="${swipeSwitchOn()}" data-act="swipe-haptic" data-testid="swipe-haptic">
+            <span>${copy.swipeHaptic}</span><i></i>${hapticOverlay()}
+          </button>
+          <p class="notify-note">${copy.swipeHapticNote}</p>` : ''}
         </div>
       </section>
       <section class="settings-card">

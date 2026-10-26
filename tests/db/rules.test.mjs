@@ -318,8 +318,12 @@ async function main() {
     await asUser(P(1), async () => {
       await q(`insert into public.attendance (member_id, mass_date) values ($1, '2026-10-23')`, [P(1)])
       await q(`insert into public.attendance (member_id, mass_date) values ($1, '2026-10-17')`, [P(1)])
+      // Cualquier día pasado se puede corregir; el futuro y las fechas absurdas no.
+      await q(`insert into public.attendance (member_id, mass_date) values ($1, '2026-10-16')`, [P(1)])
+      await q(`insert into public.attendance (member_id, mass_date) values ($1, '2025-03-02')`, [P(1)])
+      await q(`delete from public.attendance where member_id = $1 and mass_date = '2025-03-02'`, [P(1)])
       await expectFail(() => q(
-        `insert into public.attendance (member_id, mass_date) values ($1, '2026-10-16')`,
+        `insert into public.attendance (member_id, mass_date) values ($1, '2019-12-31')`,
         [P(1)],
       ))
       await expectFail(() => q(

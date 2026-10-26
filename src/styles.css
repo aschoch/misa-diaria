@@ -1834,3 +1834,31 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
   .num.pulse, .notes article.fresh, .comments li.fresh, .top.splash .brand-icon { animation: none; }
   .composer textarea, #toast { transition: none; }
 }
+
+/* ── Switch invisible bajo el dedo para vibrar al deslizar (iPhone, opción en Ajustes) ── */
+.days li.swipeable > input.row-drag-switch {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 1000px;
+  height: 100%;
+  z-index: 5;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Cada tope del arrastre da un pequeño latido a la flecha. */
+.days li .swipe-cue.tick { animation: cue-tick 180ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes cue-tick {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .days li .swipe-cue.tick { animation: none; }
+}

@@ -5,6 +5,7 @@ import './styles.css'
 import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { loadEmojis } from './emoji'
+import { placeSwitch, resetSwitch, setSwipeSwitch, startMomentum, stopMomentum, swipeSwitchOn } from './haptics'
 import { esc } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
@@ -66,8 +67,16 @@ let gesture: {
   month: boolean
   haptic: HTMLLabelElement | null
   hapticInput: HTMLInputElement | null
+  rowSwitch: HTMLInputElement | null
+  scrolling: { lastY: number; samples: { t: number; y: number }[] } | null
+  ticks: number
+  detents: number
 } | null = null
 const SWIPE_CONFIRM_PX = 88
+// Dos topes suaves antes del umbral: el dedo nota que la fila avanza.
+const SWIPE_DETENTS = [32, 60]
+type SwitchRelease = { input: HTMLInputElement; kind: 'commit' | 'silent' | 'tap'; x: number; y: number; run?: () => void; done: boolean }
+let switchRelease: SwitchRelease | null = null
 let suppressRowClick = false
 let rowCommitClick = false
 let streakClosing = false
@@ -631,6 +640,7 @@ function closePasswordScreen() {
 }
 
 function pushRoute(pathname: string) {
+  stopMomentum()
   const next = `${pathname}${location.search}`
   if (`${location.pathname}${location.search}` === next) return
   history.pushState({}, '', next)
@@ -912,7 +922,11 @@ function blurRow(row: HTMLElement | null) {
 function resetRow(row: HTMLElement | null) {
   if (!row) return
   row.classList.remove('dragging', 'swiping-right', 'swiping-left', 'swiping-muted', 'swipe-armed')
-  for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) cue.textContent = cue.dataset.cue ?? ''
+  resetSwitch(row.querySelector<HTMLInputElement>('input[data-row-switch]'))
+  for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
+    cue.textContent = cue.dataset.cue ?? ''
+    cue.classList.remove('tick')
+  }
   const face = row.querySelector<HTMLElement>('.swipe-face')
   blurRow(row)
   if (!face) return
@@ -930,7 +944,7 @@ function trackRow(event: PointerEvent) {
   if (gesture.lockedAxis !== 'x') {
     if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       gesture.lockedAxis = 'x'
-      const cap = gesture.hapticInput ?? gesture.haptic
+      const cap = gesture.rowSwitch ?? gesture.hapticInput ?? gesture.haptic
       if (cap) {
         try { cap.setPointerCapture(event.pointerId) } catch { /* el dedo sigue sobre la etiqueta */ }
       }
@@ -959,10 +973,32 @@ function trackRow(event: PointerEvent) {
   const willCommit = swipeCommits(row, gesture.armed)
   const wasArmed = row.classList.contains('swipe-armed')
   row.classList.toggle('swipe-armed', willCommit)
+  // Avance en la dirección que cambia algo: derecha si no te has apuntado, izquierda si sí.
+  const progress = committed ? -dx : dx
+  let ticks = 0
+  for (const [index, at] of SWIPE_DETENTS.entries()) {
+    if (progress >= at && gesture.detents <= index) {
+      gesture.detents = index + 1
+      ticks += 1
+      navigator.vibrate?.(6)
+      const cue = row.querySelector<HTMLElement>(committed ? '.swipe-under.left .swipe-cue' : '.swipe-under.right .swipe-cue')
+      if (cue) {
+        cue.classList.remove('tick')
+        void cue.offsetWidth
+        cue.classList.add('tick')
+      }
+    }
+  }
+  if (willCommit !== wasArmed) ticks += 1
   if (willCommit && !wasArmed) {
     triggerHaptic()
     tickIfRunning()
+  } else if (!willCommit && wasArmed) {
+    navigator.vibrate?.(8)
   }
+  gesture.ticks += ticks
+  // Cada tope cambia de lado el switch bajo el dedo: WebKit vibra en ese cruce.
+  if (gesture.rowSwitch) placeSwitch(gesture.rowSwitch, row, event.clientX, gesture.ticks % 2 === 1)
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
     const side = cue.closest('.swipe-under.left') ? 'left' : 'right'
     if (gesture.armed === 'right' && side === 'right') cue.textContent = '✓'
@@ -1071,7 +1107,9 @@ app.addEventListener('pointerdown', (event) => {
   }
   const button = target.closest<HTMLElement>('.days button')
   if (button) button.dataset.pointer = '1'
-  if (target.closest('input:not([data-haptic-switch]):not([data-row-haptic]), textarea, select, [contenteditable="true"]')) return
+  stopMomentum()
+  if (target.closest('input:not([data-haptic-switch]):not([data-row-haptic]):not([data-row-switch]), textarea, select, [contenteditable="true"]')) return
+  const rowSwitch = target instanceof HTMLInputElement && target.hasAttribute('data-row-switch') ? target : null
   const month = Boolean(target.closest('.month-scroll'))
   const rowNode = target.closest('.days li.swipeable')
   const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
@@ -1095,12 +1133,78 @@ app.addEventListener('pointerdown', (event) => {
       return label instanceof HTMLLabelElement ? label : null
     })(),
     hapticInput: (() => {
+      if (rowSwitch) return null
       if (target instanceof HTMLInputElement && target.hasAttribute('data-row-haptic')) return target
       const found = row?.querySelector('input[data-row-haptic]')
       return found instanceof HTMLInputElement ? found : null
     })(),
+    rowSwitch,
+    scrolling: null,
+    ticks: 0,
+    detents: 0,
   }
 })
+
+// Qué hará el switch de la fila al levantar el dedo: vibrar al apuntarte o quitarte,
+// vibrar y tocar lo que hay debajo en un toque quieto, o callar tras un scroll.
+function classifySwitch(start: NonNullable<typeof gesture>, x: number, y: number): SwitchRelease['kind'] {
+  if (start.row && start.lockedAxis === 'x') return swipeCommits(start.row, start.armed) ? 'commit' : 'silent'
+  if (start.lockedAxis === 'y' || start.scrolling) return 'silent'
+  return Math.hypot(x - start.x, y - start.y) <= 10 ? 'tap' : 'silent'
+}
+
+let lastTouchEnd = 0
+// Tras un deslizamiento o un scroll, el clic simulado del switch no es un toque.
+let ignoreSwitchClickUntil = 0
+
+function releaseSwitch(release: Omit<SwitchRelease, 'done'>, touch: boolean) {
+  switchRelease = { ...release, done: false }
+  // Sin dedo no hay touchend; y si el touchend ya pasó (llegó antes que pointerup), no se espera.
+  if (!touch || performance.now() - lastTouchEnd < 150) {
+    finishRelease()
+    return
+  }
+  // Si el touchend no llega (cancelado), no se queda nada colgado.
+  window.setTimeout(finishRelease, 400)
+}
+
+function finishRelease() {
+  const release = switchRelease
+  if (!release || release.done) return
+  release.done = true
+  release.input.setAttribute('switch', '')
+  if (release.kind === 'commit') release.run?.()
+  if (release.kind !== 'tap') switchRelease = null
+  else window.setTimeout(() => { if (switchRelease === release) switchRelease = null }, 600)
+}
+
+function routeRowTap(input: HTMLInputElement, x: number, y: number) {
+  input.style.pointerEvents = 'none'
+  const under = document.elementFromPoint(x, y)
+  input.style.pointerEvents = ''
+  const row = input.closest<HTMLElement>('li')
+  const acted = under?.closest<HTMLElement>('[data-act]')
+  const node = acted && row?.contains(acted) ? acted : row?.querySelector<HTMLElement>('[data-act="select"]')
+  if (!node) return
+  node.dataset.pointer = '1'
+  void actOn(node.dataset.act ?? '', node)
+}
+
+// El scroll de un toque que empieza en el switch de una fila lo hace la app.
+function driveSwitchScroll(event: PointerEvent) {
+  if (!gesture?.rowSwitch) return false
+  const dx = event.clientX - gesture.x
+  const dy = event.clientY - gesture.y
+  if (gesture.lockedAxis === '' && !gesture.row && Math.abs(dy) >= 10 && Math.abs(dy) > Math.abs(dx)) gesture.lockedAxis = 'y'
+  if (gesture.lockedAxis !== 'y') return false
+  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: gesture.y, samples: [] })
+  const step = event.clientY - scrolling.lastY
+  scrolling.lastY = event.clientY
+  window.scrollBy(0, -step)
+  scrolling.samples.push({ t: event.timeStamp, y: event.clientY })
+  if (scrolling.samples.length > 12) scrolling.samples.shift()
+  return true
+}
 
 let rowTouch: { x: number; y: number } | null = null
 let swipeHaptic = false
@@ -1113,8 +1217,25 @@ app.addEventListener('touchstart', (event) => {
 // (marcado en pointerup, que en iOS llega antes) y el toque quieto en el día.
 // Desde iOS 26.5 el clic por código ya no vibra: solo sirve en iPhone anteriores.
 // «Voy a ir» vibra con su capa tocable (hapticOverlay), como el resto de botones.
+// Va antes que el manejo nativo del switch: quitar el atributo aquí evita el clic
+// simulado (y su vibración) cuando el gesto fue un scroll o un deslizamiento que no cambia nada.
 app.addEventListener('touchend', (event) => {
-  const live = gesture?.row && gesture.lockedAxis === 'x' ? swipeCommits(gesture.row, gesture.armed) : false
+  lastTouchEnd = performance.now()
+  const touch = event.changedTouches?.[0]
+  const pending = switchRelease && !switchRelease.done ? switchRelease : null
+  const kind = pending?.kind ?? (gesture?.rowSwitch && touch ? classifySwitch(gesture, touch.clientX, touch.clientY) : null)
+  const input = pending?.input ?? gesture?.rowSwitch ?? null
+  if (kind && input) {
+    if (kind !== 'tap') ignoreSwitchClickUntil = performance.now() + 400
+    if (kind === 'silent') input.removeAttribute('switch')
+    window.setTimeout(finishRelease, 0)
+    if (!pending) window.setTimeout(() => input.setAttribute('switch', ''), 0)
+    return
+  }
+}, true)
+
+app.addEventListener('touchend', (event) => {
+  const live = gesture?.row && gesture.lockedAxis === 'x' && !gesture.rowSwitch ? swipeCommits(gesture.row, gesture.armed) : false
   const committing = swipeHaptic || live
   swipeHaptic = false
   if (committing) {
@@ -1153,6 +1274,7 @@ app.addEventListener('pointermove', (event) => {
     return
   }
   trackRow(event)
+  driveSwitchScroll(event)
 })
 
 document.addEventListener('touchmove', (event) => {
@@ -1186,6 +1308,26 @@ app.addEventListener('pointerup', (event) => {
     return
   }
   if (start.row) blurRow(start.row)
+  const touch = event.pointerType === 'touch'
+  if (start.rowSwitch) {
+    const kind = classifySwitch(start, event.clientX, event.clientY)
+    if (start.row && start.lockedAxis === 'x') {
+      const date = start.row.dataset.date ?? ''
+      suppressRowClick = true
+      window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
+      resetRow(start.row)
+      if (kind === 'commit') navigator.vibrate?.([12, 40, 24])
+      releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY, run: () => void setCommitment(date, start.armed === 'right', 'swipe') }, touch)
+      return
+    }
+    releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
+    if (start.scrolling) {
+      startMomentum(start.scrolling.samples)
+      if (start.scroll <= 4 && dy > 80 && dy > Math.abs(dx) * 1.5) void pullRefresh()
+      return
+    }
+    if (kind === 'tap') return
+  }
   if (start.row && start.lockedAxis === 'x') {
     const date = start.row.dataset.date ?? ''
     const willCommit = swipeCommits(start.row, start.armed)
@@ -1193,8 +1335,9 @@ app.addEventListener('pointerup', (event) => {
     suppressRowClick = true
     window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
     resetRow(start.row)
-    if (willCommit && event.pointerType === 'touch') {
+    if (willCommit && touch) {
       swipeHaptic = true
+      navigator.vibrate?.([12, 40, 24])
       window.setTimeout(() => { swipeHaptic = false }, 300)
     }
     if (willCommit) window.setTimeout(() => void setCommitment(date, start.armed === 'right', 'swipe'), 0)
@@ -1352,6 +1495,21 @@ app.addEventListener('toggle', (event) => {
 }, true)
 
 app.addEventListener('click', (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-row-switch')) {
+    // El switch ya ha vibrado; se queda sin marcar y el toque va a lo que hay debajo.
+    event.preventDefault()
+    event.stopPropagation()
+    const input = event.target
+    const release = switchRelease
+    if (release?.kind === 'tap' && release.input === input) {
+      switchRelease = null
+      routeRowTap(input, release.x, release.y)
+    } else if (!release && !suppressRowClick && performance.now() > ignoreSwitchClickUntil) {
+      // El touchend llegó antes que pointerup: se usa el punto donde empezó el toque.
+      routeRowTap(input, rowTouch?.x ?? event.clientX, rowTouch?.y ?? event.clientY)
+    }
+    return
+  }
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-haptic-switch')) {
     event.stopPropagation()
     return
@@ -1577,7 +1735,13 @@ function attendanceRows(date: string) {
     const past = current.past.find((day) => day.date === date)
     if (past) rows.push(past)
   }
-  const history = current.history.find((day) => day.date === date)
+  let history = current.history.find((day) => day.date === date)
+  // Un día viejo en el que no fue nadie no viene en el historial: se crea al marcarlo.
+  if (!history && !rows.length && date < current.today) {
+    history = { date, went: 0, couples_went: 0, mine_attendance: false, couple_attendance: false }
+    current.history.push(history)
+    current.history.sort((a, b) => a.date.localeCompare(b.date))
+  }
   if (history) rows.push(history)
   return rows
 }
@@ -1814,6 +1978,11 @@ function queueAttendance(node: HTMLElement) {
 async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'back-wall') {
     backToWall()
+    return
+  }
+  if (act === 'swipe-haptic') {
+    setSwipeSwitch(!swipeSwitchOn())
+    paint()
     return
   }
   if (act === 'locale') {
