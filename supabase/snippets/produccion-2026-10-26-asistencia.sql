@@ -1,4 +1,5 @@
--- Aplicar en producción (kryarzipdpvceocidgyw): asistencia editable en cualquier día pasado.
+-- APLICADO en producción (kryarzipdpvceocidgyw) el 26-10-2026. No volver a ejecutar.
+-- Asistencia editable en cualquier día pasado.
 -- Pegar entero en SQL Editor. Es una transacción: si algo falla, no cambia nada.
 -- Contiene 20261026160000_asistencia_sin_limite.sql.
 

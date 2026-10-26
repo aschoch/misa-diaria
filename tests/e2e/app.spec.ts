@@ -2019,4 +2019,6 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   await page.mouse.move(list.x + 200, list.y - 170, { steps: 10 })
   await page.mouse.up()
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(120)
+  // Cada gesto deja su rastro técnico para diagnosticar en el iPhone real.
+  await expect.poll(async () => (await usageRows(page)).filter((row) => row.event_name === 'swipe_debug').length, { timeout: 5000 }).toBeGreaterThanOrEqual(2)
 })
