@@ -599,12 +599,54 @@ export function renderMuro(state: Estado, locked: boolean, openId: string, emoji
   `
 }
 
+const shareIcon = `<svg class="share-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8.2 7.2 12 3.4l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+const menuIcon = `<svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5.5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="18.5" r="1.7"/></svg>`
+
+function installPlatform(): 'ios' | 'android' | 'desktop' {
+  const query = new URLSearchParams(location.search).get('plataforma')
+  if (query === 'ios' || query === 'android') return query
+  const ua = navigator.userAgent || ''
+  const apple = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  if (apple) return 'ios'
+  if (/android/i.test(ua)) return 'android'
+  return 'desktop'
+}
+
+function installSteps(kind: 'ios' | 'android') {
+  const copy = tx()
+  if (kind === 'ios') {
+    return `<ol class="install-steps" data-platform="ios">
+      <li>${shareIcon}<span class="visually-hidden">Safari</span></li>
+      <li>${copy.installIosAdd}</li>
+      <li>${copy.installIosConfirm}</li>
+    </ol>`
+  }
+  return `<ol class="install-steps" data-platform="android">
+    <li>${menuIcon}<span class="visually-hidden">Chrome</span></li>
+    <li>${copy.installAndroidChoice}</li>
+    <li>${copy.installAndroidConfirm}</li>
+  </ol>`
+}
+
+function installGuide() {
+  const copy = tx()
+  const platform = installPlatform()
+  const body = platform === 'desktop'
+    ? `<div class="install-both">${installSteps('ios')}${installSteps('android')}</div>`
+    : installSteps(platform)
+  return `<section class="install-guide" data-testid="install-guide" data-platform="${platform}">
+    <h2>${copy.installTitle}</h2>
+    ${body}
+  </section>`
+}
+
 export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
   const copy = tx()
   const lang = (value: Locale, label: string) => `
     <button type="button" data-act="locale" data-locale="${value}" aria-pressed="${locale === value}">${label}</button>`
   return `
     <section class="settings" data-testid="ajustes">
+      ${installGuide()}
       <form class="stack" data-act="save-name">
         <label for="display-name">${copy.yourName}</label>
         <input id="display-name" name="display_name" maxlength="40" autocomplete="nickname" required value="${esc(state.me.display_name)}" />

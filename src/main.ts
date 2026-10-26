@@ -2,7 +2,7 @@ import '@fontsource-variable/fraunces/wght.css'
 import '@fontsource/atkinson-hyperlegible/400.css'
 import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
-import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, salir, supabase, suscribirPush, updatePassword } from './api'
+import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
@@ -21,9 +21,11 @@ let recoverySignIn = false
 let passwordError = ''
 let resetCalendarScroll = false
 let glassFrom: { index: number } | { px: number } | null = null
-let glowGo = false
-let glowFrame = 0
-let springHeld = false
+let attendanceEpoch = 0
+let attendChain: Promise<void> = Promise.resolve()
+let appOpened = false
+let lastHaptic = 0
+let audioCtx: AudioContext | null = null
 let suppressNavClick = false
 let tabScrub: {
   id: number
@@ -184,7 +186,6 @@ function paint() {
   document.body.classList.toggle('modal-open', popup)
   if (streakAlign) alignStreak()
   settleGlass()
-  settleGoGlow()
 }
 
 function daysBetween(from: string, to: string) {
@@ -204,8 +205,12 @@ function alignStreak() {
 async function refresh(celebrate = false) {
   const snapshot = sessionStorage.getItem('misa-estado')
   const epoch = localeEpoch
+  const attEpoch = attendanceEpoch
   try {
-    current = await estado()
+    const next = await estado()
+    if (attEpoch !== attendanceEpoch) return
+    const localeBefore = locale
+    current = next
     denied = false
     offline = ''
     locked = false
@@ -221,7 +226,12 @@ async function refresh(celebrate = false) {
     }
     if (epoch !== localeEpoch) current.prefs.locale = locale
     sessionStorage.setItem('misa-estado', JSON.stringify({ at: current.clock, data: current }))
-    paint()
+    if (!appOpened && !demo) {
+      appOpened = true
+      registrarEvento(current.me.id, 'app_open', routeFromPath(location.pathname), {})
+    }
+    if (locale !== localeBefore || !patchHoyAttendance(current, locked)) paint()
+    else document.querySelector('.offline')?.remove()
     if (celebrate) await celebratePending(current)
   } catch (error) {
     const code = typeof error === 'object' && error && 'code' in error ? String((error as { code: string }).code) : ''
@@ -304,8 +314,9 @@ function syncRoute() {
 }
 
 function pushRoute(pathname: string) {
-  if (location.pathname === pathname) return
-  history.pushState({}, '', pathname)
+  const next = `${pathname}${location.search}`
+  if (`${location.pathname}${location.search}` === next) return
+  history.pushState({}, '', next)
   depth += 1
 }
 
@@ -369,27 +380,32 @@ function readGlassX(pill: HTMLElement) {
 }
 
 function triggerHaptic() {
+  const now = performance.now()
+  if (now - lastHaptic < 60) return
+  lastHaptic = now
   document.querySelector<HTMLLabelElement>('#haptic-label')?.click()
   navigator.vibrate?.(12)
-}
-
-function settleGoGlow() {
-  if (!glowGo) return
-  if (glowFrame) cancelAnimationFrame(glowFrame)
-  glowFrame = 0
-  const button = document.querySelector<HTMLButtonElement>('button.go')
-  if (!button) return
-  glowFrame = requestAnimationFrame(() => {
-    glowFrame = 0
-    if (!button.isConnected) {
-      settleGoGlow()
-      return
-    }
-    button.classList.remove('just-tapped')
-    void button.offsetWidth
-    button.classList.add('just-tapped')
-    if (!springHeld) glowGo = false
-  })
+  try {
+    const Ctx = window.AudioContext
+      ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctx) return
+    if (!audioCtx) audioCtx = new Ctx()
+    if (audioCtx.state === 'suspended') void audioCtx.resume()
+    const osc = audioCtx.createOscillator()
+    const gain = audioCtx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 55
+    const t = audioCtx.currentTime
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(0.2, t + 0.004)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.012)
+    osc.connect(gain)
+    gain.connect(audioCtx.destination)
+    osc.start(t)
+    osc.stop(t + 0.016)
+  } catch {
+    /* el toque no puede romper el tap */
+  }
 }
 
 function settleGlass() {
@@ -417,8 +433,12 @@ function settleGlass() {
 }
 
 function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number } | null) {
-  triggerHaptic()
   hideCelebration()
+  if (current && !demo) {
+    const via = from && 'px' in from ? 'drag' : 'tap'
+    const to = link.dataset.nav === 'intenciones' ? 'muro' : (link.dataset.nav || 'hoy')
+    registrarEvento(current.me.id, 'tab_view', to, { to, via })
+  }
   const navKey = link.dataset.nav ?? ''
   if (navKey === 'calendario') resetCalendarScroll = true
   if (navKey === 'intenciones') {
@@ -784,8 +804,8 @@ app.addEventListener('pointerup', (event) => {
     const date = start.row.dataset.date ?? ''
     const committed = start.row.dataset.committed === 'true'
     resetRow(start.row)
-    if (start.armed === 'right' && !committed) void setCommitment(date, true)
-    else if (start.armed === 'left' && committed) void setCommitment(date, false)
+    if (start.armed === 'right' && !committed) void setCommitment(date, true, 'swipe')
+    else if (start.armed === 'left' && committed) void setCommitment(date, false, 'swipe')
     return
   }
   const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
@@ -946,6 +966,19 @@ app.addEventListener('keydown', (event) => {
   }
 })
 
+app.addEventListener('pointerdown', (event) => {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (!target.closest('[data-testid="go"], .check, .switch, nav.tabs a, [data-act="commit"]')) return
+  triggerHaptic()
+})
+
+for (const selector of ['#haptic-label', '#haptic-switch']) {
+  document.querySelector(selector)?.addEventListener('click', (event) => {
+    event.stopPropagation()
+  })
+}
+
 app.addEventListener('click', (event) => {
   if (suppressNavClick) {
     suppressNavClick = false
@@ -975,6 +1008,8 @@ app.addEventListener('click', (event) => {
     }
     hideCelebration()
     blurFocus()
+    const opened = intentionFromPath(link.pathname)
+    if (opened && current && !demo) registrarEvento(current.me.id, 'intention_open', 'muro', { id: opened })
     pushRoute(link.pathname)
     syncRoute()
     paint()
@@ -983,10 +1018,6 @@ app.addEventListener('click', (event) => {
   const node = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')
   if (!node || node instanceof HTMLFormElement) return
   const act = node.dataset.act
-  if (act === 'attend' && node.dataset.testid === 'go') {
-    glowGo = true
-    triggerHaptic()
-  }
   if (act === 'skip') {
     hideCelebration()
     return
@@ -1050,7 +1081,7 @@ function ensureCommitmentDay(date: string) {
   return day
 }
 
-async function setCommitment(date: string, on: boolean) {
+async function setCommitment(date: string, on: boolean, source: 'button' | 'swipe' = 'button') {
   if (!current || locked || !date || date < current.today) return
   const day = ensureCommitmentDay(date)
   if (!day || day.mine_commitment === on) return
@@ -1058,6 +1089,7 @@ async function setCommitment(date: string, on: boolean) {
   day.committed = on ? true : day.covered > 0
   selected = date
   paint()
+  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', 'calendario', { date, on, source })
   if (demo) return
   const member = current.me.id
   const run = commitChain.then(async () => {
@@ -1115,6 +1147,99 @@ function restoreAttendance(date: string, snaps: { mine_attendance: boolean; went
   })
 }
 
+function patchHoyAttendance(state: Estado, isLocked: boolean) {
+  if (routeFromPath(location.pathname) !== 'hoy' || streakMode) return false
+  const hero = document.querySelector<HTMLElement>('[data-testid="hoy-hero"]')
+  if (!hero) return false
+  const copy = tx()
+  const gone = Boolean(state.calendar[0]?.mine_attendance)
+  const kind = hero.classList.contains('estado-b') ? 'b' : hero.classList.contains('estado-c') ? 'c' : 'a'
+  hero.classList.toggle('on', gone)
+  const status = hero.querySelector<HTMLElement>('[data-testid="hoy-status"]')
+  if (status) {
+    status.textContent = kind === 'b'
+      ? (gone ? copy.bandOn : copy.bandOff)
+      : kind === 'c'
+        ? (gone ? copy.gone : copy.splitOff)
+        : (gone ? copy.attendedLine : copy.pendingLine)
+  }
+  const button = hero.querySelector<HTMLButtonElement>('button.go')
+  if (button) {
+    button.classList.toggle('on', gone)
+    button.classList.toggle('go-secondary', gone)
+    button.setAttribute('aria-pressed', gone ? 'true' : 'false')
+    button.disabled = isLocked
+    const label = button.querySelector('.go-label')
+    if (label) {
+      label.textContent = kind === 'b'
+        ? (gone ? copy.unmarkLong : copy.markLong)
+        : kind === 'c'
+          ? (gone ? copy.splitUndo : copy.go)
+          : (gone ? copy.unmark : copy.go)
+    }
+    let hidden = button.querySelector('.visually-hidden')
+    if (gone) {
+      if (!hidden) {
+        hidden = document.createElement('span')
+        hidden.className = 'visually-hidden'
+        button.appendChild(hidden)
+      }
+      hidden.textContent = copy.gone
+    } else {
+      hidden?.remove()
+    }
+  }
+  const list = document.querySelector('[data-testid="past"]')
+  if (list) {
+    for (const day of state.past) {
+      const row = list.querySelector<HTMLElement>(`li[data-date="${day.date}"]`)
+      if (!row) continue
+      const count = row.querySelector('.past-count')
+      if (count) count.textContent = copy.of12(day.went)
+      const check = row.querySelector<HTMLButtonElement>('.check')
+      if (!check) continue
+      check.classList.toggle('on', day.mine_attendance)
+      check.setAttribute('aria-pressed', day.mine_attendance ? 'true' : 'false')
+      check.disabled = isLocked
+    }
+  }
+  return true
+}
+
+function attendanceSource(node: HTMLElement) {
+  if (node.dataset.testid === 'go') return 'hoy_main'
+  if (node.closest('[data-testid="past"]')) return 'hoy_past'
+  if (node.closest('.streak-pop, .history-detail')) return 'popup_day'
+  return 'calendar_detail'
+}
+
+function queueAttendance(node: HTMLElement) {
+  if (!current || locked) return
+  const date = node.dataset.date ?? current.today
+  const flipped = flipAttendance(date)
+  if (!flipped) return
+  const epoch = ++attendanceEpoch
+  if (!patchHoyAttendance(current, locked)) paint()
+  const source = attendanceSource(node)
+  if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { date, on: flipped.on, source })
+  if (demo) return
+  const member = current.me.id
+  const on = flipped.on
+  const snaps = flipped.snaps
+  const run = attendChain.then(async () => {
+    try {
+      await marcarAsistencia(member, date, on)
+      await refresh(true)
+    } catch {
+      if (epoch !== attendanceEpoch) return
+      restoreAttendance(date, snaps)
+      offline = tx().saveFail
+      if (current && !patchHoyAttendance(current, locked)) paint()
+    }
+  })
+  attendChain = run.then(() => undefined, () => undefined)
+}
+
 async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'back-wall') {
     backToWall()
@@ -1127,6 +1252,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     locale = next
     rememberLocale(next)
     current.prefs.locale = next
+    if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'language', locale: next })
     paint()
     if (demo) return
     try {
@@ -1152,6 +1278,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     return
   }
   if (act === 'streak' || act === 'open-past-cal') {
+    if (act === 'open-past-cal' && current && !demo) registrarEvento(current.me.id, 'past_calendar_open', 'hoy', {})
     const key = act === 'open-past-cal' ? 'all' : node.dataset.key
     streakMode = key === 'couple' || key === 'group' || key === 'six' || key === 'all' || key === 'individual' ? key : ''
     if (streakMode) lockStreakScroll()
@@ -1180,6 +1307,10 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     const kind = node.dataset.kind === 'comment' ? 'comment' : 'intention'
     editing = { kind, id: node.dataset.id ?? '' }
     paint()
+    return
+  }
+  if (act === 'attend') {
+    queueAttendance(node)
     return
   }
   if (busy && act !== 'select') return
@@ -1334,29 +1465,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   busy = true
   try {
-    if (act === 'attend') {
-      const date = node.dataset.date ?? current.today
-      const flipped = flipAttendance(date)
-      if (!flipped) return
-      springHeld = true
-      paint()
-      if (demo) {
-        springHeld = false
-        return
-      }
-      try {
-        await marcarAsistencia(current.me.id, date, flipped.on)
-      } catch {
-        restoreAttendance(date, flipped.snaps)
-        offline = tx().saveFail
-        springHeld = false
-        paint()
-        return
-      }
-      springHeld = false
-      await refresh(true)
-      return
-    }
     if (act === 'commit') {
       const date = node.dataset.date ?? ''
       const day = current.calendar.find((item) => item.date === date)
@@ -1374,6 +1482,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         paint()
         return
       }
+      if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'name' })
       if (!(demo || !supabase)) await guardarNombre(current.me.id, name)
       current.me.display_name = name
       for (const item of current.intentions) {
@@ -1415,12 +1524,14 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       }
       await updatePassword(password)
       passwordSaved = true
+      if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'password' })
       paint()
       return
     }
     if (act === 'feedback') {
       const text = plain(body, 1000)
       if (!text) return
+      if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'feedback' })
       if (demo) {
         feedbackSaved = true
         paint()
@@ -1458,6 +1569,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (act === 'publish') {
       const text = plain(body, 280)
       if (!text) return
+      if (!demo) registrarEvento(current.me.id, 'intention_publish', 'muro', {})
       if (demo) {
         current.intentions.unshift({ id: crypto.randomUUID(), body: text, display_name: current.me.display_name, mine: true, created_at: new Date().toISOString(), comments: [], reactions: [] })
         paint()
@@ -1495,6 +1607,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       const text = plain(body, 200)
       const intentionId = node.dataset.id ?? ''
       if (!text || !intentionId) return
+      if (!demo) registrarEvento(current.me.id, 'comment_publish', 'muro', { intention_id: intentionId })
       if (demo) {
         const item = current.intentions.find((intention) => intention.id === intentionId)
         if (item) {
@@ -1527,6 +1640,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       emojiFor = ''
       const item = current.intentions.find((intention) => intention.id === intentionId)
       const mine = item?.reactions.some((reaction) => reaction.emoji === emoji && reaction.mine) ?? false
+      if (!demo) registrarEvento(current.me.id, 'reaction_toggle', 'muro', { emoji, on: !mine })
       if (demo && item) {
         item.reactions = mine
           ? item.reactions.filter((reaction) => !(reaction.emoji === emoji && reaction.mine))
@@ -1542,6 +1656,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (act === 'pref') {
       const key = node.dataset.key as 'empty_day' | 'couple'
       const next = !current.prefs[key]
+      if (!demo) registrarEvento(current.me.id, 'settings_action', 'ajustes', { action: 'alert', key, on: next })
       if (next && 'Notification' in window && Notification.permission === 'default') {
         await Notification.requestPermission()
       }

@@ -306,6 +306,11 @@ async function main() {
         `insert into public.feedback (member_id, body) values ($1, 'No.')`,
         [P(1)],
       ))
+      await expectFail(() => q(`select * from public.usage_events`))
+      await expectFail(() => q(
+        `insert into public.usage_events (member_id, event_name) values ($1, 'app_open')`,
+        [P(1)],
+      ))
       await expectFail(() => q(`select public.racha_seis('2026-10-23')`))
     await expectFail(() => q(`select public.marcas_dia('2026-10-23')`))
     await q('rollback to savepoint anon')
@@ -435,6 +440,22 @@ async function main() {
       await expectFail(() => q(`insert into public.feedback (member_id, body) values ($1, '   ')`, [P(1)]))
       await q(`select set_config('request.jwt.claim.sub', $1, true)`, [P(2)])
       assert((await one(`select count(*)::int as n from public.feedback`)).n === 1, 'cualquier miembro lee el feedback')
+    })
+
+    await asUser(P(1), async () => {
+      await q(
+        `insert into public.usage_events (member_id, event_name, route, platform, standalone, props)
+         values ($1, 'app_open', 'hoy', 'ios', false, '{"via":"boot"}'::jsonb)`,
+        [P(1)],
+      )
+      const mine = await one(`select event_name, route, platform from public.usage_events`)
+      assert(mine.event_name === 'app_open' && mine.route === 'hoy' && mine.platform === 'ios', 'el miembro lee su evento')
+      await expectFail(() => q(
+        `insert into public.usage_events (member_id, event_name) values ($1, 'tab_view')`,
+        [P(2)],
+      ))
+      await q(`select set_config('request.jwt.claim.sub', $1, true)`, [P(2)])
+      assert((await one(`select count(*)::int as n from public.usage_events`)).n === 0, 'no lee el evento de otra persona')
     })
 
     const monday = await one(`select public.resumen_semana('2026-10-26') as r`)
