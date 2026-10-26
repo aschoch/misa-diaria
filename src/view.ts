@@ -122,6 +122,18 @@ function riskLine(risk: Estado['risk']) {
   return `<p class="risk" data-testid="risk">${tx().riskEmpty}</p>`
 }
 
+export function dayMarks(day: { went: number; mine_attendance: boolean; couples_went: number }) {
+  const copy = tx()
+  const items = [
+    day.went >= 1 ? `<i class="dot course" title="${esc(copy.markCourse)}"></i>` : '',
+    day.mine_attendance ? `<i class="dot mine" title="${esc(copy.markMine)}"></i>` : '',
+    day.couples_went >= 6 ? `<i class="dot couples" title="${esc(copy.markCouples)}"></i>` : '',
+    day.went >= 12 ? `<i class="dot star" aria-label="${esc(copy.markAll)}">★</i>` : '',
+  ].filter(Boolean)
+  if (!items.length) return ''
+  return `<span class="dots">${items.join('')}</span>`
+}
+
 function badges(day: { went: number }) {
   const copy = tx()
   const items = [
@@ -169,7 +181,7 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
   const past = state.past.map((day) => {
     const f = fecha(day.date)
     return `<li class="${day.sunday ? 'sunday' : ''}" data-date="${day.date}">
-      <span class="past-main"><span>${f.corto} ${f.d}</span><small class="past-count">${copy.of12(day.went)}</small>${badges(day)}</span>
+      <span class="past-main"><span>${f.corto} ${f.d}</span><small class="past-count">${copy.of12(day.went)}</small>${dayMarks(day)}</span>
       <button type="button" class="check ${day.mine_attendance ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${day.mine_attendance}" aria-label="${f.largo} ${f.d}" ${locked ? 'disabled' : ''}></button>
     </li>`
   }).join('')
@@ -252,12 +264,7 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
     const row = history.get(iso)
     const hit = meets(row, mode)
     const classes = ['cell', hit ? 'hit' : '', run.has(iso) ? 'run' : '', iso === state.today ? 'today' : ''].filter(Boolean).join(' ')
-    const dots = row ? [
-      row.mine_attendance ? '<i class="dot mine"></i>' : '',
-      row.went >= 10 ? '<i class="dot ten"></i>' : '',
-      row.went >= 12 ? '<i class="dot all"></i>' : '',
-    ].join('') : ''
-    const mark = dots ? `<span class="dots">${dots}</span>` : ''
+    const mark = row ? dayMarks(row) : ''
     if (mode === 'all') {
       return `<button type="button" class="${classes}" data-act="history-day" data-date="${iso}">${day}${mark}</button>`
     }
@@ -277,6 +284,7 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
   const past = state.past.find((day) => day.date === date)
   const today = state.calendar.find((day) => day.date === date)
   const went = row?.went ?? past?.went ?? today?.went ?? 0
+  const couples = row?.couples_went ?? past?.couples_went ?? today?.couples_went ?? 0
   const mine = row?.mine_attendance ?? past?.mine_attendance ?? today?.mine_attendance ?? false
   const f = fecha(date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
@@ -287,7 +295,7 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
     <h3>${heading}</h3>
     <p>${mine ? copy.wentLabel : copy.absentLabel}</p>
     <p>${copy.of12(went)}</p>
-    ${badges({ went })}
+    ${dayMarks({ went, mine_attendance: mine, couples_went: couples })}
     ${toggle}
   </aside>`
 }
@@ -309,9 +317,10 @@ function streakPopup(state: Estado, mode: StreakMode, before: number, after: num
   const copy = tx()
   const months = monthSpan(state, mode, -before, after)
   const legend = mode === 'all' ? `<ul class="legend" data-testid="legend">
+    <li><i class="dot course"></i>${copy.legendCourse}</li>
     <li><i class="dot mine"></i>${copy.legendMine}</li>
-    <li><i class="dot ten"></i>${copy.legendTen}</li>
-    <li><i class="dot all"></i>${copy.legendAll}</li>
+    <li><i class="dot couples"></i>${copy.legendCouples}</li>
+    <li><i class="dot star" aria-label="${esc(copy.legendAll)}">★</i>${copy.legendAll}</li>
   </ul>` : ''
   return `<div class="streak-back" data-act="streak-close"></div>
     <section class="streak-pop" data-testid="streak-calendar" role="dialog" aria-label="${esc(streakTitle(state, mode))}">
@@ -612,13 +621,26 @@ function installPlatform(): 'ios' | 'android' | 'desktop' {
   return 'desktop'
 }
 
+function installShot(n: 1 | 2 | 3, alt: string) {
+  return `<img class="install-shot" src="${import.meta.env.BASE_URL}instalar-ios-${n}.jpg" alt="${esc(alt)}" loading="lazy" />`
+}
+
 function installSteps(kind: 'ios' | 'android') {
   const copy = tx()
   if (kind === 'ios') {
     return `<ol class="install-steps" data-platform="ios">
-      <li>${shareIcon}<span class="visually-hidden">Safari</span></li>
-      <li>${copy.installIosAdd}</li>
-      <li>${copy.installIosConfirm}</li>
+      <li>
+        <span class="install-line"><span class="install-num">1</span>${shareIcon}<span class="visually-hidden">Safari</span></span>
+        ${installShot(1, copy.installAltShare)}
+      </li>
+      <li>
+        <span class="install-line"><span class="install-num">2</span>${copy.installIosAdd}</span>
+        ${installShot(2, copy.installAltAdd)}
+      </li>
+      <li>
+        <span class="install-line"><span class="install-num">3</span>${copy.installIosConfirm}</span>
+        ${installShot(3, copy.installAltConfirm)}
+      </li>
     </ol>`
   }
   return `<ol class="install-steps" data-platform="android">

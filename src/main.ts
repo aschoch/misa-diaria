@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, editarComentario, editar
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, emojiGrid, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, dayMarks, emojiGrid, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -24,7 +24,6 @@ let glassFrom: { index: number } | { px: number } | null = null
 let attendanceEpoch = 0
 let attendChain: Promise<void> = Promise.resolve()
 let appOpened = false
-let lastHaptic = 0
 let audioCtx: AudioContext | null = null
 let suppressNavClick = false
 let tabScrub: {
@@ -380,9 +379,6 @@ function readGlassX(pill: HTMLElement) {
 }
 
 function triggerHaptic() {
-  const now = performance.now()
-  if (now - lastHaptic < 60) return
-  lastHaptic = now
   document.querySelector<HTMLLabelElement>('#haptic-label')?.click()
   navigator.vibrate?.(12)
   try {
@@ -390,19 +386,26 @@ function triggerHaptic() {
       ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctx) return
     if (!audioCtx) audioCtx = new Ctx()
-    if (audioCtx.state === 'suspended') void audioCtx.resume()
-    const osc = audioCtx.createOscillator()
-    const gain = audioCtx.createGain()
-    osc.type = 'sine'
-    osc.frequency.value = 55
-    const t = audioCtx.currentTime
-    gain.gain.setValueAtTime(0.0001, t)
-    gain.gain.exponentialRampToValueAtTime(0.2, t + 0.004)
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.012)
-    osc.connect(gain)
-    gain.connect(audioCtx.destination)
-    osc.start(t)
-    osc.stop(t + 0.016)
+    const thump = () => {
+      try {
+        if (!audioCtx) return
+        const osc = audioCtx.createOscillator()
+        const gain = audioCtx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = 55
+        const t = audioCtx.currentTime
+        gain.gain.setValueAtTime(0.0001, t)
+        gain.gain.exponentialRampToValueAtTime(0.2, t + 0.004)
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.012)
+        osc.connect(gain)
+        gain.connect(audioCtx.destination)
+        osc.start(t)
+        osc.stop(t + 0.016)
+      } catch {
+        /* el toque no puede romper el tap */
+      }
+    }
+    void audioCtx.resume().then(thump, () => undefined)
   } catch {
     /* el toque no puede romper el tap */
   }
@@ -966,13 +969,6 @@ app.addEventListener('keydown', (event) => {
   }
 })
 
-app.addEventListener('pointerdown', (event) => {
-  const target = event.target
-  if (!(target instanceof Element)) return
-  if (!target.closest('[data-testid="go"], .check, .switch, nav.tabs a, [data-act="commit"]')) return
-  triggerHaptic()
-})
-
 for (const selector of ['#haptic-label', '#haptic-switch']) {
   document.querySelector(selector)?.addEventListener('click', (event) => {
     event.stopPropagation()
@@ -980,6 +976,13 @@ for (const selector of ['#haptic-label', '#haptic-switch']) {
 }
 
 app.addEventListener('click', (event) => {
+  const hapticTarget = event.target
+  if (
+    hapticTarget instanceof Element
+    && !suppressNavClick
+    && !suppressRowClick
+    && hapticTarget.closest('[data-testid="go"], .check, .switch, nav.tabs a, [data-act="commit"]')
+  ) triggerHaptic()
   if (suppressNavClick) {
     suppressNavClick = false
     event.preventDefault()
@@ -1196,6 +1199,14 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
       if (!row) continue
       const count = row.querySelector('.past-count')
       if (count) count.textContent = copy.of12(day.went)
+      const marks = dayMarks(day)
+      const dots = row.querySelector('.dots')
+      if (marks) {
+        if (dots) dots.outerHTML = marks
+        else count?.insertAdjacentHTML('afterend', marks)
+      } else {
+        dots?.remove()
+      }
       const check = row.querySelector<HTMLButtonElement>('.check')
       if (!check) continue
       check.classList.toggle('on', day.mine_attendance)

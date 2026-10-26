@@ -159,8 +159,11 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   })).toBe(true)
   await expect(page.getByTestId('past').locator('li').first()).toContainText('11 de 12')
   await expect(page.getByTestId('past').locator('li').first()).not.toContainText('de 6')
-  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('Alguien de cada matrimonio')
-  await expect(page.getByTestId('past').locator('li').first()).toContainText('10 misas')
+  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('10 misas')
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.course')).toHaveAttribute('title', 'Alguien del curso ha ido')
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.mine')).toHaveAttribute('title', 'Has ido tú')
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.couples')).toHaveAttribute('title', 'Alguien de cada matrimonio')
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.star')).toHaveCount(0)
   await expect(page.getByTestId('go')).toBeVisible()
   await expect(page.locator('nav a')).toHaveCount(4)
   await page.getByRole('link', { name: 'Intenciones' }).click()
@@ -555,25 +558,35 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   await expect(page.locator('.streak-back')).toHaveCSS('z-index', '60')
   await expect(page.locator('.streak-pop header b')).toHaveCSS('color', 'rgb(156, 63, 28)')
   const dotColors = await page.evaluate(() => {
-    const color = (selector: string) => {
+    const paint = (selector: string) => {
       const node = document.querySelector(selector)
       return node ? getComputedStyle(node).backgroundColor : ''
     }
+    const ink = (selector: string) => {
+      const node = document.querySelector(selector)
+      return node ? getComputedStyle(node).color : ''
+    }
     return {
-      mineGrid: color('.month-grid .dot.mine'),
-      mineLegend: color('.legend .dot.mine'),
-      tenGrid: color('.month-grid .dot.ten'),
-      tenLegend: color('.legend .dot.ten'),
-      allGrid: color('.month-grid .dot.all'),
-      allLegend: color('.legend .dot.all'),
-      couples: document.querySelectorAll('.dot.couples').length,
+      courseGrid: paint('.month-grid .dot.course'),
+      courseLegend: paint('.legend .dot.course'),
+      mineGrid: paint('.month-grid .dot.mine'),
+      mineLegend: paint('.legend .dot.mine'),
+      couplesGrid: paint('.month-grid .dot.couples'),
+      couplesLegend: paint('.legend .dot.couples'),
+      star: ink('.legend .dot.star'),
     }
   })
-  expect(dotColors.couples).toBe(0)
-  expect(dotColors.mineGrid).toBeTruthy()
+  expect(dotColors.courseGrid).toBe('rgb(46, 107, 62)')
+  expect(dotColors.courseGrid).toBe(dotColors.courseLegend)
+  expect(dotColors.mineGrid).toBe('rgb(27, 62, 112)')
   expect(dotColors.mineGrid).toBe(dotColors.mineLegend)
-  if (dotColors.tenGrid) expect(dotColors.tenGrid).toBe(dotColors.tenLegend)
-  if (dotColors.allGrid) expect(dotColors.allGrid).toBe(dotColors.allLegend)
+  expect(dotColors.couplesGrid).toBe('rgb(212, 136, 42)')
+  expect(dotColors.couplesGrid).toBe(dotColors.couplesLegend)
+  expect(dotColors.star).toBe('rgb(232, 162, 41)')
+  await expect(page.getByTestId('legend')).toContainText('Alguien del curso')
+  await expect(page.getByTestId('legend')).toContainText('Has ido tú')
+  await expect(page.getByTestId('legend')).toContainText('Cada matrimonio')
+  await expect(page.getByTestId('legend')).toContainText('Todos')
   await page.getByRole('button', { name: 'Cerrar' }).click()
 
   await page.getByRole('link', { name: 'Ajustes' }).click()
@@ -876,7 +889,9 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
     ;(window as unknown as { __hero?: Element | null }).__hero = document.querySelector('[data-testid="hoy-hero"]')
   })
   const settled = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
+  await expect(page.locator('#haptic-switch')).not.toBeChecked()
   await go.click()
+  await expect(page.locator('#haptic-switch')).toBeChecked()
   await settled
   await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   const same = await page.evaluate(() => {
@@ -912,6 +927,14 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
   await expect(ios).toContainText('Añadir a pantalla de inicio')
   await expect(ios).toContainText('Añadir')
   await expect(ios).not.toContainText('Instalar aplicación')
+  const shots = ios.locator('img.install-shot')
+  await expect(shots).toHaveCount(3)
+  await expect(shots.nth(0)).toHaveAttribute('src', /instalar-ios-1\.jpg$/)
+  await expect(shots.nth(0)).toHaveAttribute('alt', 'Botón de compartir de Safari')
+  await expect(shots.nth(1)).toHaveAttribute('src', /instalar-ios-2\.jpg$/)
+  await expect(shots.nth(1)).toHaveAttribute('alt', 'Añadir a pantalla de inicio')
+  await expect(shots.nth(2)).toHaveAttribute('src', /instalar-ios-3\.jpg$/)
+  await expect(shots.nth(2)).toHaveAttribute('alt', 'Botón Añadir')
   await page.goto('/misa-diaria/ajustes?plataforma=android')
   const android = page.getByTestId('install-guide')
   await expect(android).toHaveAttribute('data-platform', 'android')
@@ -1148,7 +1171,20 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.goto('/misa-diaria/ajustes?plataforma=ios')
   await expect(page.getByTestId('install-guide')).toContainText('Añadir a pantalla de inicio')
   await expect(page.getByTestId('install-guide')).not.toContainText('Instalar aplicación')
-  await page.getByTestId('install-guide').evaluate((node) => node.scrollIntoView({ block: 'start' }))
+  await expect(page.getByTestId('install-guide').locator('img.install-shot')).toHaveCount(3)
+  await expect.poll(() => page.getByTestId('install-guide').locator('img.install-shot').evaluateAll((nodes) => nodes.every((node) => node instanceof HTMLImageElement && node.complete && node.naturalWidth > 0))).toBe(true)
+  await page.getByTestId('install-guide').evaluate((node) => {
+    const top = node.getBoundingClientRect().top + window.scrollY
+    window.scrollTo(0, Math.max(0, top - 4))
+  })
+  const shotsInView = await page.getByTestId('install-guide').locator('img.install-shot').evaluateAll((nodes) => {
+    const bar = document.querySelector('nav.tabs')?.getBoundingClientRect().top ?? window.innerHeight
+    return nodes.every((node) => {
+      const box = node.getBoundingClientRect()
+      return box.height > 40 && box.top >= 0 && box.bottom <= bar + 1
+    })
+  })
+  expect(shotsInView).toBe(true)
   await save(page, 'ajustes-instalar-ios.png')
   await page.goto('/misa-diaria/ajustes?plataforma=android')
   await expect(page.getByTestId('install-guide')).toContainText('Instalar aplicación')
@@ -1193,7 +1229,10 @@ test('en portugués se ven las sequências y el calendario', async ({ page, brow
   await expect(page.getByRole('button', { name: 'Ver mais' })).toBeVisible()
   await expect(page.getByTestId('past').locator('li').first()).toContainText('11 de 12')
   await expect(page.getByTestId('past').locator('li').first()).not.toContainText('de 6')
-  await expect(page.getByTestId('past').locator('li').first()).toContainText('10 missas')
+  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('10 missas')
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.course')).toHaveAttribute('title', 'Alguém do curso foi')
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.mine')).toHaveCount(0)
+  await expect(page.getByTestId('past').locator('li').first().locator('.dot.couples')).toHaveAttribute('title', 'Alguém de cada casal')
   await expect(page.getByText(/matrimónio|matrimónio|Falta/)).toHaveCount(0)
   if (shoot) await save(page, 'hoy-pt.png')
   await page.getByRole('link', { name: 'Calendário' }).click()
