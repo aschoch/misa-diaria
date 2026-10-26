@@ -118,7 +118,10 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   await login(page, 'persona1@example.com')
   await expect(page.getByRole('heading', { name: 'Hoy' })).toBeVisible()
   await expect(page.getByTestId('hoy-date')).toHaveText('Viernes, 23 de octubre de 2026')
+  await expect(page.locator('.hoy-hero')).toHaveClass(/estado-a/)
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   await expect(page.getByTestId('go')).toContainText('Has ido a Misa')
+  await expect(page.getByTestId('go')).toContainText('Desmarcar')
   await expect(page.getByRole('heading', { name: 'Rachas' })).toHaveCount(0)
   await expect(page.getByTestId('total')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Últimos días' })).toBeVisible()
@@ -319,7 +322,8 @@ test('la celebración sale una vez y dice el motivo', async ({ page }) => {
   await page.getByTestId('go').click()
   await expect(page.getByTestId('go')).toHaveText('He ido a Misa')
   await page.getByTestId('go').click()
-  await expect(page.getByTestId('go')).toHaveText('Has ido a Misa')
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+  await expect(page.getByTestId('go')).toContainText('Has ido a Misa')
   await expect(page.getByTestId('go')).toHaveClass(/just-tapped/)
   await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
   await expect(page.getByTestId('celeb-line')).toHaveCount(0)
@@ -732,10 +736,17 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   expect(gap.dashed).toBe('dashed')
   const headStyle = await page.getByTestId('cal-month-head').first().evaluate((node) => {
     const style = getComputedStyle(node) as CSSStyleDeclaration & { webkitBackdropFilter?: string }
-    return { top: style.top, filter: style.backdropFilter || style.webkitBackdropFilter || '', padding: style.padding, border: style.borderBottomWidth }
+    return {
+      top: style.top,
+      filter: style.backdropFilter || style.webkitBackdropFilter || '',
+      padding: style.padding,
+      border: style.borderBottomWidth,
+      background: style.backgroundColor,
+    }
   })
   expect(headStyle.top).toBe('0px')
-  expect(headStyle.filter).toContain('blur(8px)')
+  expect(headStyle.filter).not.toContain('blur')
+  expect(headStyle.background).toBe('rgb(243, 235, 221)')
   expect(headStyle.padding).toBe('10px 4px 8px')
   expect(headStyle.border).toBe('0px')
   const mark = await page.evaluate(() => {
@@ -845,6 +856,84 @@ test('la lente sigue el dedo por la barra', async ({ page, browserName, viewport
   expect(errors).toEqual([])
 })
 
+test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ page }) => {
+  const errors = watchConsole(page)
+  await login(page, 'persona12@example.com')
+  let release: () => void = () => {}
+  let gate = new Promise<void>((resolve) => { release = resolve })
+  let seen = 0
+  await page.route('**/rest/v1/attendance**', async (route) => {
+    const method = route.request().method()
+    if (method !== 'POST' && method !== 'DELETE') {
+      await route.continue()
+      return
+    }
+    seen += 1
+    await gate
+    await route.continue()
+  })
+  try {
+    const row = page.getByTestId('past').locator('li').first()
+    await expect(row.locator('.past-count')).toHaveText('11 de 12')
+    await row.getByRole('button').click()
+    await expect(row.getByRole('button')).toHaveAttribute('aria-pressed', 'true')
+    await expect(row.locator('.past-count')).toHaveText('12 de 12')
+    await expect.poll(() => seen).toBe(1)
+    const letGo = release
+    gate = new Promise<void>((resolve) => { release = resolve })
+    const refreshed = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
+    letGo()
+    await refreshed
+    const skipPast = page.getByRole('button', { name: 'Saltar la celebración' })
+    if (await skipPast.isVisible()) await skipPast.click()
+
+    const go = page.getByTestId('go')
+    await expect(go).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
+    await go.click()
+    await expect(go).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+    await expect(page.locator('.hoy-hero')).toHaveClass(/\bon\b/)
+    await expect(go).toHaveClass(/just-tapped/)
+    expect(await go.evaluate((node) => getComputedStyle(node).animationName)).toContain('go-spring')
+    await expect.poll(() => seen).toBe(2)
+    const settled = page.waitForResponse((response) => response.url().includes('/rpc/estado') && response.ok())
+    release()
+    await settled
+    const skipNow = page.getByRole('button', { name: 'Saltar la celebración' })
+    if (await skipNow.isVisible()) await skipNow.click()
+  } finally {
+    release()
+    await page.unroute('**/rest/v1/attendance**').catch(() => undefined)
+  }
+
+  await page.getByTestId('open-past-cal').click()
+  const scroller = page.getByTestId('month-scroll')
+  await expect(scroller).toBeVisible()
+  const handle = await scroller.elementHandle()
+  const before = await scroller.locator('.month').count()
+  expect(before).toBeGreaterThan(3)
+  await scroller.evaluate((node) => { node.scrollTop = 0 })
+  await expect.poll(() => scroller.locator('.month').count()).toBeGreaterThan(before)
+  expect(await handle?.evaluate((node) => node.isConnected)).toBe(true)
+  await page.getByRole('button', { name: 'Cerrar' }).click()
+
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  const lienzo = await page.getByTestId('cal-month-head').first().evaluate((node) => getComputedStyle(node).backgroundColor)
+  expect(lienzo).toBe('rgb(243, 235, 221)')
+  expect(errors).toEqual([])
+})
+
+async function showHero(page: Page, hero: 'a' | 'b' | 'c') {
+  await page.evaluate((value) => {
+    if (value === 'a') delete document.documentElement.dataset.estado
+    else document.documentElement.dataset.estado = value
+  }, hero)
+  await page.locator('nav.tabs a[data-nav="calendario"]').click()
+  await page.locator('nav.tabs a[data-nav="hoy"]').click()
+  await expect(page.locator('.hoy-hero')).toHaveClass(new RegExp(`estado-${hero}`))
+}
+
 test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   test.setTimeout(120_000)
   test.skip(browserName !== 'webkit' || viewport?.width !== 390)
@@ -857,7 +946,15 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.getByTestId('go').waitFor()
   await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
   await expect(page.getByTestId('go')).not.toHaveClass(/\bon\b/)
+  await expect(page.locator('.hoy-hero')).toHaveClass(/estado-a/)
+  await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
   await save(page, 'hoy.png')
+  await save(page, 'estado-a-off.png')
+  await showHero(page, 'b')
+  await save(page, 'estado-b-off.png')
+  await showHero(page, 'c')
+  await save(page, 'estado-c-off.png')
+  await showHero(page, 'a')
   await page.getByTestId('go').click()
   await expect(page.getByTestId('go')).toHaveClass(/just-tapped/)
   await page.waitForTimeout(160)
@@ -865,10 +962,17 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   const skip = page.getByRole('button', { name: 'Saltar la celebración' })
   if (await skip.isVisible()) await skip.click()
   await expect(page.getByTestId('go')).toHaveClass(/\bon\b/)
-  await expect(page.getByTestId('go')).toHaveText('Has ido a Misa')
+  await expect(page.getByTestId('go')).toContainText('Has ido a Misa')
+  await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
   await expect(page.getByTestId('go').locator('.vence, .piece')).toHaveCount(0)
   await page.waitForTimeout(560)
   await save(page, 'hoy-on.png')
+  await save(page, 'estado-a-on.png')
+  await showHero(page, 'b')
+  await save(page, 'estado-b-on.png')
+  await showHero(page, 'c')
+  await save(page, 'estado-c-on.png')
+  await showHero(page, 'a')
   await save(page, 'nav-es.png')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
