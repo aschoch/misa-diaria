@@ -71,6 +71,7 @@ let gesture: {
   scrolling: { lastY: number; samples: { t: number; y: number }[] } | null
   ticks: number
   detents: number
+  t0: number
 } | null = null
 const SWIPE_CONFIRM_PX = 88
 // Dos topes suaves antes del umbral: el dedo nota que la fila avanza.
@@ -997,12 +998,22 @@ function trackRow(event: PointerEvent) {
   // Avance en la dirección que cambia algo: derecha si no te has apuntado, izquierda si sí.
   const progress = committed ? -dx : dx
   let ticks = 0
-  for (const [index, at] of SWIPE_DETENTS.entries()) {
-    if (progress >= at && gesture.detents <= index) {
-      gesture.detents = index + 1
+  // WebKit no sigue el switch hasta 200 ms después de apoyar el dedo: un tope pedido antes
+  // no suena. Los dos topes van juntos o no van, para que armado siga siendo impar.
+  const tracking = event.timeStamp - gesture.t0 >= 220
+  if (gesture.detents === 0 && progress >= SWIPE_DETENTS[0]) {
+    if (tracking) {
+      gesture.detents = 1
       ticks += 1
       navigator.vibrate?.(6)
+    } else {
+      gesture.detents = 2
     }
+  }
+  if (gesture.detents === 1 && progress >= SWIPE_DETENTS[1]) {
+    gesture.detents = 2
+    ticks += 1
+    navigator.vibrate?.(6)
   }
   if (willCommit !== wasArmed) ticks += 1
   if (willCommit && !wasArmed) {
@@ -1182,6 +1193,7 @@ app.addEventListener('pointerdown', (event) => {
     scrolling: null,
     ticks: 0,
     detents: 0,
+    t0: event.timeStamp,
   }
 })
 
@@ -1237,13 +1249,25 @@ function driveSwitchScroll(event: PointerEvent) {
   const dy = event.clientY - gesture.y
   if (gesture.lockedAxis === '' && !gesture.row && Math.abs(dy) >= 10 && Math.abs(dy) > Math.abs(dx)) gesture.lockedAxis = 'y'
   if (gesture.lockedAxis !== 'y') return false
-  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: gesture.y, samples: [] })
-  const step = event.clientY - scrolling.lastY
+  // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
+  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: event.clientY, samples: [] })
+  pendingScroll -= event.clientY - scrolling.lastY
   scrolling.lastY = event.clientY
-  window.scrollBy(0, -step)
+  if (!scrollFrameId) scrollFrameId = requestAnimationFrame(flushScroll)
   scrolling.samples.push({ t: event.timeStamp, y: event.clientY })
   if (scrolling.samples.length > 12) scrolling.samples.shift()
   return true
+}
+
+// El desplazamiento se aplica una vez por fotograma, no en cada pointermove.
+let pendingScroll = 0
+let scrollFrameId = 0
+function flushScroll() {
+  scrollFrameId = 0
+  if (!pendingScroll) return
+  const step = pendingScroll
+  pendingScroll = 0
+  window.scrollBy(0, step)
 }
 
 let rowTouch: { x: number; y: number } | null = null
@@ -1364,7 +1388,8 @@ app.addEventListener('pointerup', (event) => {
   if (start.rowSwitch) {
     const kind = classifySwitch(start, event.clientX, event.clientY)
     traceSwipe(`pu:${kind}:${Math.round(dx)}:${start.lockedAxis || '-'}`)
-    window.setTimeout(sendSwipeTrace, 900)
+    const ownTrace = swipeTrace
+    window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
     if (start.row && start.lockedAxis === 'x') {
       const date = start.row.dataset.date ?? ''
       suppressRowClick = true
@@ -1376,7 +1401,9 @@ app.addEventListener('pointerup', (event) => {
     }
     releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
     if (start.scrolling) {
-      startMomentum(start.scrolling.samples)
+      if (scrollFrameId) cancelAnimationFrame(scrollFrameId)
+      flushScroll()
+      startMomentum(start.scrolling.samples, event.timeStamp)
       if (start.scroll <= 4 && dy > 80 && dy > Math.abs(dx) * 1.5) void pullRefresh()
       return
     }
@@ -1436,7 +1463,8 @@ app.addEventListener('pointercancel', (event) => {
   if (gesture?.id !== event.pointerId) return
   if (gesture.rowSwitch) {
     traceSwipe('pcancel')
-    window.setTimeout(sendSwipeTrace, 900)
+    const ownTrace = swipeTrace
+    window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
   }
   const row = gesture.row
   const pop = gesture.pop

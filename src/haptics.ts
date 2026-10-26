@@ -37,12 +37,13 @@ export function setSwipeSwitch(on: boolean) {
 }
 
 // Posición del switch para que el dedo quede en el lado "apagado" (on = false)
-// o "encendido" (on = true). Ancho 440: el umbral de WebKit es la mitad (220).
-// En reposo mide 1000 (CSS): así el punto donde empieza el toque nunca pasa del
-// tramo sin pulgar y WebKit usa siempre la mitad como umbral, también en el primer cruce.
-const WIDTH = 440
+// o "encendido" (on = true). Mide 1000 (igual que en reposo): el umbral de WebKit es
+// la mitad (500). Si el punto donde empezó el toque cae más allá del tramo sin pulgar
+// (ancho - alto), WebKit exige el primer cruce mucho más lejos y ese toque no suena:
+// pasaba al deslizar a la izquierda. Con 1000 de ancho el inicio queda siempre dentro.
+const WIDTH = 1000
 const OFF_AT = 40
-const ON_AT = 400
+const ON_AT = 560
 
 export function placeSwitch(input: HTMLInputElement, row: HTMLElement, fingerX: number, on: boolean) {
   const box = row.getBoundingClientRect()
@@ -67,16 +68,18 @@ export function stopMomentum() {
   frame = 0
 }
 
-export function startMomentum(samples: { t: number; y: number }[]) {
+// La inercia solo sigue a un gesto rápido que aún se movía al soltar: si el dedo
+// se paró antes de levantarse, la lista se queda donde está.
+export function startMomentum(samples: { t: number; y: number }[], releasedAt: number) {
   stopMomentum()
   const last = samples[samples.length - 1]
-  if (!last) return
-  const recent = samples.filter((sample) => last.t - sample.t <= 100)
+  if (!last || releasedAt - last.t > 40) return
+  const recent = samples.filter((sample) => releasedAt - sample.t <= 80)
   const first = recent[0]
-  if (!first || recent.length < 2 || last.t === first.t) return
-  let velocity = -(last.y - first.y) / (last.t - first.t)
-  if (Math.abs(velocity) < 0.15) return
-  velocity = Math.max(-6, Math.min(6, velocity))
+  if (!first || recent.length < 3 || last.t - first.t < 16) return
+  let velocity = -(last.y - first.y) / (releasedAt - first.t)
+  if (Math.abs(velocity) < 0.35) return
+  velocity = Math.max(-4, Math.min(4, velocity))
   let prev = performance.now()
   const step = (now: number) => {
     const dt = Math.min(32, Math.max(1, now - prev))

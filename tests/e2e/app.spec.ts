@@ -1989,6 +1989,8 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   }, fingerX)
   await page.mouse.move(startX, y)
   await page.mouse.down()
+  // Los topes suaves solo suenan cuando WebKit ya sigue el dedo (tras ~200 ms).
+  await page.waitForTimeout(250)
   await page.mouse.move(startX + 20, y, { steps: 4 })
   expect(await side(startX + 20)).toBe('off')
   await page.mouse.move(startX + 40, y, { steps: 3 })
@@ -2019,6 +2021,21 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   await page.mouse.move(list.x + 200, list.y - 170, { steps: 10 })
   await page.mouse.up()
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(120)
+
+  // Si el dedo se para antes de soltar, la lista no sigue moviéndose sola.
+  await page.waitForTimeout(1500)
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const again = await fifth.boundingBox()
+  if (!again) throw new Error('sin lista')
+  await page.mouse.move(again.x + 200, again.y + 30)
+  await page.mouse.down()
+  await page.mouse.move(again.x + 200, again.y - 120, { steps: 6 })
+  await page.waitForTimeout(150)
+  await page.mouse.up()
+  const held = await page.evaluate(() => window.scrollY)
+  expect(held).toBeGreaterThan(80)
+  await page.waitForTimeout(400)
+  expect(await page.evaluate(() => window.scrollY)).toBe(held)
   // Cada gesto deja su rastro técnico para diagnosticar en el iPhone real.
   await expect.poll(async () => (await usageRows(page)).filter((row) => row.event_name === 'swipe_debug').length, { timeout: 5000 }).toBeGreaterThanOrEqual(2)
 })
