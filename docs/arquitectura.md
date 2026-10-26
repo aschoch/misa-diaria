@@ -51,7 +51,7 @@ Las intenciones se guardan y se pintan como texto, con un máximo de 280 caracte
 | `couples` | Matrimonio 1 … Matrimonio 6 | Solo la semilla |
 | `members` | Id de Auth, matrimonio, nombre visible, activo | Solo la semilla |
 | `commitments` | «Voy a ir», una fila por persona y fecha | La propia persona, hoy y 13 días más |
-| `attendance` | «He ido a Misa», una fila por persona y fecha | La propia persona, hoy y los 6 días anteriores |
+| `attendance` | «He ido a Misa», una fila por persona y fecha | La propia persona, hoy y cualquier día pasado (desde 2020) |
 | `intentions` | Texto corto, autor y `activity_at` | El autor crea y borra lo suyo |
 | `intention_comments` | Comentario de hasta 200 caracteres, sin `<` ni `>` | El autor, sobre una intención del curso |
 | `intention_reactions` | Un emoji no vacío, hasta 16 caracteres, por persona e intención | La propia persona enciende y apaga la suya |
@@ -62,7 +62,7 @@ Las intenciones se guardan y se pintan como texto, con un máximo de 280 caracte
 
 Una persona y un día son una asistencia. «Cualquier Misa» quiere decir que no pedimos hora ni parroquia. Un segundo toque no suma otra misa. Así «diez» significa diez personas, y el contador del curso es el número de filas.
 
-Fechas de tipo `date`, siempre el día civil de Europe/Madrid. La función de lectura se llama `estado()` y devuelve un solo JSON: el día de Madrid, las cinco rachas, el contador, los 14 días con insignias y sin huecos, la ventana de asistencia, las intenciones con sus comentarios y reacciones, el idioma, las preferencias, las celebraciones pendientes y, en lunes, el resumen de la semana. El cliente no reimplementa las reglas. El reloj del servidor autoriza; el del teléfono solo pinta. Un reloj mal puesto no alarga los 7 días ni marca el futuro.
+Fechas de tipo `date`, siempre el día civil de Europe/Madrid. La función de lectura se llama `estado()` y devuelve un solo JSON: el día de Madrid, las cinco rachas, el contador, los 14 días con insignias y sin huecos, la ventana de asistencia, las intenciones con sus comentarios y reacciones, el idioma, las preferencias, las celebraciones pendientes y, en lunes, el resumen de la semana. El cliente no reimplementa las reglas. El reloj del servidor autoriza; el del teléfono solo pinta. Un reloj mal puesto no marca el futuro.
 
 Al cerrar sesión se borra la suscripción push de ese aparato. Si no, un iPad compartido seguiría recibiendo avisos.
 
@@ -88,7 +88,7 @@ Hoy todavía no rompe nada. Si hoy ya cumples, la racha lo incluye. Si aún no, 
 
 El total del curso es la suma de asistencias, no una racha. En Hoy es una cifra grande. Las cinco rachas van en una sola lista, en ese orden: la tuya, la de tu matrimonio, la del curso, la de cada matrimonio y la de diez, bajo «Rachas» o «Sequências». No hay pantalla de estadísticas. `racha_grupo` sigue siendo el nombre en SQL de la racha del curso. `racha_seis` es la de cada matrimonio. Las insignias del día salen de `marcas_dia`: asistencias distintas, matrimonios con alguien, y si hay algún compromiso.
 
-La ventana de corrección es hoy y los seis días anteriores, medida en el servidor. Dentro, poner o quitar tu asistencia recompone las rachas al momento. El día 8 y el futuro los rechaza la base. «Voy a ir» solo para hoy y los trece días siguientes, y se puede quitar. Un matrimonio con un miembro inactivo deja de tener racha de matrimonio; el histórico de asistencias se queda.
+Se puede corregir cualquier día pasado (decisión del 26 de octubre de 2026; antes eran hoy y los seis días anteriores), medido en el servidor. Poner o quitar tu asistencia recompone las rachas al momento. El futuro lo rechaza la base. Las celebraciones solo miran los últimos siete días, así que corregir un día viejo no lanza una fiesta antigua. «Voy a ir» solo para hoy y los trece días siguientes, y se puede quitar. Un matrimonio con un miembro inactivo deja de tener racha de matrimonio; el histórico de asistencias se queda.
 
 ### Celebraciones
 
@@ -149,7 +149,7 @@ Playwright en WebKit y en Chromium, a 390×844 y a 1280×800. La suite falla si 
 
 - **Acceso.** Con la semilla local (el correo de prueba lo recoge Inbucket) un miembro entra con el código y ve el grupo. Un correo de fuera ve el mismo mensaje y ninguna fila.
 - **RLS, la prueba que manda.** Con la clave publicable, y con un usuario de Auth que no está en `members`, leer y escribir asistencia, intenciones y suscripciones falla. El miembro no lee suscripciones de otros ni el registro de envíos, y no escribe la asistencia de otra persona. Esto corre contra Postgres local, además de lo que se vea en el navegador.
-- **Rachas.** Domingo que falla y rompe. Domingo con asistencia y sigue. Hoy sin marca y la racha de ayer sigue en pie. Cruce de medianoche en Madrid, incluido el cambio de hora. Corregir dentro de los 7 días recompone. El día 8 y el futuro se rechazan. Matrimonio con uno solo. Grupo con una persona. Diez personas distintas, y un segundo toque de la misma persona que no suma. El contador coincide con las filas.
+- **Rachas.** Domingo que falla y rompe. Domingo con asistencia y sigue. Hoy sin marca y la racha de ayer sigue en pie. Cruce de medianoche en Madrid, incluido el cambio de hora. Corregir un día pasado recompone. El futuro y las fechas anteriores a 2020 se rechazan. Matrimonio con uno solo. Grupo con una persona. Diez personas distintas, y un segundo toque de la misma persona que no suma. El contador coincide con las filas.
 - **Celebraciones.** La primera inserción es la única que anima. Recargar no repite. Un día con diez personas y no doce guarda `celeb:diez:<fecha>` y muestra «10 misas hoy» una vez. Un día con doce guarda también `celeb:todos:<fecha>` y una sola línea. Poco movimiento guarda la fila y deja la cresta quieta con la misma línea. Saltarla no la reprograma. Quitar la asistencia no la borra.
 - **Aviso.** La función pura de «mañana en riesgo», con reloj fijo: envía cualquier día de la semana, un día con alguien cubierto no envía aunque falte un matrimonio, el interruptor apagado no recibe nada, el texto no nombra a nadie, y un segundo paso de la hora no duplica. Sin enviar a un servicio push real en la suite. El push de verdad se comprueba al instalar, en un iPhone y en un Android.
 - **Apariencia.** `prefers-color-scheme: dark` y `prefers-reduced-motion: reduce` en los dos motores y los dos tamaños. El botón de hoy se puede pulsar mientras la celebración está fuera.
