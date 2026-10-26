@@ -72,6 +72,7 @@ let gesture: {
   ticks: number
   detents: number
   t0: number
+  echoAt: number
 } | null = null
 const SWIPE_CONFIRM_PX = 88
 // Dos topes suaves antes del umbral: el dedo nota que la fila avanza.
@@ -1019,8 +1020,15 @@ function trackRow(event: PointerEvent) {
   if (willCommit && !wasArmed) {
     triggerHaptic()
     tickIfRunning()
+    // Al cruzar el umbral suenan dos toques seguidos: la vibración del switch es
+    // siempre igual de fuerte, así que el umbral se distingue por el ritmo.
+    gesture.echoAt = tracking ? event.timeStamp + 70 : 0
   } else if (!willCommit && wasArmed) {
     navigator.vibrate?.(8)
+    gesture.echoAt = 0
+  } else if (willCommit && gesture.echoAt && event.timeStamp >= gesture.echoAt) {
+    gesture.echoAt = 0
+    ticks += 1
   }
   gesture.ticks += ticks
   if (swipeTrace && gesture.rowSwitch) {
@@ -1194,6 +1202,7 @@ app.addEventListener('pointerdown', (event) => {
     ticks: 0,
     detents: 0,
     t0: event.timeStamp,
+    echoAt: 0,
   }
 })
 
@@ -1251,23 +1260,11 @@ function driveSwitchScroll(event: PointerEvent) {
   if (gesture.lockedAxis !== 'y') return false
   // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
   const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: event.clientY, samples: [] })
-  pendingScroll -= event.clientY - scrolling.lastY
+  window.scrollBy(0, scrolling.lastY - event.clientY)
   scrolling.lastY = event.clientY
-  if (!scrollFrameId) scrollFrameId = requestAnimationFrame(flushScroll)
   scrolling.samples.push({ t: event.timeStamp, y: event.clientY })
   if (scrolling.samples.length > 12) scrolling.samples.shift()
   return true
-}
-
-// El desplazamiento se aplica una vez por fotograma, no en cada pointermove.
-let pendingScroll = 0
-let scrollFrameId = 0
-function flushScroll() {
-  scrollFrameId = 0
-  if (!pendingScroll) return
-  const step = pendingScroll
-  pendingScroll = 0
-  window.scrollBy(0, step)
 }
 
 let rowTouch: { x: number; y: number } | null = null
@@ -1303,6 +1300,12 @@ app.addEventListener('touchend', (event) => {
     traceSwipe(`te:${kind}${pending ? '' : ':first'}`)
     if (kind !== 'tap') ignoreSwitchClickUntil = performance.now() + 400
     if (kind === 'silent') input.removeAttribute('switch')
+    // WebKit no vibra en el clic final si ya vibró al cruzar mientras seguía el dedo.
+    // Desactivarlo un instante corta ese seguimiento: el clic al soltar vibra siempre.
+    if (kind === 'commit') {
+      input.disabled = true
+      input.disabled = false
+    }
     window.setTimeout(finishRelease, 0)
     if (!pending) window.setTimeout(() => input.setAttribute('switch', ''), 0)
     return
@@ -1401,8 +1404,6 @@ app.addEventListener('pointerup', (event) => {
     }
     releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
     if (start.scrolling) {
-      if (scrollFrameId) cancelAnimationFrame(scrollFrameId)
-      flushScroll()
       startMomentum(start.scrolling.samples, event.timeStamp)
       if (start.scroll <= 4 && dy > 80 && dy > Math.abs(dx) * 1.5) void pullRefresh()
       return

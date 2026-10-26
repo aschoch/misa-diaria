@@ -2000,11 +2000,15 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   await page.mouse.move(startX + 100, y, { steps: 3 })
   await expect(row).toHaveClass(/swipe-armed/)
   expect(await side(startX + 100)).toBe('on')
+  // El umbral suena dos veces: el segundo toque llega con el siguiente movimiento.
+  await page.waitForTimeout(100)
+  await page.mouse.move(startX + 104, y)
+  expect(await side(startX + 104)).toBe('off')
   await page.mouse.move(startX + 70, y, { steps: 3 })
   await expect(row).not.toHaveClass(/swipe-armed/)
-  expect(await side(startX + 70)).toBe('off')
+  expect(await side(startX + 70)).toBe('on')
   await page.mouse.move(startX + 110, y, { steps: 3 })
-  expect(await side(startX + 110)).toBe('on')
+  expect(await side(startX + 110)).toBe('off')
   await page.mouse.up()
   await expect(page.locator(`.row-commit[data-date="${dates[1]}"]`)).toHaveAttribute('aria-pressed', 'true')
 
