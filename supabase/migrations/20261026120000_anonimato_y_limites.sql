@@ -3,7 +3,8 @@
 -- security definer para seguir contando a los doce, y las funciones internas
 -- que reciben el id de un miembro dejan de estar abiertas a los miembros.
 -- También pone topes a lo que un miembro puede escribir.
--- Todavía no está aplicada en producción. Lo aplicará quien lleva la base.
+-- Ya aplicada en producción el 26-10-2026 (con supabase/snippets/produccion-2026-10-26.sql).
+-- Este archivo solo la deja registrada; no volver a ejecutarla allí.
 
 -- 1. Asistencia y compromisos: solo lo propio.
 drop policy if exists attendance_read on public.attendance;

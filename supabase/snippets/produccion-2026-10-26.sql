@@ -1,4 +1,5 @@
--- Aplicar en producción (kryarzipdpvceocidgyw) el 26-10-2026, de una vez.
+-- APLICADO en producción (kryarzipdpvceocidgyw) el 26-10-2026. No volver a ejecutar.
+-- Comprobaciones: persona_cubre_abierta = false, estado_definer = true, tres políticas con auth.uid().
 -- Pegar entero en SQL Editor. Es una transacción: si algo falla, no cambia nada.
 -- Contiene, en orden:
 --   1. 20261025230000_aviso_toda_la_semana.sql  (el aviso sale cualquier día)
