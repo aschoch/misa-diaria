@@ -619,6 +619,7 @@ p.risk {
 }
 
 .days li button[data-act="select"] {
+  position: relative;
   -webkit-appearance: none;
   appearance: none;
   font: inherit;
@@ -657,7 +658,7 @@ p.risk {
 .num.planned { border: 2px dashed var(--olivo); }
 .num.gone { background: var(--olivo); color: var(--sobre-olivo); border: 2px solid var(--olivo); }
 .when { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; }
-.meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; font-size: 13px; color: var(--suave); justify-self: end; min-width: 0; }
+.meta { position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; font-size: 13px; color: var(--suave); justify-self: end; min-width: 0; }
 .meta em { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-style: normal; font-size: 13px; color: var(--tinta); white-space: nowrap; }
 .meta .count { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; font-weight: 600; }
 .meta .count em { font-size: 13px; font-weight: 600; white-space: nowrap; }
@@ -742,6 +743,7 @@ p.risk {
 }
 
 .texty {
+  position: relative;
   width: 100%;
   border: 1px solid var(--vela);
   background: transparent;
@@ -822,9 +824,10 @@ p.risk {
 .notify-note { margin: 0 0 8px; color: var(--suave); font-size: 13px; line-height: 1.45; }
 .count-link { color: var(--suave); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .back {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   min-height: 44px;
   margin: 0 0 8px;
@@ -832,6 +835,12 @@ p.risk {
   color: var(--vela);
   font-size: 14px;
   text-decoration: none;
+}
+button.back {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 .back span { color: var(--suave); }
 .sheet-back {
@@ -949,6 +958,7 @@ p.risk {
 }
 .lang { display: flex; gap: 8px; }
 .lang button {
+  position: relative;
   flex: 1;
   min-height: 48px;
   border: 1px solid var(--linea);
@@ -1374,7 +1384,8 @@ body.celebrating .top { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .go, .switch i::before { transition: none; }
+  .go, .switch i::before, .days li.swipe-armed .swipe-cue { transition: none; }
+  .days li.swipe-armed .swipe-face { animation: none; }
   #celeb.leaving { transition: none; }
   #celeb .paper,
   #celeb .flash,
@@ -1430,7 +1441,19 @@ body.celebrating .top { opacity: 0; }
   color: #fff9f2;
   opacity: 1;
 }
-.days li.swipe-armed .swipe-cue { border-color: transparent; transform: scale(1.12); }
+.days li.swipe-armed .swipe-cue {
+  border-color: transparent;
+  transform: scale(1.28);
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: rgba(255, 249, 242, 0.28);
+  box-shadow: 0 0 14px rgba(255, 249, 242, 0.7);
+}
+@keyframes swipe-face-pulse {
+  0% { filter: brightness(1); }
+  45% { filter: brightness(1.08); }
+  100% { filter: brightness(1); }
+}
+.days li.swipe-armed .swipe-face { animation: swipe-face-pulse 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 .days li.swiping-muted .swipe-under.left {
   opacity: 1;
   background: transparent;
@@ -1498,6 +1521,44 @@ body.celebrating .top { opacity: 0; }
 .editor-actions { display: flex; align-items: center; gap: 16px; }
 .stack { display: grid; gap: 8px; margin: 8px 0 0; }
 .settings h2 { margin: 22px 0 8px; }
+.settings-card {
+  margin: 16px 0 0;
+  padding: 14px 14px 16px;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: 16px;
+}
+.settings-card h2 { margin: 0 0 10px; }
+.settings-card .stack { margin-top: 0; }
+.settings-row {
+  position: relative;
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 2px 0;
+  border: 0;
+  border-top: 1px solid var(--linea);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+  cursor: pointer;
+}
+.settings-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--suave);
+  border-bottom: 2px solid var(--suave);
+  transform: rotate(-45deg);
+  flex: none;
+}
+.password-screen { display: grid; gap: 8px; }
+.password-screen h2 { margin: 4px 0 8px; font-size: 22px; }
 
 .streak-back {
   position: fixed;
@@ -1569,6 +1630,8 @@ body.celebrating .top { opacity: 0; }
   font: inherit;
   font-size: 14px;
 }
+.month-grid button.cell { position: relative; }
+.cell.picked { outline: 2px solid var(--olivo); outline-offset: -2px; }
 .cell.empty { pointer-events: none; }
 .cell.hit { background: color-mix(in srgb, var(--vela) 18%, var(--papel)); color: var(--vela); font-weight: 700; }
 .cell.run { box-shadow: inset 0 0 0 2px var(--vence-ocre); }

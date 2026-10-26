@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, editarComentario, editar
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, dayMarks, emojiGrid, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, dayMarks, emojiGrid, historyDetail, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -62,14 +62,19 @@ let gesture: {
   peakX: number
   pop: boolean
   month: boolean
+  haptic: HTMLLabelElement | null
 } | null = null
 let suppressRowClick = false
+let rowCommitClick = false
 let streakClosing = false
 let streakMode: StreakMode = ''
 let streakScroll = 0
 let monthsBefore = 1
 let monthsAfter = 1
 let streakAlign = false
+let growingMonths = false
+let passwordScreen = false
+let audioCtx: AudioContext | null = null
 let historyDate = ''
 let editing: { kind: 'intention' | 'comment'; id: string } | null = null
 let emojiQuery = ''
@@ -164,6 +169,8 @@ function paint() {
   const keepScroll = route === 'calendario' && !resetCalendarScroll && Boolean(document.querySelector('[data-testid="calendar"]'))
   resetCalendarScroll = false
   const y = window.scrollY
+  const monthScroll = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+  const savedMonthTop = monthScroll && !streakAlign ? monthScroll.scrollTop : null
   app.innerHTML = renderApp(route, current, selected, locked, offline, intention, locale, emojiFor, pulling, {
     streak: streakMode,
     monthsBefore,
@@ -178,6 +185,7 @@ function paint() {
     calendarDays,
     hero: heroVariant(),
     installOpen,
+    passwordScreen,
   })
   if (keepScroll) window.scrollTo(0, y)
   document.title = tx().brand
@@ -185,6 +193,14 @@ function paint() {
   document.documentElement.classList.toggle('modal-open', popup)
   document.body.classList.toggle('modal-open', popup)
   if (streakAlign) alignStreak()
+  else if (savedMonthTop != null) {
+    const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+    if (scroller) {
+      growingMonths = true
+      scroller.scrollTop = savedMonthTop
+      requestAnimationFrame(() => { growingMonths = false })
+    }
+  }
   settleGlass()
 }
 
@@ -311,6 +327,7 @@ function heroVariant(): 'a' | 'b' | 'c' {
 function syncRoute() {
   openIntention = intentionFromPath(location.pathname)
   emojiFor = ''
+  passwordScreen = false
 }
 
 function pushRoute(pathname: string) {
@@ -381,6 +398,20 @@ function readGlassX(pill: HTMLElement) {
 
 function triggerHaptic() {
   navigator.vibrate?.(12)
+}
+
+function tickIfRunning() {
+  const ctx = audioCtx
+  if (!ctx || ctx.state !== 'running') return
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.frequency.value = 660
+  gain.gain.setValueAtTime(0.03, ctx.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04)
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+  osc.start()
+  osc.stop(ctx.currentTime + 0.05)
 }
 
 function settleGlass() {
@@ -563,7 +594,10 @@ function trackRow(event: PointerEvent) {
   if (gesture.lockedAxis !== 'x') {
     if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       gesture.lockedAxis = 'x'
-      try { row.setPointerCapture?.(event.pointerId) } catch { /* Safari suelta el gesto si la captura falla */ }
+      const cap = gesture.haptic
+      if (cap) {
+        try { cap.setPointerCapture(event.pointerId) } catch { /* el dedo sigue sobre la etiqueta */ }
+      }
       row.classList.add('dragging')
       face.style.transition = 'none'
     } else if (Math.abs(dy) >= 14 && Math.abs(dy) > Math.abs(dx) * 1.2) {
@@ -586,7 +620,10 @@ function trackRow(event: PointerEvent) {
   if (dx >= 52) gesture.armed = 'right'
   else if (dx <= -52) gesture.armed = 'left'
   else gesture.armed = ''
-  if (gesture.armed && gesture.armed !== wasArmed) triggerHaptic()
+  if (gesture.armed && gesture.armed !== wasArmed) {
+    triggerHaptic()
+    tickIfRunning()
+  }
   row.classList.toggle('swipe-armed', gesture.armed !== '')
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
     const side = cue.closest('.swipe-under.left') ? 'left' : 'right'
@@ -712,6 +749,10 @@ app.addEventListener('pointerdown', (event) => {
     peakX: 0,
     pop,
     month,
+    haptic: (() => {
+      const label = target.closest('label[data-haptic-trigger]')
+      return label instanceof HTMLLabelElement ? label : null
+    })(),
   }
 })
 
@@ -773,13 +814,15 @@ app.addEventListener('pointerup', (event) => {
   }
   if (start.row) blurRow(start.row)
   if (start.row && start.lockedAxis === 'x') {
-    suppressRowClick = true
-    window.setTimeout(() => { suppressRowClick = false }, 350)
     const date = start.row.dataset.date ?? ''
     const committed = start.row.dataset.committed === 'true'
+    const willCommit = (start.armed === 'right' && !committed) || (start.armed === 'left' && committed)
+    rowCommitClick = willCommit
+    suppressRowClick = true
+    window.setTimeout(() => { suppressRowClick = false; rowCommitClick = false }, 350)
     resetRow(start.row)
-    if (start.armed === 'right' && !committed) void setCommitment(date, true, 'swipe')
-    else if (start.armed === 'left' && committed) void setCommitment(date, false, 'swipe')
+    if (willCommit && start.armed === 'right') void setCommitment(date, true, 'swipe')
+    else if (willCommit && start.armed === 'left') void setCommitment(date, false, 'swipe')
     return
   }
   const horizontal = dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.5
@@ -828,7 +871,6 @@ app.addEventListener('pointercancel', (event) => {
   }
 })
 
-let growingMonths = false
 app.addEventListener('scroll', (event) => {
   const scroller = event.target
   if (!(scroller instanceof HTMLElement) || scroller.dataset.testid !== 'month-scroll' || !streakMode || !current || growingMonths) return
@@ -842,7 +884,7 @@ app.addEventListener('scroll', (event) => {
     growingMonths = true
     const before = scroller.scrollHeight
     const top = scroller.scrollTop
-    scroller.insertAdjacentHTML('afterbegin', monthSpan(current, streakMode, from, to))
+    scroller.insertAdjacentHTML('afterbegin', monthSpan(current, streakMode, from, to, historyDate))
     scroller.scrollTop = top + (scroller.scrollHeight - before)
     growingMonths = false
     return
@@ -853,7 +895,7 @@ app.addEventListener('scroll', (event) => {
     const to = monthsAfter + add
     monthsAfter += add
     growingMonths = true
-    scroller.insertAdjacentHTML('beforeend', monthSpan(current, streakMode, from, to))
+    scroller.insertAdjacentHTML('beforeend', monthSpan(current, streakMode, from, to, historyDate))
     growingMonths = false
   }
 }, true)
@@ -966,6 +1008,14 @@ app.addEventListener('click', (event) => {
   }
   if (suppressRowClick) {
     suppressRowClick = false
+    const target = event.target
+    const hapticLabel = target instanceof Element && Boolean(target.closest('label[data-haptic-trigger]'))
+    const hapticSwitch = target instanceof HTMLInputElement && target.hasAttribute('data-haptic-switch')
+    if (rowCommitClick && (hapticLabel || hapticSwitch)) {
+      rowCommitClick = false
+      return
+    }
+    rowCommitClick = false
     event.preventDefault()
     event.stopPropagation()
     return
@@ -1125,8 +1175,67 @@ function restoreAttendance(date: string, snaps: { mine_attendance: boolean; went
   })
 }
 
+function streakTotal(state: Estado) {
+  if (streakMode === 'individual') return state.streaks.individual
+  if (streakMode === 'couple') return state.streaks.couple
+  if (streakMode === 'group') return state.streaks.group
+  if (streakMode === 'six') return state.streaks.six
+  return state.streaks.total
+}
+
+function marksFor(state: Estado, date: string) {
+  const row = state.history.find((day) => day.date === date)
+    ?? state.past.find((day) => day.date === date)
+    ?? state.calendar.find((day) => day.date === date)
+  return row ? dayMarks(row) : ''
+}
+
+function patchStreakPopup(state: Estado, isLocked: boolean) {
+  const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+  const pop = document.querySelector('.streak-pop')
+  if (!scroller || !pop || !streakMode) return false
+  for (const cell of scroller.querySelectorAll<HTMLButtonElement>('[data-act="history-day"]')) {
+    const on = cell.dataset.date === historyDate
+    cell.classList.toggle('picked', on)
+    if (on) cell.setAttribute('aria-pressed', 'true')
+    else cell.removeAttribute('aria-pressed')
+  }
+  const html = historyDetail(state, historyDate, isLocked)
+  const existing = pop.querySelector('.history-detail')
+  if (!html) existing?.remove()
+  else if (existing) existing.outerHTML = html
+  else pop.insertAdjacentHTML('beforeend', html)
+  return true
+}
+
+function patchOpenStreak(state: Estado, isLocked: boolean) {
+  const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
+  if (!scroller) return false
+  for (const cell of scroller.querySelectorAll<HTMLElement>('[data-date]')) {
+    const marks = marksFor(state, cell.dataset.date ?? '')
+    const dots = cell.querySelector('.dots')
+    if (marks) {
+      if (dots) dots.outerHTML = marks
+      else cell.insertAdjacentHTML('beforeend', marks)
+    } else {
+      dots?.remove()
+    }
+  }
+  const count = document.querySelector('.streak-pop header b')
+  if (count) count.textContent = String(streakTotal(state))
+  if (historyDate) {
+    const pop = document.querySelector('.streak-pop')
+    const html = historyDetail(state, historyDate, isLocked)
+    const existing = pop?.querySelector('.history-detail')
+    if (existing) existing.outerHTML = html
+    else pop?.insertAdjacentHTML('beforeend', html)
+  }
+  return true
+}
+
 function patchHoyAttendance(state: Estado, isLocked: boolean) {
-  if (routeFromPath(location.pathname) !== 'hoy' || streakMode) return false
+  if (streakMode) return patchOpenStreak(state, isLocked)
+  if (routeFromPath(location.pathname) !== 'hoy') return false
   const hero = document.querySelector<HTMLElement>('[data-testid="hoy-hero"]')
   if (!hero) return false
   const copy = tx()
@@ -1281,6 +1390,17 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'history-day') {
     historyDate = node.dataset.date ?? ''
+    if (current && patchStreakPopup(current, locked)) return
+    paint()
+    return
+  }
+  if (act === 'open-password-screen') {
+    passwordScreen = true
+    paint()
+    return
+  }
+  if (act === 'close-password-screen') {
+    passwordScreen = false
     paint()
     return
   }

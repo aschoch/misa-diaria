@@ -20,6 +20,7 @@ export type UiState = {
   calendarDays?: number
   hero?: 'a' | 'b' | 'c'
   installOpen?: boolean
+  passwordScreen?: boolean
 }
 
 export type Route = 'hoy' | 'calendario' | 'muro' | 'ajustes'
@@ -262,7 +263,7 @@ function inWindow(today: string, date: string) {
   return date <= today && date >= shiftDate(today, -6)
 }
 
-function monthBlock(state: Estado, year: number, month: number, mode: StreakMode, run: Set<string>, current: boolean) {
+function monthBlock(state: Estado, year: number, month: number, mode: StreakMode, run: Set<string>, current: boolean, selected = '') {
   const pack = dates()
   const history = new Map((state.history ?? []).map((day) => [day.date, day]))
   const first = new Date(Date.UTC(year, month, 1)).getUTCDay()
@@ -278,7 +279,8 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
     const classes = ['cell', hit ? 'hit' : '', run.has(iso) ? 'run' : '', iso === state.today ? 'today' : ''].filter(Boolean).join(' ')
     const mark = row ? dayMarks(row) : ''
     if (mode === 'all') {
-      return `<button type="button" class="${classes}" data-act="history-day" data-date="${iso}">${day}${mark}</button>`
+      const picked = iso === selected
+      return `<button type="button" class="${classes}${picked ? ' picked' : ''}" data-act="history-day" data-date="${iso}" ${picked ? 'aria-pressed="true"' : ''}>${day}${mark}${hapticOverlay()}</button>`
     }
     return `<span class="${classes}">${day}${mark}</span>`
   }).join('')
@@ -289,7 +291,7 @@ function monthBlock(state: Estado, year: number, month: number, mode: StreakMode
   </section>`
 }
 
-function historyDetail(state: Estado, date: string, locked: boolean) {
+export function historyDetail(state: Estado, date: string, locked: boolean) {
   if (!date) return ''
   const copy = tx()
   const row = (state.history ?? []).find((day) => day.date === date)
@@ -301,7 +303,7 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
   const f = fecha(date)
   const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
   const toggle = inWindow(state.today, date)
-    ? `<button type="button" class="texty" data-act="attend" data-date="${date}" ${locked ? 'disabled' : ''}>${mine ? copy.gone : copy.go}</button>`
+    ? `<button type="button" class="texty" data-act="attend" data-date="${date}" ${locked ? 'disabled' : ''}>${mine ? copy.gone : copy.go}${hapticOverlay()}</button>`
     : ''
   return `<aside class="history-detail" data-testid="history-detail">
     <h3>${heading}</h3>
@@ -312,14 +314,14 @@ function historyDetail(state: Estado, date: string, locked: boolean) {
   </aside>`
 }
 
-export function monthSpan(state: Estado, mode: StreakMode, fromDelta: number, toDelta: number) {
+export function monthSpan(state: Estado, mode: StreakMode, fromDelta: number, toDelta: number, selected = '') {
   const [year, month] = state.today.split('-').map(Number)
   const run = runDates(state, mode)
   const html: string[] = []
   const step = fromDelta <= toDelta ? 1 : -1
   for (let delta = fromDelta; step > 0 ? delta <= toDelta : delta >= toDelta; delta += step) {
     const part = addMonth(year, month - 1, delta)
-    html.push(monthBlock(state, part.y, part.m, mode, run, delta === 0))
+    html.push(monthBlock(state, part.y, part.m, mode, run, delta === 0, selected))
   }
   return html.join('')
 }
@@ -327,7 +329,7 @@ export function monthSpan(state: Estado, mode: StreakMode, fromDelta: number, to
 function streakPopup(state: Estado, mode: StreakMode, before: number, after: number, historyDate: string, locked: boolean) {
   if (!mode) return ''
   const copy = tx()
-  const months = monthSpan(state, mode, -before, after)
+  const months = monthSpan(state, mode, -before, after, historyDate)
   const legend = mode === 'all' ? `<ul class="legend" data-testid="legend">
     <li><i class="dot course"></i>${copy.legendCourse}</li>
     <li><i class="dot mine"></i>${copy.legendMine}</li>
@@ -414,9 +416,10 @@ function dayRow(day: Day, selected: string, locked: boolean) {
         <button type="button" class="select-day" data-act="select" data-date="${day.date}" ${open ? 'aria-current="true"' : ''} ${locked ? 'disabled' : ''}>
           <span class="num ${mine}">${f.d}</span>
           <span class="when">${day.sunday ? sun : ''}${f.corto}</span>
+          ${hapticOverlay()}
         </button>
         <button type="button" class="row-commit ${day.mine_commitment ? 'on' : ''}" data-act="commit" data-date="${day.date}" aria-pressed="${day.mine_commitment}" aria-label="${esc(name)}" ${locked ? 'disabled' : ''}>${visible}${hapticOverlay()}</button>
-        <span class="meta">${dayMeta(day)}</span>
+        <span class="meta">${dayMeta(day)}${hapticOverlay()}</span>
       </div>
     </li>`
 }
@@ -679,47 +682,71 @@ function installGuide(open = false) {
   </section>`
 }
 
+function passwordForm(ui: UiState) {
+  const copy = tx()
+  return `
+    <form class="stack" data-form="password" data-act="save-password">
+      <label for="current-password">${copy.currentPassword}</label>
+      <input id="current-password" name="current_password" type="password" autocomplete="current-password" required />
+      <label for="new-password">${copy.newPassword}</label>
+      <input id="new-password" name="password" type="password" minlength="6" autocomplete="new-password" required />
+      <button type="submit">${copy.savePassword}</button>
+    </form>
+    ${ui.passwordError ? `<p class="hint" data-testid="password-error">${esc(ui.passwordError)}</p>` : ''}
+    ${ui.passwordSaved ? `<p class="hint" data-testid="password-saved">${copy.passwordSaved}</p>` : ''}`
+}
+
 export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
   const copy = tx()
   const lang = (value: Locale, label: string) => `
-    <button type="button" data-act="locale" data-locale="${value}" aria-pressed="${locale === value}">${label}</button>`
+    <button type="button" data-act="locale" data-locale="${value}" aria-pressed="${locale === value}">${label}${hapticOverlay()}</button>`
+  if (ui.passwordScreen) {
+    return `
+      <section class="password-screen" data-testid="password-screen">
+        <button type="button" class="back" data-act="close-password-screen"><span aria-hidden="true">←</span>${copy.ajustes}${hapticOverlay()}</button>
+        <h2 id="password-title">${copy.changePassword}</h2>
+        ${passwordForm(ui)}
+      </section>`
+  }
   return `
     <section class="settings" data-testid="ajustes">
       ${installGuide(Boolean(ui.installOpen))}
-      <form class="stack" data-act="save-name">
-        <label for="display-name">${copy.yourName}</label>
-        <input id="display-name" name="display_name" maxlength="40" autocomplete="nickname" required value="${esc(state.me.display_name)}" />
-        <button type="submit">${copy.saveName}</button>
-      </form>
-      ${ui.nameSaved ? `<p class="hint" data-testid="name-saved">${copy.nameSaved}</p>` : ''}
-      <h2>${copy.alerts}</h2>
-      <p class="notify-note">${copy.notifyNote}</p>
-      <div class="switches">
-        <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
-          <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
+      <section class="settings-card">
+        <h2>${copy.accountSection}</h2>
+        <form class="stack" data-act="save-name">
+          <label for="display-name">${copy.yourName}</label>
+          <input id="display-name" name="display_name" maxlength="40" autocomplete="nickname" required value="${esc(state.me.display_name)}" />
+          <button type="submit">${copy.saveName}</button>
+        </form>
+        ${ui.nameSaved ? `<p class="hint" data-testid="name-saved">${copy.nameSaved}</p>` : ''}
+        <button type="button" class="settings-row" data-act="open-password-screen" data-testid="open-password-screen">
+          <span>${copy.changePassword}</span><i class="settings-chevron" aria-hidden="true"></i>${hapticOverlay()}
         </button>
-      </div>
-      <h2>${copy.language}</h2>
-      <div class="lang">
-        ${lang('es', copy.spanish)}
-        ${lang('pt', copy.portuguese)}
-      </div>
-      <h2 id="password-title">${copy.password}</h2>
-      <form class="stack" data-form="password" data-act="save-password">
-        <label for="current-password">${copy.currentPassword}</label>
-        <input id="current-password" name="current_password" type="password" autocomplete="current-password" required />
-        <label for="new-password">${copy.newPassword}</label>
-        <input id="new-password" name="password" type="password" minlength="6" autocomplete="new-password" required />
-        <button type="submit">${copy.savePassword}</button>
-      </form>
-      ${ui.passwordError ? `<p class="hint" data-testid="password-error">${esc(ui.passwordError)}</p>` : ''}
-      ${ui.passwordSaved ? `<p class="hint" data-testid="password-saved">${copy.passwordSaved}</p>` : ''}
-      <form class="stack" data-act="feedback">
-        <h2 id="feedback-title">${copy.feedbackTitle}</h2>
-        <textarea id="feedback" name="body" maxlength="1000" rows="4" aria-labelledby="feedback-title"></textarea>
-        <button type="submit">${copy.sendFeedback}</button>
-      </form>
-      ${ui.feedbackSaved ? `<p class="hint" data-testid="feedback-thanks">${copy.feedbackThanks}</p>` : ''}
+      </section>
+      <section class="settings-card">
+        <h2>${copy.alerts}</h2>
+        <p class="notify-note">${copy.notifyNote}</p>
+        <div class="switches">
+          <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
+            <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
+          </button>
+        </div>
+      </section>
+      <section class="settings-card">
+        <h2>${copy.language}</h2>
+        <div class="lang">
+          ${lang('es', copy.spanish)}
+          ${lang('pt', copy.portuguese)}
+        </div>
+      </section>
+      <section class="settings-card">
+        <form class="stack" data-act="feedback">
+          <h2 id="feedback-title">${copy.feedbackTitle}</h2>
+          <textarea id="feedback" name="body" maxlength="1000" rows="4" aria-labelledby="feedback-title"></textarea>
+          <button type="submit">${copy.sendFeedback}</button>
+        </form>
+        ${ui.feedbackSaved ? `<p class="hint" data-testid="feedback-thanks">${copy.feedbackThanks}</p>` : ''}
+      </section>
       <button type="button" class="quiet" data-act="logout">${copy.logout}</button>
     </section>`
 }
