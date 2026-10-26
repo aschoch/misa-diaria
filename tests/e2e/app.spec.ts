@@ -134,6 +134,12 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Rachas' })).toHaveCount(0)
   await expect(page.getByTestId('total')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Últimos días' })).toBeVisible()
+  const pastLegend = page.getByTestId('past-legend')
+  await expect(pastLegend).toBeVisible()
+  await expect(pastLegend).toContainText('Alguien del curso')
+  await expect(pastLegend).toContainText('Has ido tú')
+  await expect(pastLegend).toContainText('Cada matrimonio')
+  await expect(pastLegend).toContainText('Todos')
   const navBox = await page.locator('nav.tabs').evaluate((node) => {
     const box = node.getBoundingClientRect()
     const radius = Number.parseFloat(getComputedStyle(node).borderRadius)
@@ -1056,7 +1062,19 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await expect(page.locator('.hoy-hero')).toHaveClass(/estado-a/)
   await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
   expect(await page.getByTestId('go').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(30, 92, 56)')
+  const legendInView = await page.getByTestId('past-legend').evaluate((node) => {
+    const title = node.previousElementSibling
+    const anchor = title instanceof HTMLElement ? title : node
+    const top = anchor.getBoundingClientRect().top + window.scrollY
+    window.scrollTo(0, Math.max(0, top - 16))
+    const bar = document.querySelector('nav.tabs')?.getBoundingClientRect().top ?? window.innerHeight
+    const head = anchor.getBoundingClientRect()
+    const box = node.getBoundingClientRect()
+    return head.top >= 0 && box.top >= head.bottom - 2 && box.bottom <= bar && box.height > 10
+  })
+  expect(legendInView).toBe(true)
   await save(page, 'hoy.png')
+  await page.evaluate(() => window.scrollTo(0, 0))
   await save(page, 'estado-a-off.png')
   await showHero(page, 'b')
   await save(page, 'estado-b-off.png')
@@ -1241,6 +1259,12 @@ test('en portugués se ven las sequências y el calendario', async ({ page, brow
   await expect(page.getByTestId('hoy-date')).toHaveText('Sexta, 23 de outubro de 2026')
   await expect(page.getByRole('heading', { name: 'Sequências' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Últimos dias' })).toBeVisible()
+  const pastLegendPt = page.getByTestId('past-legend')
+  await expect(pastLegendPt).toBeVisible()
+  await expect(pastLegendPt).toContainText('Alguém do curso')
+  await expect(pastLegendPt).toContainText('Foste tu')
+  await expect(pastLegendPt).toContainText('Cada casal')
+  await expect(pastLegendPt).toContainText('Todos')
   await expect(page.getByTestId('total')).toHaveCount(0)
   await expect(page.getByTestId('go')).toContainText('Fui à Missa')
   await expect(page.getByTestId('risk')).toHaveCount(0)

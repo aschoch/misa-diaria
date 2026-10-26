@@ -463,6 +463,20 @@ p.risk {
   color: var(--suave);
 }
 
+.past-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: -2px 4px 10px;
+  color: var(--suave);
+  font-size: 12px;
+}
+.past-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.past-legend .dot.course,
+.past-legend .dot.mine,
+.past-legend .dot.couples { width: 10px; height: 10px; }
+
 .monday {
   margin: 8px 4px;
   color: var(--suave);

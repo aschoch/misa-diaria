@@ -195,8 +195,14 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     ${riskLine(state.risk)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
     ${hoyHero(state, gone, locked, hero)}
-    <section class="past" data-testid="past">
+    <section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
       <h2 class="streak-title">${copy.recentDays}</h2>
+      <div class="month-legend past-legend" data-testid="past-legend">
+        <span><i class="dot course" aria-hidden="true"></i>${copy.legendCourse}</span>
+        <span><i class="dot mine" aria-hidden="true"></i>${copy.legendMine}</span>
+        <span><i class="dot couples" aria-hidden="true"></i>${copy.legendCouples}</span>
+        <span><i class="dot star" aria-hidden="true">★</i>${copy.legendAll}</span>
+      </div>
       <ol class="past-list">${past}</ol>
       <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
     </section>
