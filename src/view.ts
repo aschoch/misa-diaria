@@ -195,7 +195,9 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     ${riskLine(state, locked)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
     ${hoyHero(state, gone, locked)}
+    ${unifiedCalendar() ? `${weekStrip(state, locked, ui.pulseDate)}${nextEmpty(state, locked)}` : ''}
     ${totalBlock(state)}
+    ${unifiedCalendar() ? lastIntention(state) : ''}
     ${unifiedCalendar() ? '' : `<section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
       <h2 class="streak-title">${copy.recentDays}</h2>
       ${pastLegend()}
@@ -204,6 +206,63 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     </section>`}
     ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked, Boolean(ui.popupEnter)) : ''}
   `
+}
+
+// Hoy con la prueba del calendario único: tres días antes y tres después de un vistazo, el próximo día
+// que nadie cubre y la última intención (sin nombre: los nombres solo en Intenciones).
+export function weekStrip(state: Estado, locked: boolean, pulse = '') {
+  const copy = tx()
+  const pack = dates()
+  const offset = 3
+  const known = new Map(state.calendar.map((day) => [day.date, day]))
+  const past = new Map(getPastDays(state, 7).map((day) => [day.date, day]))
+  const cells = Array.from({ length: 7 }, (_, index) => {
+    const date = shiftDate(state.today, index - offset)
+    const f = fecha(date)
+    const future = date > state.today
+    const day = known.get(date)
+    const old = past.get(date)
+    const went = date === state.today ? Boolean(day?.mine_attendance) : Boolean(old?.mine_attendance)
+    const planned = future && Boolean(day?.mine_commitment)
+    const count = future ? day?.covered ?? 0 : date === state.today ? day?.went ?? 0 : old?.went ?? 0
+    const ring = went ? 'gone' : planned ? 'planned' : future ? 'future' : 'past'
+    const label = `${f.largo} ${f.d}: ${future ? copy.weekPlanned(count) : copy.of12(count)}. ${future ? copy.commit : copy.went}`
+    const on = future ? planned : went
+    return `<button type="button" class="week-day${date === state.today ? ' is-today' : ''}" data-act="week-day" data-date="${date}" aria-pressed="${on}" aria-label="${esc(label)}" ${locked ? 'disabled' : ''}>
+        <span class="week-name">${pack.cortos[f.dow].slice(0, 1).toUpperCase()}</span>
+        <span class="num ${ring}${pulse === date ? ' pulse' : ''}">${f.d}</span>
+        <small>${count}</small>
+        ${hapticOverlay()}
+      </button>`
+  }).join('')
+  return `<section class="week" data-testid="week">
+      <h2 class="week-title"><button type="button" data-act="open-calendar">${copy.thisWeek}</button></h2>
+      <div class="week-days">${cells}</div>
+      <p class="week-note">${copy.weekNote}</p>
+      <button type="button" class="week-more" data-act="open-calendar" data-testid="week-calendar">${copy.seeCalendar} →</button>
+    </section>`
+}
+
+function nextEmpty(state: Estado, locked: boolean) {
+  const copy = tx()
+  const day = getCalendarDays(state, 14).slice(1).find((item) => atRisk(item))
+  if (!day) return ''
+  const f = fecha(day.date)
+  return `<section class="next-empty" data-testid="next-empty">
+      <p><span>${copy.nextEmpty(`${f.largo} ${f.d}`)}</span></p>
+      <button type="button" class="next-empty-cta" data-act="commit" data-date="${day.date}" ${locked ? 'disabled' : ''}>${copy.commit}${hapticOverlay()}</button>
+    </section>`
+}
+
+function lastIntention(state: Estado) {
+  const copy = tx()
+  const item = state.intentions[0]
+  if (!item) return ''
+  return `<a class="hoy-intention" href="${hrefIntention(item.id)}" data-testid="hoy-intention">
+      <span class="hoy-intention-label">${copy.prayFor}</span>
+      <span class="hoy-intention-body">${esc(item.body)}</span>
+      <span class="hoy-intention-more">${copy.seeIntentions} →</span>
+    </a>`
 }
 
 function pastLegend() {

@@ -10,7 +10,7 @@ import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeDiagnostics
 import { esc } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, dayMarks, emojiGrid, historyDetail, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, renderSplash, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, dayMarks, weekStrip, emojiGrid, historyDetail, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, renderSplash, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -130,6 +130,8 @@ let applyingScroll = false
 let calendarDays = 28
 // Días pasados que enseña el calendario con la prueba de los días pasados.
 let pastDays = 30
+// Día que acaba de marcarse en «Estos días» (para el pulso del círculo).
+let attendPulse = ''
 let commitChain: Promise<void> = Promise.resolve()
 let commitEpoch = 0
 // Hasta saber si hay sesión se pinta la marca, no el formulario de entrada.
@@ -2108,6 +2110,8 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
   }
   const total = document.querySelector<HTMLElement>('[data-testid="total-num"]')
   if (total) countTo(total, state.streaks.total)
+  const week = document.querySelector('[data-testid="week"]')
+  if (week) week.outerHTML = weekStrip(state, isLocked, attendPulse)
   const list = document.querySelector('[data-testid="past"]')
   if (list) {
     for (const day of state.past) {
@@ -2169,6 +2173,7 @@ function attendanceSource(node: HTMLElement) {
   if (node.closest('[data-testid="past"]')) return 'hoy_past'
   if (node.closest('.streak-pop, .history-detail')) return 'popup_day'
   if (node.closest('[data-kind="past"]')) return 'calendar_past'
+  if (node.closest('[data-testid="week"]')) return 'hoy_week'
   return 'calendar_detail'
 }
 
@@ -2184,7 +2189,9 @@ function queueAttendance(node: HTMLElement) {
   const flipped = flipAttendance(date)
   if (!flipped) return
   const epoch = ++attendanceEpoch
+  attendPulse = flipped.on ? date : ''
   if (riskBefore !== current.risk || !patchHoyAttendance(current, locked)) paint()
+  attendPulse = ''
   if (date === current.today) celebrateMark(flipped.on)
   const source = attendanceSource(node)
   if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { date, on: flipped.on, source })
@@ -2216,6 +2223,25 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'unified-cal') {
     setUnifiedCalendar(!unifiedCalendar())
     paint()
+    return
+  }
+  if (act === 'week-day') {
+    // En «Estos días», un día pasado (u hoy) marca si fuiste; uno que viene, si vas a ir.
+    if (!current || locked) return
+    const date = node.dataset.date ?? ''
+    if (date > current.today) {
+      const day = current.calendar.find((item) => item.date === date)
+      await setCommitment(date, day ? !day.mine_commitment : true)
+      return
+    }
+    queueAttendance(node)
+    return
+  }
+  if (act === 'open-calendar') {
+    resetCalendarScroll = true
+    go('calendario')
+    jumpPageTop(calendarHomeY())
+    syncTodayButton()
     return
   }
   if (act === 'to-today') {

@@ -1901,3 +1901,107 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
 .to-today[hidden] { display: none; }
 @keyframes to-today-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
 @media (prefers-reduced-motion: reduce) { .to-today { animation: none; } }
+
+/* Hoy con la prueba del calendario único. */
+.week {
+  margin: 0 0 18px;
+  padding: 14px 12px 10px;
+  border-radius: 20px;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+}
+.week-title { margin: 0 4px 10px; }
+.week-title button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: "Fraunces Variable", serif;
+  font-weight: 560;
+  font-size: 18px;
+  color: var(--tinta);
+  cursor: pointer;
+}
+.week-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.week-day {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 0 6px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--suave);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.week-day.is-today { background: color-mix(in srgb, var(--olivo) 10%, var(--papel)); }
+.week-day.is-today .week-name { color: var(--olivo); font-weight: 700; }
+.week-name { font-size: 12px; font-weight: 600; }
+.week-day .num { width: 34px; height: 34px; font-size: 16px; }
+.week-day .num.future { border-color: var(--linea); color: var(--tinta); }
+.week-day small { font-size: 12px; font-variant-numeric: tabular-nums; }
+.week-day:disabled { cursor: default; opacity: 0.6; }
+.week-note { margin: 6px 4px 0; font-size: 12px; line-height: 1.4; color: var(--suave); }
+.week-more {
+  margin: 6px 4px 2px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vela);
+  cursor: pointer;
+}
+
+.next-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 18px;
+  background: var(--arcilla-suave);
+  border: 1px solid color-mix(in srgb, var(--barra) 30%, var(--linea));
+}
+.next-empty p { flex: 1; margin: 0; font-size: 14px; line-height: 1.35; color: var(--arcilla); font-weight: 600; }
+.next-empty-cta {
+  position: relative;
+  flex: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--vela);
+  color: var(--sobre-vela);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hoy-intention {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  color: var(--tinta);
+  text-decoration: none;
+}
+.hoy-intention-label { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--suave); }
+.hoy-intention-body {
+  font-family: "Fraunces Variable", serif;
+  font-size: 18px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hoy-intention-more { font-size: 14px; font-weight: 600; color: var(--vela); }
