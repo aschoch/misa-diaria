@@ -4,7 +4,8 @@
 
 -- 1. Comprobar: qué cuentas siguen con esa contraseña (true = hay que arreglarla).
 select u.email, m.display_name,
-       coalesce(u.encrypted_password = extensions.crypt('no-se-usa', u.encrypted_password), false) as clave_de_la_semilla
+       -- Solo se compara con un hash bcrypt: crypt() falla con la contraseña vacía.
+       coalesce(u.encrypted_password ~ '^\$2[abxy]\$' and u.encrypted_password = extensions.crypt('no-se-usa', u.encrypted_password), false) as clave_de_la_semilla
 from auth.users u
 left join public.members m on m.id = u.id
 order by u.email;
@@ -14,7 +15,8 @@ order by u.email;
 update auth.users
 set encrypted_password = extensions.crypt(gen_random_uuid()::text, extensions.gen_salt('bf')),
     updated_at = now()
-where encrypted_password = extensions.crypt('no-se-usa', encrypted_password);
+where encrypted_password ~ '^\$2[abxy]\$'
+  and encrypted_password = extensions.crypt('no-se-usa', encrypted_password);
 
 -- 3. Comprobar que no quedan datos de prueba de la semilla.
 select 'intención de prueba' as que, i.body as detalle
