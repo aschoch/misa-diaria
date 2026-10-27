@@ -5,12 +5,11 @@ import './styles.css'
 import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { loadEmojis } from './emoji'
-import { setUnifiedCalendar, unifiedCalendar } from './flags'
 import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeDiagnostics, swipeSwitchOn } from './haptics'
 import { esc } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
-import { appendCalendarDays, blankDay, dayMarks, weekStrip, emojiGrid, historyDetail, href, intentionFromPath, monthSpan, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, renderSplash, routeFromPath, type LoginMode, type Route, type StreakMode } from './view'
+import { appendCalendarDays, blankDay, weekStrip, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, renderSplash, routeFromPath, type LoginMode, type Route } from './view'
 
 const app = document.querySelector<HTMLElement>('#app')!
 let current: Estado | null = null
@@ -64,8 +63,6 @@ let gesture: {
   lockedAxis: '' | 'x' | 'y'
   armed: 'right' | 'left' | ''
   peakX: number
-  pop: boolean
-  month: boolean
   haptic: HTMLLabelElement | null
   hapticInput: HTMLInputElement | null
   rowSwitch: HTMLInputElement | null
@@ -106,16 +103,8 @@ function sendSwipeTrace() {
 }
 let suppressRowClick = false
 let rowCommitClick = false
-let streakClosing = false
-let streakMode: StreakMode = ''
-let streakScroll = 0
-let monthsBefore = 1
-let monthsAfter = 1
-let streakAlign = false
-let growingMonths = false
 let passwordScreen = false
 let audioCtx: AudioContext | null = null
-let historyDate = ''
 let editing: { kind: 'intention' | 'comment'; id: string } | null = null
 let emojiQuery = ''
 let passwordSaved = false
@@ -311,10 +300,6 @@ function paint() {
   setLocale(locale)
   document.documentElement.lang = locale === 'pt' ? 'pt-PT' : 'es'
   const route = routeFromPath(location.pathname)
-  if (route !== 'hoy') {
-    streakMode = ''
-    historyDate = ''
-  }
   if (!configured && !demo) {
     app.innerHTML = renderSetup()
     return
@@ -343,8 +328,6 @@ function paint() {
   const keepScroll = route === 'calendario' && !resetCalendarScroll && Boolean(document.querySelector('[data-testid="calendar"]'))
   resetCalendarScroll = false
   const y = window.scrollY
-  const monthScroll = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-  const savedMonthTop = monthScroll && !streakAlign ? monthScroll.scrollTop : null
   const focusedDraft = captureDrafts()
   const routeKey = `${route}:${intention}:${passwordScreen ? 'pw' : ''}`
   const enter = Boolean(lastRouteKey) && routeKey !== lastRouteKey
@@ -357,10 +340,6 @@ function paint() {
   }
   const opening = popupEnter
   app.innerHTML = renderApp(route, visibleState(current), selected, locked, offline, intention, locale, emojiFor, pulling, {
-    streak: streakMode,
-    monthsBefore,
-    monthsAfter,
-    historyDate,
     editing,
     emojiQuery,
     passwordSaved,
@@ -387,21 +366,9 @@ function paint() {
   restoreDrafts(focusedDraft)
   if (opening) focusDialog()
   if (keepScroll) window.scrollTo(0, y)
-  else if (route === 'calendario' && unifiedCalendar()) jumpPageTop(calendarHomeY())
+  else if (route === 'calendario') jumpPageTop(calendarHomeY())
   syncTodayButton()
   document.title = tx().brand
-  const popup = Boolean(streakMode)
-  document.documentElement.classList.toggle('modal-open', popup)
-  document.body.classList.toggle('modal-open', popup)
-  if (streakAlign) alignStreak()
-  else if (savedMonthTop != null) {
-    const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-    if (scroller) {
-      growingMonths = true
-      scroller.scrollTop = savedMonthTop
-      requestAnimationFrame(() => { growingMonths = false })
-    }
-  }
   settleGlass()
 }
 
@@ -409,14 +376,6 @@ function daysBetween(from: string, to: string) {
   const [y1, m1, d1] = from.split('-').map(Number)
   const [y2, m2, d2] = to.split('-').map(Number)
   return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000)
-}
-
-function alignStreak() {
-  const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-  const currentMonth = scroller?.querySelector<HTMLElement>('[data-current="true"]')
-  if (!scroller || !currentMonth) return
-  scroller.scrollTop = currentMonth.offsetTop
-  streakAlign = false
 }
 
 async function refresh(celebrate = false) {
@@ -609,12 +568,12 @@ function syncRoute() {
   }
 }
 
-function pushModal(kind: 'streak' | 'emoji') {
+function pushModal(kind: 'emoji') {
   history.pushState({ ...(history.state ?? {}), modal: kind }, '', `${location.pathname}${location.search}`)
   depth += 1
 }
 
-function popModal(kind: 'streak' | 'emoji') {
+function popModal(kind: 'emoji') {
   if (history.state?.modal !== kind) return
   skipNextPop = true
   history.back()
@@ -629,7 +588,6 @@ function closeSheet() {
 }
 
 function dialogNode() {
-  if (streakMode) return document.querySelector<HTMLElement>('.streak-pop')
   if (emojiFor) return document.querySelector<HTMLElement>('.sheet')
   return null
 }
@@ -830,7 +788,7 @@ function openNav(link: HTMLAnchorElement, from: { index: number } | { px: number
   const target: Route = navKey === 'intenciones' ? 'muro' : navKey === 'calendario' || navKey === 'ajustes' ? navKey : 'hoy'
   // Solo el toque en la pestaña en la que ya estás sube con animación; cambiar de pestaña llega arriba al instante.
   const sameTab = target === routeFromPath(location.pathname) && !intentionFromPath(location.pathname) && !passwordScreen
-  if (navKey === 'calendario') resetCalendarScroll = true
+  if (navKey === 'calendario' && !sameTab) resetCalendarScroll = true
   if (navKey === 'intenciones') {
     openIntention = ''
     emojiFor = ''
@@ -881,7 +839,7 @@ function syncTodayButton() {
 }
 
 function calendarHomeY() {
-  if (!unifiedCalendar() || !current || routeFromPath(location.pathname) !== 'calendario') return 0
+  if (!current || routeFromPath(location.pathname) !== 'calendario') return 0
   const row = document.querySelector<HTMLElement>(`[data-testid="calendar"] li[data-date="${current.today}"]`)
   if (!row) return 0
   return Math.max(0, Math.round(row.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.3))
@@ -1106,92 +1064,6 @@ function trackRow(event: PointerEvent) {
   face.style.transform = `translateX(${shown}px)`
 }
 
-function lockStreakScroll() {
-  streakScroll = window.scrollY
-  const body = document.body
-  body.style.position = 'fixed'
-  body.style.top = `-${streakScroll}px`
-  body.style.left = '0'
-  body.style.right = '0'
-  body.style.width = '100%'
-}
-
-function unlockStreakScroll() {
-  const body = document.body
-  if (body.style.position !== 'fixed') {
-    window.scrollTo(0, streakScroll)
-    return
-  }
-  body.style.position = ''
-  body.style.top = ''
-  body.style.left = ''
-  body.style.right = ''
-  body.style.width = ''
-  window.scrollTo(0, streakScroll)
-}
-
-function closeStreakPopupWithAnimation(fromHistory = false) {
-  if (!streakMode || streakClosing) return
-  streakClosing = true
-  if (!fromHistory) popModal('streak')
-  const pop = document.querySelector<HTMLElement>('.streak-pop')
-  const back = document.querySelector<HTMLElement>('.streak-back')
-  pop?.classList.remove('entering')
-  back?.classList.remove('entering')
-  const finish = () => {
-    if (!streakClosing && !streakMode) return
-    streakClosing = false
-    streakMode = ''
-    historyDate = ''
-    unlockStreakScroll()
-    paint()
-    window.scrollTo(0, streakScroll)
-    document.querySelector<HTMLElement>('[data-testid="open-past-cal"]')?.focus({ preventScroll: true })
-  }
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  if (reduce || !pop) {
-    finish()
-    return
-  }
-  if (!pop.style.transform) pop.style.transform = 'translate(-50%, 0px)'
-  pop.style.opacity = '1'
-  pop.style.transition = 'transform 480ms cubic-bezier(0.32, 0.72, 0, 1)'
-  if (back) {
-    back.style.transition = 'opacity 480ms ease'
-    back.getBoundingClientRect()
-    back.style.opacity = '0'
-  }
-  pop.getBoundingClientRect()
-  pop.style.transform = 'translate(-50%, 105vh)'
-  let done = false
-  const end = () => {
-    if (done) return
-    done = true
-    finish()
-  }
-  pop.addEventListener('transitionend', (event) => {
-    if (event.propertyName === 'transform') end()
-  })
-  window.setTimeout(end, 480)
-}
-
-function followPopup(dy: number) {
-  const pop = document.querySelector<HTMLElement>('.streak-pop')
-  if (!pop || dy <= 0) return
-  pop.style.transition = 'none'
-  pop.style.transform = `translate(-50%, ${dy}px)`
-  if (window.scrollY !== streakScroll) window.scrollTo(0, streakScroll)
-}
-
-function armPopupDismiss(pointerId: number) {
-  if (!gesture || gesture.pop) return
-  const scroller = document.querySelector<HTMLElement>('.month-scroll')
-  if (!scroller || scroller.scrollTop > 0) return
-  gesture.pop = true
-  gesture.month = false
-  try { document.querySelector<HTMLElement>('.streak-pop')?.setPointerCapture?.(pointerId) } catch { /* sigue el gesto */ }
-}
-
 app.addEventListener('pointerdown', (event) => {
   const target = event.target
   if (!(target instanceof Element)) return
@@ -1225,12 +1097,8 @@ app.addEventListener('pointerdown', (event) => {
     }
     traceSwipe('pd')
   }
-  const month = Boolean(target.closest('.month-scroll'))
   const rowNode = target.closest('.days li.swipeable')
   const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
-  const popNode = streakMode && !month ? target.closest<HTMLElement>('.streak-pop, .streak-back') : null
-  const pop = Boolean(popNode)
-  if (popNode && !target.closest('button.pop-close, .history-seg button')) popNode.setPointerCapture?.(event.pointerId)
   gesture = {
     x: event.clientX,
     y: event.clientY,
@@ -1241,8 +1109,6 @@ app.addEventListener('pointerdown', (event) => {
     lockedAxis: '',
     armed: '',
     peakX: 0,
-    pop,
-    month,
     haptic: (() => {
       const label = target.closest('label[data-haptic-trigger]')
       return label instanceof HTMLLabelElement ? label : null
@@ -1457,14 +1323,6 @@ app.addEventListener('pointermove', (event) => {
   if (!gesture || gesture.id !== event.pointerId) return
   const dx = event.clientX - gesture.x
   const dy = event.clientY - gesture.y
-  if (gesture.month && !gesture.pop) {
-    if (dy > 0 && dy > Math.abs(dx)) armPopupDismiss(event.pointerId)
-    if (!gesture.pop) return
-  }
-  if (gesture.pop) {
-    followPopup(dy)
-    return
-  }
   if (swipeTrace && gesture.rowSwitch) swipeTrace.pm += 1
   trackRow(event)
   driveSwitchScroll(event)
@@ -1483,8 +1341,6 @@ document.addEventListener('touchmove', (event) => {
   if (gesture.rowSwitch && (event.timeStamp - gesture.t0 < 220 || gesture.lockedAxis === 'y' || (gesture.lockedAxis === '' && Math.abs(dy) > Math.abs(dx)))) {
     event.preventDefault()
   }
-  if (gesture.month && !gesture.pop && dy > 0 && dy > Math.abs(dx)) armPopupDismiss(gesture.id)
-  if (gesture.pop && dy > 0) event.preventDefault()
 }, { passive: false })
 
 app.addEventListener('pointerup', (event) => {
@@ -1497,16 +1353,6 @@ app.addEventListener('pointerup', (event) => {
   gesture = null
   const dx = event.clientX - start.x
   const dy = event.clientY - start.y
-  if (start.month) return
-  if (start.pop) {
-    const pop = document.querySelector<HTMLElement>('.streak-pop')
-    if (dy > 56) closeStreakPopupWithAnimation()
-    else if (pop) {
-      pop.style.transition = ''
-      pop.style.transform = ''
-    }
-    return
-  }
   if (start.row) blurRow(start.row)
   const touch = event.pointerType === 'touch'
   if (start.rowSwitch) {
@@ -1597,46 +1443,9 @@ app.addEventListener('pointercancel', (event) => {
     window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
   }
   const row = gesture.row
-  const pop = gesture.pop
   gesture = null
   resetRow(row)
-  if (pop) {
-    const node = document.querySelector<HTMLElement>('.streak-pop')
-    if (node) {
-      node.style.transition = ''
-      node.style.transform = ''
-    }
-  }
 })
-
-app.addEventListener('scroll', (event) => {
-  const scroller = event.target
-  if (!(scroller instanceof HTMLElement) || scroller.dataset.testid !== 'month-scroll' || !streakMode || !current || growingMonths) return
-  const nearTop = scroller.scrollTop < 360
-  const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 360
-  if (nearTop && monthsBefore < 36) {
-    const add = Math.min(3, 36 - monthsBefore)
-    const from = -(monthsBefore + add)
-    const to = -(monthsBefore + 1)
-    monthsBefore += add
-    growingMonths = true
-    const before = scroller.scrollHeight
-    const top = scroller.scrollTop
-    scroller.insertAdjacentHTML('afterbegin', monthSpan(current, streakMode, from, to, historyDate))
-    scroller.scrollTop = top + (scroller.scrollHeight - before)
-    growingMonths = false
-    return
-  }
-  if (nearBottom && monthsAfter < 24) {
-    const add = Math.min(3, 24 - monthsAfter)
-    const from = monthsAfter + 1
-    const to = monthsAfter + add
-    monthsAfter += add
-    growingMonths = true
-    scroller.insertAdjacentHTML('beforeend', monthSpan(current, streakMode, from, to, historyDate))
-    growingMonths = false
-  }
-}, true)
 
 let extendingCalendar = false
 let extendQueued = false
@@ -1659,7 +1468,7 @@ window.addEventListener('scroll', () => {
   extendQueued = true
   requestAnimationFrame(() => {
     extendQueued = false
-    if (extendingCalendar || streakMode || !current) return
+    if (extendingCalendar || !current) return
     if (routeFromPath(location.pathname) !== 'calendario') return
     const remain = document.documentElement.scrollHeight - window.scrollY - window.innerHeight
     if (remain > 320) return
@@ -1857,10 +1666,6 @@ window.addEventListener('popstate', () => {
     return
   }
   // Atrás en Android cierra primero lo que esté abierto encima.
-  if (streakMode && history.state?.modal !== 'streak') {
-    closeStreakPopupWithAnimation(true)
-    return
-  }
   if (emojiFor && history.state?.modal !== 'emoji' && routeFromPath(location.pathname) === 'muro') {
     emojiFor = ''
     emojiQuery = ''
@@ -1874,14 +1679,13 @@ window.addEventListener('popstate', () => {
   paint()
 })
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Tab' && (streakMode || emojiFor)) {
+  if (event.key === 'Tab' && emojiFor) {
     trapFocus(event)
     return
   }
   if (event.key !== 'Escape') return
   hideCelebration()
-  if (streakMode) closeStreakPopupWithAnimation()
-  else if (emojiFor) closeSheet()
+  if (emojiFor) closeSheet()
   else if (editing) {
     clearDraft(`edit-${editing.kind}-${editing.id}`)
     editing = null
@@ -2020,66 +1824,7 @@ function restoreAttendance(date: string, snaps: AttendanceSnap) {
   current.risk = snaps.risk
 }
 
-function streakTotal(state: Estado) {
-  if (streakMode === 'individual') return state.streaks.individual
-  if (streakMode === 'couple') return state.streaks.couple
-  if (streakMode === 'group') return state.streaks.group
-  if (streakMode === 'six') return state.streaks.six
-  return state.streaks.total
-}
-
-function marksFor(state: Estado, date: string) {
-  const row = state.history.find((day) => day.date === date)
-    ?? state.past.find((day) => day.date === date)
-    ?? state.calendar.find((day) => day.date === date)
-  return row ? dayMarks(row) : ''
-}
-
-function patchStreakPopup(state: Estado, isLocked: boolean) {
-  const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-  const pop = document.querySelector('.streak-pop')
-  if (!scroller || !pop || !streakMode) return false
-  for (const cell of scroller.querySelectorAll<HTMLButtonElement>('[data-act="history-day"]')) {
-    const on = cell.dataset.date === historyDate
-    cell.classList.toggle('picked', on)
-    if (on) cell.setAttribute('aria-pressed', 'true')
-    else cell.removeAttribute('aria-pressed')
-  }
-  const html = historyDetail(state, historyDate, isLocked)
-  const existing = pop.querySelector('.history-detail')
-  if (!html) existing?.remove()
-  else if (existing) existing.outerHTML = html
-  else pop.insertAdjacentHTML('beforeend', html)
-  return true
-}
-
-function patchOpenStreak(state: Estado, isLocked: boolean) {
-  const scroller = document.querySelector<HTMLElement>('[data-testid="month-scroll"]')
-  if (!scroller) return false
-  for (const cell of scroller.querySelectorAll<HTMLElement>('[data-date]')) {
-    const marks = marksFor(state, cell.dataset.date ?? '')
-    const dots = cell.querySelector('.dots')
-    if (marks) {
-      if (dots) dots.outerHTML = marks
-      else cell.insertAdjacentHTML('beforeend', marks)
-    } else {
-      dots?.remove()
-    }
-  }
-  const count = document.querySelector('.streak-pop header b')
-  if (count) count.textContent = String(streakTotal(state))
-  if (historyDate) {
-    const pop = document.querySelector('.streak-pop')
-    const html = historyDetail(state, historyDate, isLocked)
-    const existing = pop?.querySelector('.history-detail')
-    if (existing) existing.outerHTML = html
-    else pop?.insertAdjacentHTML('beforeend', html)
-  }
-  return true
-}
-
 function patchHoyAttendance(state: Estado, isLocked: boolean) {
-  if (streakMode) return patchOpenStreak(state, isLocked)
   if (routeFromPath(location.pathname) !== 'hoy') return false
   const hero = document.querySelector<HTMLElement>('[data-testid="hoy-hero"]')
   if (!hero) return false
@@ -2112,28 +1857,6 @@ function patchHoyAttendance(state: Estado, isLocked: boolean) {
   if (total) countTo(total, state.streaks.total)
   const week = document.querySelector('[data-testid="week"]')
   if (week) week.outerHTML = weekStrip(state, isLocked, attendPulse)
-  const list = document.querySelector('[data-testid="past"]')
-  if (list) {
-    for (const day of state.past) {
-      const row = list.querySelector<HTMLElement>(`li[data-date="${day.date}"]`)
-      if (!row) continue
-      const count = row.querySelector('.past-count')
-      if (count) count.textContent = copy.of12(day.went)
-      const marks = dayMarks(day)
-      const dots = row.querySelector('.dots')
-      if (marks) {
-        if (dots) dots.outerHTML = marks
-        else count?.insertAdjacentHTML('afterend', marks)
-      } else {
-        dots?.remove()
-      }
-      const check = row.querySelector<HTMLButtonElement>('.check')
-      if (!check) continue
-      check.classList.toggle('on', day.mine_attendance)
-      check.setAttribute('aria-pressed', day.mine_attendance ? 'true' : 'false')
-      check.disabled = isLocked
-    }
-  }
   return true
 }
 
@@ -2170,8 +1893,6 @@ function celebrateMark(on: boolean) {
 
 function attendanceSource(node: HTMLElement) {
   if (node.dataset.testid === 'go') return 'hoy_main'
-  if (node.closest('[data-testid="past"]')) return 'hoy_past'
-  if (node.closest('.streak-pop, .history-detail')) return 'popup_day'
   if (node.closest('[data-kind="past"]')) return 'calendar_past'
   if (node.closest('[data-testid="week"]')) return 'hoy_week'
   return 'calendar_detail'
@@ -2218,11 +1939,6 @@ function queueAttendance(node: HTMLElement) {
 async function actOn(act: string, node: HTMLElement, body = '') {
   if (act === 'back-wall') {
     backToWall()
-    return
-  }
-  if (act === 'unified-cal') {
-    setUnifiedCalendar(!unifiedCalendar())
-    paint()
     return
   }
   if (act === 'week-day') {
@@ -2293,32 +2009,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
   }
   if (act === 'emoji-close') {
     closeSheet()
-    return
-  }
-  if (act === 'streak' || act === 'open-past-cal') {
-    if (act === 'open-past-cal' && current && !demo) registrarEvento(current.me.id, 'past_calendar_open', 'hoy', {})
-    const key = act === 'open-past-cal' ? 'all' : node.dataset.key
-    streakMode = key === 'couple' || key === 'group' || key === 'six' || key === 'all' || key === 'individual' ? key : ''
-    if (streakMode) {
-      lockStreakScroll()
-      popupEnter = true
-      pushModal('streak')
-    }
-    monthsBefore = 6
-    monthsAfter = 6
-    historyDate = ''
-    streakAlign = Boolean(streakMode)
-    paint()
-    return
-  }
-  if (act === 'streak-close') {
-    closeStreakPopupWithAnimation()
-    return
-  }
-  if (act === 'history-day') {
-    historyDate = node.dataset.date ?? ''
-    if (current && patchStreakPopup(current, locked)) return
-    paint()
     return
   }
   if (act === 'open-password-screen') {
@@ -2392,14 +2082,6 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     denied = false
     calendarDays = 28
     go('hoy')
-    return
-  }
-  if (act === 'attend-set') {
-    if (!current || locked) return
-    const date = node.dataset.date ?? ''
-    const wantOn = node.dataset.on === 'true'
-    const currentOn = attendanceRows(date)[0]?.mine_attendance ?? false
-    if (wantOn !== currentOn) queueAttendance(node)
     return
   }
   if (busy && act !== 'select') return

@@ -1,18 +1,12 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
 import { esc, fecha, formatTimestamp, fullDate } from './format'
-import { unifiedCalendar } from './flags'
 import { swipeSwitchOn } from './haptics'
 import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
-export type StreakMode = '' | 'individual' | 'couple' | 'group' | 'six' | 'all'
 export type EditTarget = { kind: 'intention' | 'comment'; id: string } | null
 
 export type UiState = {
-  streak?: StreakMode
-  monthsBefore?: number
-  monthsAfter?: number
-  historyDate?: string
   editing?: EditTarget
   emojiQuery?: string
   passwordSaved?: boolean
@@ -141,18 +135,6 @@ function riskLine(state: Estado, locked: boolean) {
   return `<p class="risk" data-testid="risk"><span>${copy.riskEmpty}</span><button type="button" class="risk-cta" data-act="commit" data-date="${state.today}" data-testid="risk-commit" ${locked ? 'disabled' : ''}>${copy.riskCta}${hapticOverlay()}</button></p>`
 }
 
-export function dayMarks(day: { went: number; mine_attendance: boolean; couples_went: number }) {
-  const copy = tx()
-  const items = [
-    day.went >= 1 ? `<i class="dot course" title="${esc(copy.markCourse)}"></i>` : '',
-    day.mine_attendance ? `<i class="dot mine" title="${esc(copy.markMine)}"></i>` : '',
-    day.couples_went >= 6 ? `<i class="dot couples" title="${esc(copy.markCouples)}"></i>` : '',
-    day.went >= 12 ? `<i class="dot star" aria-label="${esc(copy.markAll)}">★</i>` : '',
-  ].filter(Boolean)
-  if (!items.length) return ''
-  return `<span class="dots">${items.join('')}</span>`
-}
-
 function badges(day: { went: number }) {
   const copy = tx()
   const items = [
@@ -181,34 +163,19 @@ function hoyHero(state: Estado, gone: boolean, locked: boolean) {
 }
 
 export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
-  const copy = tx()
   const today = state.calendar[0]
   const gone = Boolean(today?.mine_attendance)
-  const past = state.past.map((day) => {
-    const f = fecha(day.date)
-    return `<li class="${day.sunday ? 'sunday' : ''}" data-date="${day.date}">
-      <span class="past-main"><span>${f.corto} ${f.d}</span><small class="past-count">${copy.of12(day.went)}</small>${dayMarks(day)}</span>
-      <button type="button" class="check ${day.mine_attendance ? 'on' : ''}" data-act="attend" data-date="${day.date}" aria-pressed="${day.mine_attendance}" aria-label="${f.largo} ${f.d}" ${locked ? 'disabled' : ''}>${hapticOverlay()}</button>
-    </li>`
-  }).join('')
   return `
     ${riskLine(state, locked)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
     ${hoyHero(state, gone, locked)}
-    ${unifiedCalendar() ? `${weekStrip(state, locked, ui.pulseDate)}${nextEmpty(state, locked)}` : ''}
+    ${weekStrip(state, locked, ui.pulseDate)}${nextEmpty(state, locked)}
     ${totalBlock(state)}
-    ${unifiedCalendar() ? lastIntention(state) : ''}
-    ${unifiedCalendar() ? '' : `<section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
-      <h2 class="streak-title">${copy.recentDays}</h2>
-      ${pastLegend()}
-      <ol class="past-list">${past}</ol>
-      <button type="button" class="past-more" data-act="open-past-cal" data-testid="open-past-cal">${copy.seeAllDays}</button>
-    </section>`}
-    ${ui.streak ? streakPopup(state, ui.streak, ui.monthsBefore ?? 1, ui.monthsAfter ?? 1, ui.historyDate ?? '', locked, Boolean(ui.popupEnter)) : ''}
+    ${lastIntention(state)}
   `
 }
 
-// Hoy con la prueba del calendario único: tres días antes y tres después de un vistazo, el próximo día
+// Hoy: tres días antes y tres después de un vistazo, el próximo día
 // que nadie cubre y la última intención (sin nombre: los nombres solo en Intenciones).
 export function weekStrip(state: Estado, locked: boolean, pulse = '') {
   const copy = tx()
@@ -258,21 +225,11 @@ function lastIntention(state: Estado) {
   const copy = tx()
   const item = state.intentions[0]
   if (!item) return ''
-  return `<a class="hoy-intention" href="${hrefIntention(item.id)}" data-testid="hoy-intention">
+  return `<a class="hoy-intention" href="${hrefIntention(item.id)}" data-testid="hoy-intention" aria-label="${esc(`${copy.prayFor}: ${item.body}`)}">
       <span class="hoy-intention-label">${copy.prayFor}</span>
       <span class="hoy-intention-body">${esc(item.body)}</span>
       <span class="hoy-intention-more">${copy.seeIntentions} →</span>
     </a>`
-}
-
-function pastLegend() {
-  const copy = tx()
-  return `<div class="month-legend past-legend" data-testid="past-legend">
-        <span><i class="dot course" aria-hidden="true"></i>${copy.legendCourse}</span>
-        <span><i class="dot mine" aria-hidden="true"></i>${copy.legendMine}</span>
-        <span><i class="dot couples" aria-hidden="true"></i>${copy.legendCouples}</span>
-        <span><i class="dot star" aria-hidden="true">★</i>${copy.legendAll}</span>
-      </div>`
 }
 
 export function totalBlock(state: Estado) {
@@ -286,148 +243,6 @@ export function totalBlock(state: Estado) {
 function shiftDate(iso: string, days: number) {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
-}
-
-function addMonth(year: number, month: number, delta: number) {
-  const next = new Date(Date.UTC(year, month + delta, 1))
-  return { y: next.getUTCFullYear(), m: next.getUTCMonth() }
-}
-
-function meets(day: HistoryDay | undefined, mode: StreakMode) {
-  if (!day || mode === '' || mode === 'all') return false
-  if (mode === 'individual') return day.mine_attendance
-  if (mode === 'couple') return day.couple_attendance
-  if (mode === 'group') return day.went >= 1
-  return day.couples_went >= 6
-}
-
-function runDates(state: Estado, mode: StreakMode) {
-  const map = new Map((state.history ?? []).map((day) => [day.date, day]))
-  const dates = new Set<string>()
-  if (mode === '' || mode === 'all') return dates
-  let date = state.today
-  if (!meets(map.get(date), mode)) date = shiftDate(date, -1)
-  while (meets(map.get(date), mode) && dates.size < 5000) {
-    dates.add(date)
-    date = shiftDate(date, -1)
-  }
-  return dates
-}
-
-function streakTitle(state: Estado, mode: StreakMode) {
-  const copy = tx()
-  if (mode === 'individual') return state.me.display_name
-  if (mode === 'couple') return copy.couple
-  if (mode === 'group') return copy.group
-  if (mode === 'six') return copy.six
-  return copy.recentDays
-}
-
-function streakCount(state: Estado, mode: StreakMode) {
-  if (mode === 'individual') return state.streaks.individual
-  if (mode === 'couple') return state.streaks.couple
-  if (mode === 'group') return state.streaks.group
-  if (mode === 'six') return state.streaks.six
-  return state.streaks.total
-}
-
-// Cualquier día pasado (y hoy) se puede corregir; el futuro no.
-function inWindow(today: string, date: string) {
-  return date <= today
-}
-
-function monthBlock(state: Estado, year: number, month: number, mode: StreakMode, run: Set<string>, current: boolean, selected = '') {
-  const pack = dates()
-  const history = new Map((state.history ?? []).map((day) => [day.date, day]))
-  const first = new Date(Date.UTC(year, month, 1)).getUTCDay()
-  const total = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
-  const lead = (first + 6) % 7
-  const blanks = Array.from({ length: lead }, () => '<span class="cell empty"></span>').join('')
-  const weekdays = [...pack.cortos.slice(1), pack.cortos[0]]
-  const cells = Array.from({ length: total }, (_, index) => {
-    const day = index + 1
-    const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    const row = history.get(iso)
-    const hit = meets(row, mode)
-    const classes = ['cell', hit ? 'hit' : '', run.has(iso) ? 'run' : '', iso === state.today ? 'today' : ''].filter(Boolean).join(' ')
-    const mark = row ? dayMarks(row) : ''
-    if (mode === 'all' && iso > state.today) {
-      return `<span class="${classes} future" aria-disabled="true">${day}</span>`
-    }
-    if (mode === 'all') {
-      const picked = iso === selected
-      return `<button type="button" class="${classes}${picked ? ' picked' : ''}" data-act="history-day" data-date="${iso}" ${picked ? 'aria-pressed="true"' : ''}>${day}${mark}${hapticOverlay()}</button>`
-    }
-    return `<span class="${classes}">${day}${mark}</span>`
-  }).join('')
-  return `<section class="month" data-month="${year}-${month}" ${current ? 'data-current="true"' : ''}>
-    <h3>${pack.meses[month]} ${year}</h3>
-    <div class="weekdays">${weekdays.map((name) => `<span>${name}</span>`).join('')}</div>
-    <div class="month-grid">${blanks}${cells}</div>
-  </section>`
-}
-
-export function historyDetail(state: Estado, date: string, locked: boolean) {
-  if (!date) return ''
-  const copy = tx()
-  const row = (state.history ?? []).find((day) => day.date === date)
-  const past = state.past.find((day) => day.date === date)
-  const today = state.calendar.find((day) => day.date === date)
-  const went = row?.went ?? past?.went ?? today?.went ?? 0
-  const couples = row?.couples_went ?? past?.couples_went ?? today?.couples_went ?? 0
-  const mine = row?.mine_attendance ?? past?.mine_attendance ?? today?.mine_attendance ?? false
-  const f = fecha(date)
-  const heading = `${f.largo.charAt(0).toUpperCase()}${f.largo.slice(1)}, ${f.d} de ${f.mes}`
-  const marks = dayMarks({ went, mine_attendance: mine, couples_went: couples })
-  const control = inWindow(state.today, date)
-    ? `<div class="history-seg" role="group">
-        <button type="button" class="${mine ? '' : 'on absent'}" data-act="attend-set" data-date="${date}" data-on="false" aria-pressed="${mine ? 'false' : 'true'}" ${locked ? 'disabled' : ''}>${copy.absentChoice}${hapticOverlay()}</button>
-        <button type="button" class="${mine ? 'on attended' : ''}" data-act="attend-set" data-date="${date}" data-on="true" aria-pressed="${mine ? 'true' : 'false'}" ${locked ? 'disabled' : ''}>${copy.attendedChoice}${hapticOverlay()}</button>
-      </div>`
-    : `<p class="history-status ${mine ? 'on' : ''}">${mine ? `✓ ${copy.wentLabel}` : copy.absentLabel}</p>`
-  return `<aside class="history-detail" data-testid="history-detail">
-    <div class="history-detail-head">
-      <h3>${heading}</h3>
-      <div class="history-detail-meta"><span>${copy.of12(went)}</span>${marks}</div>
-    </div>
-    ${control}
-  </aside>`
-}
-
-export function monthSpan(state: Estado, mode: StreakMode, fromDelta: number, toDelta: number, selected = '') {
-  const [year, month] = state.today.split('-').map(Number)
-  const run = runDates(state, mode)
-  const html: string[] = []
-  const step = fromDelta <= toDelta ? 1 : -1
-  for (let delta = fromDelta; step > 0 ? delta <= toDelta : delta >= toDelta; delta += step) {
-    const part = addMonth(year, month - 1, delta)
-    html.push(monthBlock(state, part.y, part.m, mode, run, delta === 0, selected))
-  }
-  return html.join('')
-}
-
-function streakPopup(state: Estado, mode: StreakMode, before: number, after: number, historyDate: string, locked: boolean, enter = false) {
-  if (!mode) return ''
-  const copy = tx()
-  const months = monthSpan(state, mode, -before, after, historyDate)
-  const legend = mode === 'all' ? `<ul class="legend" data-testid="legend">
-    <li><i class="dot course"></i>${copy.legendCourse}</li>
-    <li><i class="dot mine"></i>${copy.legendMine}</li>
-    <li><i class="dot couples"></i>${copy.legendCouples}</li>
-    <li><i class="dot star" aria-label="${esc(copy.legendAll)}">★</i>${copy.legendAll}</li>
-  </ul>` : ''
-  return `<div class="streak-back${enter ? ' entering' : ''}" data-act="streak-close"></div>
-    <section class="streak-pop${enter ? ' entering' : ''}" data-testid="streak-calendar" role="dialog" aria-modal="true" aria-label="${esc(streakTitle(state, mode))}">
-      <header>
-        <h2>${esc(streakTitle(state, mode))}</h2>
-        <b title="${esc(tx().totalLabel)}">${streakCount(state, mode)}</b>
-        <button type="button" class="pop-close" data-act="streak-close" aria-label="${copy.close}"><span aria-hidden="true">×</span></button>
-      </header>
-      ${legend}
-      <div class="month-scroll" data-testid="month-scroll">${months}</div>
-      <div class="pop-foot"></div>
-      ${mode === 'all' ? historyDetail(state, historyDate, locked) : ''}
-    </section>`
 }
 
 function atRisk(day: Day) {
@@ -879,10 +694,6 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
           <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">
             <span>${copy.alertEmpty}</span><i></i>${hapticOverlay()}
           </button>
-          <button type="button" class="switch" role="switch" aria-checked="${unifiedCalendar()}" data-act="unified-cal" data-testid="unified-cal">
-            <span>${copy.unifiedCal}</span><i></i>${hapticOverlay()}
-          </button>
-          <p class="switch-note">${copy.unifiedCalNote}</p>
         </div>
       </section>
       <section class="settings-card">
@@ -906,7 +717,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
 
 export function renderApp(route: Route, state: Estado, selected: string, locked: boolean, offline: string, openId: string, locale: Locale, emojiFor = '', refreshing = false, ui: UiState = {}) {
   const body = route === 'calendario'
-    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28, ui.pulseDate ?? '', unifiedCalendar() ? ui.pastDays ?? 30 : 0)
+    ? renderCalendario(state, selected, locked, locale, ui.calendarDays ?? 28, ui.pulseDate ?? '', ui.pastDays ?? 30)
     : route === 'muro'
       ? renderMuro(state, locked, openId, emojiFor, ui)
       : route === 'ajustes'

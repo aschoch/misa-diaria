@@ -137,16 +137,12 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   expect(await page.evaluate(() => {
     const hero = document.querySelector('[data-testid="hoy-hero"]')?.getBoundingClientRect()
     const total = document.querySelector('[data-testid="total"]')?.getBoundingClientRect()
-    const past = document.querySelector('[data-testid="past"]')?.getBoundingClientRect()
-    return Boolean(hero && total && past && total.top >= hero.bottom && past.top >= total.bottom)
+    const week = document.querySelector('[data-testid="week"]')?.getBoundingClientRect()
+    return Boolean(hero && total && week && week.top >= hero.bottom && total.top >= week.bottom)
   })).toBe(true)
-  await expect(page.getByRole('heading', { name: 'Últimos días' })).toBeVisible()
-  const pastLegend = page.getByTestId('past-legend')
-  await expect(pastLegend).toBeVisible()
-  await expect(pastLegend).toContainText('Alguien del curso')
-  await expect(pastLegend).toContainText('Has ido tú')
-  await expect(pastLegend).toContainText('Cada matrimonio')
-  await expect(pastLegend).toContainText('Todos')
+  // Sin «Últimos días»: los días pasados viven en el calendario.
+  await expect(page.getByTestId('past')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Estos días' })).toBeVisible()
   const navBox = await page.locator('nav.tabs').evaluate((node) => {
     const box = node.getBoundingClientRect()
     const radius = Number.parseFloat(getComputedStyle(node).borderRadius)
@@ -161,22 +157,8 @@ test('un miembro entra con el código y ve el curso', async ({ page }) => {
   expect(mainPad).toBeGreaterThanOrEqual(128)
   await expect(page.getByTestId('streak-individual')).toHaveCount(0)
   await expect(page.locator('.streaks li')).toHaveCount(0)
-  const past = page.getByTestId('past')
-  await expect(past.locator('.past-list li').last()).toBeVisible()
-  await expect(past.getByTestId('open-past-cal')).toHaveText('Ver más')
-  expect(await past.evaluate((section) => {
-    const last = section.querySelector('li:last-child')
-    const more = section.querySelector('[data-testid="open-past-cal"]')
-    if (!last || !more) return false
-    return more.getBoundingClientRect().top >= last.getBoundingClientRect().bottom - 1
-  })).toBe(true)
-  await expect(page.getByTestId('past').locator('li').first()).toContainText('11 de 12')
-  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('de 6')
-  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('10 misas')
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.course')).toHaveAttribute('title', 'Alguien del curso ha ido')
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.mine')).toHaveAttribute('title', 'Has ido tú')
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.couples')).toHaveAttribute('title', 'Alguien de cada matrimonio')
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.star')).toHaveCount(0)
+  // Ayer en «Estos días»: cuántos del curso fueron.
+  await expect(page.getByTestId('week').locator('.week-day[data-date="2026-10-22"] small')).toHaveText('11')
   await expect(page.getByTestId('go')).toBeVisible()
   await expect(page.locator('nav a')).toHaveCount(4)
   await page.getByRole('link', { name: 'Intenciones' }).click()
@@ -307,7 +289,7 @@ test('el domingo no está en riesgo y la fecha es la de Madrid', async ({ page }
   await clock('2026-10-31T10:00:00Z')
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
-  const days = page.getByTestId('calendar').locator('li')
+  const days = page.getByTestId('calendar').locator('li:not([data-kind="past"])')
   await expect(days.nth(0)).toHaveClass(/risk/)
   await expect(days.nth(1)).toContainText('Domingo')
   await expect(days.nth(1)).not.toContainText(/en riesgo/i)
@@ -443,7 +425,7 @@ test('el calendario dice el motivo y no tapa la lista', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
-  const friday = page.getByTestId('calendar').locator('li').nth(0)
+  const friday = page.getByTestId('calendar').locator('li:not([data-kind="past"])').nth(0)
   await expect(friday).toContainText('9 de 12')
   await expect(friday).not.toContainText('de 6')
   await expect(friday.getByTestId('risk-why')).toHaveCount(0)
@@ -554,53 +536,13 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   const errors = watchConsole(page)
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
-  await expect(page.locator('[data-act="select"][data-date="2026-10-23"]')).toContainText('vie')
+  await expect(page.locator('[data-act="select"][data-date="2026-10-24"]')).toContainText('sáb')
+  await expect(page.locator('[data-act="select"][data-date="2026-10-23"]')).toContainText('Hoy')
   const select = page.locator('.days li button[data-act="select"]').first()
   await expect(select).toHaveCSS('appearance', 'none')
   await expect(page.locator('.days li.swipeable').first()).toHaveCSS('min-height', '64px')
   const bar = await page.locator('.days li.risk').first().evaluate((node) => getComputedStyle(node, '::before').zIndex)
   expect(bar).toBe('2')
-
-  await page.getByRole('link', { name: 'Hoy' }).click()
-  await page.getByTestId('open-past-cal').click()
-  const week = page.locator('[data-testid="streak-calendar"] [data-current="true"] .weekdays span')
-  await expect(week).toHaveText(['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'])
-  const cells = page.locator('[data-testid="streak-calendar"] [data-current="true"] .month-grid > *')
-  await expect(cells.nth(2)).toHaveClass(/empty/)
-  await expect(cells.nth(3)).toHaveText('1')
-  await expect(page.locator('.streak-back')).toHaveCSS('z-index', '60')
-  await expect(page.locator('.streak-pop header b')).toHaveCSS('color', 'rgb(156, 63, 28)')
-  const dotColors = await page.evaluate(() => {
-    const paint = (selector: string) => {
-      const node = document.querySelector(selector)
-      return node ? getComputedStyle(node).backgroundColor : ''
-    }
-    const ink = (selector: string) => {
-      const node = document.querySelector(selector)
-      return node ? getComputedStyle(node).color : ''
-    }
-    return {
-      courseGrid: paint('.month-grid .dot.course'),
-      courseLegend: paint('.legend .dot.course'),
-      mineGrid: paint('.month-grid .dot.mine'),
-      mineLegend: paint('.legend .dot.mine'),
-      couplesGrid: paint('.month-grid .dot.couples'),
-      couplesLegend: paint('.legend .dot.couples'),
-      star: ink('.legend .dot.star'),
-    }
-  })
-  expect(dotColors.courseGrid).toBe('rgb(46, 107, 62)')
-  expect(dotColors.courseGrid).toBe(dotColors.courseLegend)
-  expect(dotColors.mineGrid).toBe('rgb(27, 62, 112)')
-  expect(dotColors.mineGrid).toBe(dotColors.mineLegend)
-  expect(dotColors.couplesGrid).toBe('rgb(212, 136, 42)')
-  expect(dotColors.couplesGrid).toBe(dotColors.couplesLegend)
-  expect(dotColors.star).toBe('rgb(232, 162, 41)')
-  await expect(page.getByTestId('legend')).toContainText('Alguien del curso')
-  await expect(page.getByTestId('legend')).toContainText('Has ido tú')
-  await expect(page.getByTestId('legend')).toContainText('Cada matrimonio')
-  await expect(page.getByTestId('legend')).toContainText('Todos')
-  await page.getByRole('button', { name: 'Cerrar' }).click()
 
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await expect(page.getByRole('heading', { name: 'Tu cuenta' })).toBeVisible()
@@ -621,53 +563,21 @@ test('el mes empieza en lunes y la contraseña no se repite', async ({ page }) =
   await expect(page.locator('#current-password')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Português' }).click()
-  await page.getByRole('link', { name: 'Hoje' }).click()
-  await page.getByTestId('open-past-cal').click()
-  await expect(page.locator('[data-current="true"] .weekdays span')).toHaveText(['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'])
+  await page.getByRole('link', { name: 'Calendário' }).click()
+  await expect(page.locator('[data-act="select"][data-date="2026-10-24"]')).toContainText('sáb')
+  await expect(page.locator('[data-act="select"][data-date="2026-10-23"]')).toContainText('Hoje')
   expect(errors).toEqual([])
 })
 
-test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo', async ({ page, viewport }) => {
+test('el calendario sigue y el deslizamiento avisa', async ({ page, viewport }) => {
   test.setTimeout(60_000)
   const errors = watchConsole(page)
   const phone = viewport?.width === 390
   await login(page, 'persona1@example.com')
-  await clearOfBar(page, page.getByTestId('open-past-cal'))
-  const scrolled = await page.evaluate(() => window.scrollY)
-  await page.getByTestId('open-past-cal').click()
-  await expect(page.locator('body')).toHaveClass(/modal-open/)
-  const header = await page.locator('.streak-pop header').boundingBox()
-  if (!header) throw new Error('sin cabecera')
-  await page.mouse.move(header.x + 40, header.y + 18)
-  await page.mouse.down()
-  await page.mouse.move(header.x + 44, header.y + 120, { steps: 8 })
-  await page.mouse.up()
-  const closing = await page.locator('.streak-pop').evaluate((node) => ({
-    opacity: getComputedStyle(node).opacity,
-    transform: (node as HTMLElement).style.transform,
-    transition: (node as HTMLElement).style.transition,
-  }))
-  expect(closing.opacity).toBe('1')
-  expect(closing.transform).toContain('105vh')
-  expect(closing.transition).toContain('480ms')
-  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrolled)
-
-  await clearOfBar(page, page.getByRole('button', { name: 'Ver más' }))
-  const parked = await page.evaluate(() => window.scrollY)
-  await page.getByRole('button', { name: 'Ver más' }).click()
-  await expect(page.getByTestId('month-scroll')).toBeVisible()
-  const foot = await page.locator('.pop-foot').boundingBox()
-  if (!foot) throw new Error('sin borde')
-  await page.mouse.move(foot.x + 40, foot.y + 8)
-  await page.mouse.down()
-  await page.mouse.move(foot.x + 44, foot.y + 90, { steps: 8 })
-  await page.mouse.up()
-  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
-  expect(await page.evaluate(() => window.scrollY)).toBe(parked)
 
   await page.getByRole('link', { name: 'Calendario' }).click()
-  await expect(page.getByTestId('cal-month-head').first()).toHaveText('Octubre 2026')
+  // Arriba quedan los 30 días anteriores: el primer mes es septiembre.
+  await expect(page.getByTestId('cal-month-head').first()).toHaveText('Septiembre 2026')
   await expect(page.getByTestId('cal-month-head').first()).toHaveCSS('position', 'sticky')
   const first = page.locator('[data-testid="calendar"] li[data-date="2026-11-01"] .when')
   await expect(first).toContainText('dom')
@@ -797,17 +707,15 @@ test('el calendario sigue, el deslizamiento avisa y el popup no mueve el fondo',
   if (drawn) await expect.poll(() => drawn.evaluate((node) => node.isConnected).catch(() => false)).toBe(false)
   await expect(quit.locator('.num')).not.toHaveClass(/planned/)
   const afterFace = await quit.locator('.swipe-face').evaluate((node) => getComputedStyle(node).backgroundColor)
-  const plainFace = await page.locator('[data-testid="calendar"] li:not(.selected) .swipe-face').first().evaluate((node) => getComputedStyle(node).backgroundColor)
-  const selectedFace = await page.locator('[data-testid="calendar"] li.selected .swipe-face').evaluate((node) => getComputedStyle(node).backgroundColor)
+  const plainFace = await page.locator('[data-testid="calendar"] li:not(.selected):not(.is-today):not([data-kind="past"]) .swipe-face').first().evaluate((node) => getComputedStyle(node).backgroundColor)
   expect(armedFace).toBe(plainFace)
   expect(afterFace).toBe(plainFace)
-  expect(selectedFace).toBe(plainFace)
   await page.evaluate(() => window.scrollTo(0, 0))
   const gap = await page.locator('.select-day').first().evaluate((node) => {
     const num = node.querySelector('.num')?.getBoundingClientRect()
     const when = node.querySelector('.when')?.getBoundingClientRect()
     const style = getComputedStyle(node)
-    const plain = document.querySelector('.num:not(.gone)')
+    const plain = document.querySelector('.num:not(.gone):not(.past)')
     return { gap: style.gap, space: num && when ? when.left - num.right : 0, dashed: plain ? getComputedStyle(plain).borderTopStyle : '' }
   })
   expect(gap.gap).toBe('12px')
@@ -866,11 +774,14 @@ test('la barra inferior vuelve arriba', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 1200 }).toBe(0)
   await expectLens(page, 'hoy')
   await page.locator('nav.tabs a[data-nav="calendario"]').click()
-  await page.evaluate(() => window.scrollTo(0, 480))
-  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(100)
+  // En el calendario, el inicio es hoy: volver a tocar la pestaña lleva a hoy.
+  const today = page.locator('[data-testid="calendar"] li.is-today')
+  await expect(today).toBeInViewport()
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await expect(today).not.toBeInViewport()
   await page.locator('nav.tabs a[data-nav="calendario"]').click()
   await expect(page.getByTestId('calendar')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 1200 }).toBe(0)
+  await expect(today).toBeInViewport()
   await expectLens(page, 'calendario')
   await page.locator('nav.tabs a[data-nav="intenciones"]').click()
   await page.getByRole('link', { name: /Por quienes no pueden salir de casa/ }).click()
@@ -1009,7 +920,7 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
   expect(errors).toEqual([])
 })
 
-test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ page }) => {
+test('marcar es inmediato y el resorte queda', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'persona12@example.com')
   let release: () => void = () => {}
@@ -1026,11 +937,12 @@ test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ pa
     await route.continue()
   })
   try {
-    const row = page.getByTestId('past').locator('li').first()
-    await expect(row.locator('.past-count')).toHaveText('11 de 12')
-    await row.getByRole('button').click()
-    await expect(row.getByRole('button')).toHaveAttribute('aria-pressed', 'true')
-    await expect(row.locator('.past-count')).toHaveText('12 de 12')
+    // Ayer en «Estos días»: se marca al momento, antes de que responda el servidor.
+    const yesterday = page.getByTestId('week').locator('.week-day[data-date="2026-10-22"]')
+    await expect(yesterday.locator('small')).toHaveText('11')
+    await yesterday.click()
+    await expect(yesterday).toHaveAttribute('aria-pressed', 'true')
+    await expect(yesterday.locator('small')).toHaveText('12')
     await expect.poll(() => seen).toBe(1)
     const letGo = release
     gate = new Promise<void>((resolve) => { release = resolve })
@@ -1070,17 +982,6 @@ test('marcar es inmediato, el resorte queda y el mes arranca largo', async ({ pa
     await page.unroute('**/rest/v1/attendance**').catch(() => undefined)
   }
 
-  await page.getByTestId('open-past-cal').click()
-  const scroller = page.getByTestId('month-scroll')
-  await expect(scroller).toBeVisible()
-  const handle = await scroller.elementHandle()
-  const before = await scroller.locator('.month').count()
-  expect(before).toBeGreaterThan(3)
-  await scroller.evaluate((node) => { node.scrollTop = 0 })
-  await expect.poll(() => scroller.locator('.month').count()).toBeGreaterThan(before)
-  expect(await handle?.evaluate((node) => node.isConnected)).toBe(true)
-  await page.getByRole('button', { name: 'Cerrar' }).click()
-
   await page.getByRole('link', { name: 'Calendario' }).click()
   const lienzo = await page.getByTestId('cal-month-head').first().evaluate((node) => getComputedStyle(node).backgroundColor)
   expect(lienzo).toBe('rgb(243, 235, 221)')
@@ -1102,17 +1003,12 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await expect(page.locator('.hoy-hero')).toHaveClass(/estado-a/)
   await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
   expect(await page.getByTestId('go').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(30, 92, 56)')
-  const legendInView = await page.getByTestId('past-legend').evaluate((node) => {
-    const title = node.previousElementSibling
-    const anchor = title instanceof HTMLElement ? title : node
-    const top = anchor.getBoundingClientRect().top + window.scrollY
-    window.scrollTo(0, Math.max(0, top - 16))
+  const weekInView = await page.getByTestId('week').evaluate((node) => {
     const bar = document.querySelector('nav.tabs')?.getBoundingClientRect().top ?? window.innerHeight
-    const head = anchor.getBoundingClientRect()
     const box = node.getBoundingClientRect()
-    return head.top >= 0 && box.top >= head.bottom - 2 && box.bottom <= bar && box.height > 10
+    return box.top >= 0 && box.bottom <= bar && box.height > 40
   })
-  expect(legendInView).toBe(true)
+  expect(weekInView).toBe(true)
   await save(page, 'hoy.png')
   await page.evaluate(() => window.scrollTo(0, 0))
   await save(page, 'estado-a-off.png')
@@ -1145,7 +1041,7 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await expect(page.getByTestId('cal-month-head').nth(1)).toBeVisible()
   await save(page, 'calendario-noviembre.png')
   await page.evaluate(() => window.scrollTo(0, 0))
-  const suave = page.locator('[data-testid="calendar"] li').nth(1)
+  const suave = page.locator('[data-testid="calendar"] li:not([data-kind="past"])').nth(1)
   await suave.scrollIntoViewIfNeeded()
   const suaveBox = await suave.boundingBox()
   if (!suaveBox) throw new Error('sin fila')
@@ -1158,14 +1054,14 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await save(page, 'swipe-suave.png')
   await page.mouse.move(startX + 100, y, { steps: 6 })
   await save(page, 'swipe-armado.png')
-  const committed = await page.locator('[data-testid="calendar"] li').nth(1).getAttribute('data-committed')
+  const committed = await page.locator('[data-testid="calendar"] li:not([data-kind="past"])').nth(1).getAttribute('data-committed')
   const settled = committed === 'true'
     ? Promise.resolve()
     : page.waitForResponse((response) => response.url().includes('/rpc/estado'))
   await page.mouse.up()
   await settled
-  await expect(page.locator('[data-testid="calendar"] li').nth(1).locator('.num')).toHaveClass(/planned/)
-  const quitar = page.locator('[data-testid="calendar"] li').nth(1)
+  await expect(page.locator('[data-testid="calendar"] li:not([data-kind="past"])').nth(1).locator('.num')).toHaveClass(/planned/)
+  const quitar = page.locator('[data-testid="calendar"] li:not([data-kind="past"])').nth(1)
   const quitarBox = await quitar.boundingBox()
   if (!quitarBox) throw new Error('sin fila para quitar')
   const quitarX = quitarBox.x + quitarBox.width - 28
@@ -1214,19 +1110,6 @@ test('capturas del teléfono', async ({ page, browserName, viewport }) => {
   await page.getByTestId('thread').waitFor()
   await save(page, 'intencion-detalle-es.png')
   await page.getByRole('link', { name: 'Volver a intenciones' }).click()
-  await page.getByRole('link', { name: 'Hoy', exact: true }).click()
-  await page.getByTestId('open-past-cal').click()
-  await page.getByTestId('streak-calendar').waitFor()
-  await save(page, 'racha-calendario-es.png')
-  await page.getByRole('button', { name: 'Cerrar' }).click()
-  await page.getByRole('button', { name: 'Ver más' }).click()
-  await page.getByTestId('legend').waitFor()
-  await expect(page.locator('[data-testid="month-scroll"] [data-current="true"] h3')).toHaveText('octubre 2026')
-  await page.locator('[data-act="history-day"][data-date="2026-10-12"]').click()
-  await expect(page.getByTestId('history-detail')).toBeVisible()
-  await expect(page.getByTestId('month-scroll')).not.toContainText('2023')
-  await save(page, 'ver-todo-es.png')
-  await page.getByRole('button', { name: 'Cerrar' }).click()
   await page.getByRole('link', { name: 'Ajustes' }).click()
   await page.getByTestId('ajustes').waitFor()
   await expect(page.locator('#current-password')).toHaveCount(0)
@@ -1300,30 +1183,19 @@ test('en portugués se ven las sequências y el calendario', async ({ page, brow
   await page.getByRole('link', { name: 'Hoje' }).click()
   await expect(page.getByTestId('hoy-date')).toHaveText('Sexta-feira, 23 de outubro de 2026')
   await expect(page.getByRole('heading', { name: 'Sequências' })).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Últimos dias' })).toBeVisible()
-  const pastLegendPt = page.getByTestId('past-legend')
-  await expect(pastLegendPt).toBeVisible()
-  await expect(pastLegendPt).toContainText('Alguém do curso')
-  await expect(pastLegendPt).toContainText('Foste tu')
-  await expect(pastLegendPt).toContainText('Cada casal')
-  await expect(pastLegendPt).toContainText('Todos')
+  await expect(page.getByRole('heading', { name: 'Estes dias' })).toBeVisible()
+  await expect(page.getByTestId('week-calendar')).toHaveText('Ver calendário →')
   await expect(page.getByTestId('total')).toContainText('Total de Missas do curso')
   await expect(page.getByTestId('go')).toContainText('Fui à Missa')
   await expect(page.getByTestId('risk')).toHaveCount(0)
   await expect(page.locator('.streaks li')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Ver mais' })).toBeVisible()
-  await expect(page.getByTestId('past').locator('li').first()).toContainText('11 de 12')
-  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('de 6')
-  await expect(page.getByTestId('past').locator('li').first()).not.toContainText('10 missas')
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.course')).toHaveAttribute('title', 'Alguém do curso foi')
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.mine')).toHaveCount(0)
-  await expect(page.getByTestId('past').locator('li').first().locator('.dot.couples')).toHaveAttribute('title', 'Alguém de cada casal')
   await expect(page.getByText(/matrimónio|matrimónio|Falta/)).toHaveCount(0)
   if (shoot) await save(page, 'hoy-pt.png')
   await page.getByRole('link', { name: 'Calendário' }).click()
   await expect(page.getByTestId('calendar')).toContainText('de 12')
   await expect(page.getByTestId('calendar')).not.toContainText('de 6')
-  await expect(page.getByTestId('cal-month-head').first()).toHaveText('Outubro 2026')
+  await expect(page.getByTestId('cal-month-head').first()).toHaveText('Setembro 2026')
+  await expect(page.getByTestId('earlier-days')).toHaveText('Dias anteriores')
   await expect(page.getByText(/Falta|matrimónio/)).toHaveCount(0)
   if (shoot) await save(page, 'calendario-pt.png')
   await page.getByRole('link', { name: 'Definições' }).click()
@@ -1535,36 +1407,6 @@ test('se edita la intención propia y el comentario propio', async ({ page }) =>
   expect(errors).toEqual([])
 })
 
-test('tocar un día deja el mes donde estaba', async ({ page }) => {
-  const errors = watchConsole(page)
-  await login(page, 'persona1@example.com')
-  await page.getByTestId('open-past-cal').click()
-  const scroller = page.getByTestId('month-scroll')
-  await expect(scroller.locator('[data-current="true"] h3')).toHaveText('octubre 2026')
-  // El popup entra con un muelle; un dedo toca cuando ya está quieto.
-  await expect(page.locator('.streak-pop.entering')).toHaveCount(0)
-  const before = await scroller.evaluate((node) => ({
-    top: node.scrollTop,
-    months: node.querySelectorAll('.month').length,
-    text: node.textContent ?? '',
-  }))
-  expect(before.top).toBeGreaterThan(0)
-  expect(before.text).not.toContain('2023')
-  await scroller.locator('[data-act="history-day"][data-date="2026-10-12"]').click()
-  await expect(page.getByTestId('history-detail')).toBeVisible()
-  await expect(page.getByTestId('history-detail')).toContainText('12 de octubre')
-  const after = await scroller.evaluate((node) => ({
-    top: node.scrollTop,
-    months: node.querySelectorAll('.month').length,
-    text: node.textContent ?? '',
-  }))
-  expect(Math.abs(after.top - before.top)).toBeLessThan(8)
-  expect(after.months).toBe(before.months)
-  expect(after.text).not.toContain('2023')
-  expect(after.text).toContain('octubre 2026')
-  expect(errors).toEqual([])
-})
-
 test('la contraseña se guarda y el comentario de feedback entra', async ({ page }) => {
   const errors = watchConsole(page)
   await login(page, 'persona1@example.com')
@@ -1613,55 +1455,6 @@ test('deslizar en cambiar contraseña vuelve a ajustes y no a intenciones', asyn
   }
   await swipe(240, 140)
   await swipe(20, 120)
-  expect(errors).toEqual([])
-})
-
-test('el popup del mes elige si fuiste con dos botones', async ({ page }) => {
-  const errors = watchConsole(page)
-  await login(page, 'persona1@example.com')
-  await page.getByTestId('open-past-cal').click()
-  const scroller = page.getByTestId('month-scroll')
-  await expect(scroller.locator('[data-current="true"] h3')).toHaveText('octubre 2026')
-  await scroller.locator('[data-act="history-day"][data-date="2026-10-20"]').click()
-  const detail = page.getByTestId('history-detail')
-  await expect(detail).toBeVisible()
-  await expect(detail).toContainText('20 de octubre')
-  const absent = detail.locator('.history-seg [data-act="attend-set"][data-on="false"]')
-  const attended = detail.locator('.history-seg [data-act="attend-set"][data-on="true"]')
-  await expect(absent).toHaveText('No he ido')
-  await expect(attended).toHaveText('✓ He ido a Misa')
-  const top = await scroller.evaluate((node) => node.scrollTop)
-  const wasOn = (await attended.getAttribute('aria-pressed')) === 'true'
-  const first = wasOn ? absent : attended
-  const second = wasOn ? attended : absent
-  await first.click()
-  await expect(first).toHaveAttribute('aria-pressed', 'true')
-  await expect(second).toHaveAttribute('aria-pressed', 'false')
-  if (wasOn) await expect(attended).not.toHaveClass(/attended/)
-  else await expect(attended).toHaveClass(/on attended/)
-  await second.click()
-  await expect(second).toHaveAttribute('aria-pressed', 'true')
-  await expect(first).toHaveAttribute('aria-pressed', 'false')
-  await second.click()
-  await expect(second).toHaveAttribute('aria-pressed', 'true')
-  const after = await scroller.evaluate((node) => node.scrollTop)
-  expect(Math.abs(after - top)).toBeLessThan(8)
-  // Los días viejos también se corrigen, aunque ese día no fuera nadie.
-  await scroller.locator('[data-act="history-day"][data-date="2026-10-12"]').click()
-  await expect(detail).toContainText('12 de octubre')
-  await expect(detail.locator('.history-seg')).toHaveCount(1)
-  await expect(detail.locator('.history-status')).toHaveCount(0)
-  const oldDay = scroller.locator('[data-act="history-day"][data-date="2026-09-03"]')
-  await oldDay.scrollIntoViewIfNeeded()
-  await oldDay.click()
-  await expect(detail).toContainText('3 de septiembre')
-  const oldAttended = detail.locator('.history-seg [data-act="attend-set"][data-on="true"]')
-  await expect(oldAttended).toHaveAttribute('aria-pressed', 'false')
-  await oldAttended.click()
-  await expect(oldAttended).toHaveAttribute('aria-pressed', 'true')
-  await expect(oldDay.locator('.dot.mine')).toHaveCount(1)
-  await page.waitForTimeout(600)
-  await expect(detail.locator('.history-seg [data-act="attend-set"][data-on="true"]')).toHaveAttribute('aria-pressed', 'true')
   expect(errors).toEqual([])
 })
 
@@ -1804,7 +1597,7 @@ test('dos «Voy a ir» seguidos quedan los dos', async ({ page }) => {
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
-  const dates = await page.locator('.row-commit[aria-pressed="false"]').evaluateAll((nodes) => nodes.slice(1, 3).map((node) => (node as HTMLElement).dataset.date ?? ''))
+  const dates = await page.locator('.row-commit[data-act="commit"][aria-pressed="false"]').evaluateAll((nodes) => nodes.slice(1, 3).map((node) => (node as HTMLElement).dataset.date ?? ''))
   expect(dates.length).toBe(2)
   await page.route('**/rest/v1/commitments**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -1867,22 +1660,6 @@ test('al día siguiente la app se pone al día sola', async ({ page }) => {
   await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
 })
 
-test('en el mes los días futuros no se tocan; Escape y Atrás cierran', async ({ page }) => {
-  await login(page, 'persona1@example.com')
-  await page.getByTestId('open-past-cal').click()
-  const scroller = page.getByTestId('month-scroll')
-  await expect(scroller.locator('[data-current="true"] .cell.future').first()).toBeVisible()
-  await expect(scroller.locator('[data-act="history-day"][data-date="2026-10-30"]')).toHaveCount(0)
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
-  await page.getByTestId('open-past-cal').click()
-  await expect(page.getByTestId('streak-calendar')).toBeVisible()
-  await page.goBack()
-  await expect(page.getByTestId('streak-calendar')).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Hoy' })).toBeVisible()
-  await expect(page).toHaveURL(/\/misa-diaria\/?$/)
-})
-
 test('el lunes no sale el resumen de la semana', async ({ page }) => {
   await reset('2026-10-26T10:00:00Z')
   await login(page, 'persona1@example.com')
@@ -1897,10 +1674,13 @@ test('cambiar de pestaña llega arriba al instante; la misma pestaña sube con a
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
   await page.locator('nav.tabs a[data-nav="calendario"]').click()
-  expect(await page.evaluate(() => window.scrollY)).toBe(0)
-  await page.evaluate(() => window.scrollTo(0, 600))
+  // El calendario llega al instante a su inicio, que es hoy.
+  const home = await page.evaluate(() => window.scrollY)
+  expect(home).toBeGreaterThan(200)
+  await expect(page.locator('[data-testid="calendar"] li.is-today')).toBeInViewport()
+  await page.evaluate((y) => window.scrollTo(0, y + 600), home)
   const start = await page.evaluate(() => window.scrollY)
-  expect(start).toBeGreaterThan(200)
+  expect(start).toBeGreaterThan(home + 200)
   const samples = await page.evaluate(() => new Promise<number[]>((resolve) => {
     const seen: number[] = []
     document.querySelector<HTMLElement>('nav.tabs a[data-nav="calendario"]')!.click()
@@ -1911,25 +1691,14 @@ test('cambiar de pestaña llega arriba al instante; la misma pestaña sube con a
     }
     requestAnimationFrame(tick)
   }))
-  expect(samples.some((y) => y > 0 && y < start)).toBe(true)
-  expect(samples.at(-1)).toBe(0)
+  expect(samples.some((y) => y > home && y < start)).toBe(true)
+  expect(Math.abs((samples.at(-1) ?? 0) - home)).toBeLessThan(2)
 })
 
-test('en pantalla pequeña el popup del mes cabe entero y nada se sale de lado', async ({ page }) => {
+test('en pantalla pequeña nada se sale de lado', async ({ page }) => {
   await login(page, 'persona1@example.com')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.getByTestId('open-past-cal').click()
-  await expect(page.locator('.streak-pop.entering')).toHaveCount(0)
-  await page.getByTestId('month-scroll').locator('[data-act="history-day"][data-date="2026-10-22"]').click()
-  await expect(page.getByTestId('history-detail')).toBeVisible()
-  const fits = await page.evaluate(() => {
-    const pop = document.querySelector('.streak-pop')!.getBoundingClientRect()
-    const detail = document.querySelector('[data-testid="history-detail"]')!.getBoundingClientRect()
-    return detail.bottom <= pop.bottom + 1 && pop.bottom <= window.innerHeight
-  })
-  expect(fits).toBe(true)
   for (const route of ['Calendario', 'Intenciones', 'Ajustes']) {
-    await page.keyboard.press('Escape')
     await page.getByRole('link', { name: route }).click()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
@@ -1939,7 +1708,7 @@ test('«Voy a ir» vibra con un toque real: lleva su capa con switch y apunta un
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
-  const date = await page.locator('.row-commit[aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
+  const date = await page.locator('.row-commit[data-act="commit"][aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
   const pill = page.locator(`.row-commit[data-date="${date}"]`)
   const overlay = pill.locator('label.haptic-overlay[data-haptic-trigger] input[type="checkbox"][switch]')
   await expect(overlay).toHaveCount(1)
@@ -1966,7 +1735,7 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   await expect(page.locator('[data-testid="calendar"] li input[data-row-switch]').first()).toBeAttached()
 
   // Un toque quieto sobre «Voy a ir» cae en el switch y se reenvía al botón.
-  const dates = await page.locator('.row-commit[aria-pressed="false"]').evaluateAll((nodes) => nodes.slice(1, 3).map((node) => (node as HTMLElement).dataset.date ?? ''))
+  const dates = await page.locator('.row-commit[data-act="commit"][aria-pressed="false"]').evaluateAll((nodes) => nodes.slice(1, 3).map((node) => (node as HTMLElement).dataset.date ?? ''))
   const tapPill = page.locator(`.row-commit[data-date="${dates[0]}"]`)
   const pillBox = await tapPill.boundingBox()
   if (!pillBox) throw new Error('sin píldora')
@@ -2050,7 +1819,7 @@ test('si iOS cancela un deslizamiento corto, el clic del switch no apunta ni abr
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
-  const date = await page.locator('.row-commit[aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
+  const date = await page.locator('.row-commit[data-act="commit"][aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
   const pill = page.locator(`.row-commit[data-date="${date}"]`)
   await pill.scrollIntoViewIfNeeded()
   const box = await pill.boundingBox()
@@ -2078,7 +1847,7 @@ test('un swipe muy rápido que iOS cancela cuenta si al soltar pasó el umbral',
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
-  const date = await page.locator('.row-commit[aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
+  const date = await page.locator('.row-commit[data-act="commit"][aria-pressed="false"]').nth(1).evaluate((node) => (node as HTMLElement).dataset.date ?? '')
   const row = page.locator(`[data-testid="calendar"] li[data-date="${date}"]`)
   await row.scrollIntoViewIfNeeded()
   const box = await row.boundingBox()
@@ -2102,18 +1871,11 @@ test('un swipe muy rápido que iOS cancela cuenta si al soltar pasó el umbral',
   await expect(page.locator(`.row-commit[data-date="${date}"]`)).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('con la prueba del calendario único, los días pasados viven en el calendario', async ({ page }) => {
+test('los días pasados viven en el calendario y Hoy enseña estos días', async ({ page }) => {
   const errors = watchConsole(page)
   await reset('2026-10-26T10:00:00Z')
   await login(page, 'persona1@example.com')
-  // Se enciende en Ajustes y Hoy deja de tener «Últimos días».
-  await expect(page.getByTestId('past')).toBeVisible()
-  await page.getByRole('link', { name: 'Ajustes' }).click()
-  const toggle = page.getByTestId('unified-cal')
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await page.getByRole('link', { name: 'Hoy' }).click()
+  // Ya no hay interruptor en Ajustes: es la única versión.
   await expect(page.getByTestId('hoy-date')).toBeVisible()
   await expect(page.getByTestId('past')).toHaveCount(0)
   // Hoy se rellena con la semana, el próximo día sin nadie y la última intención.
@@ -2239,7 +2001,7 @@ test('un scroll que empieza en una fila no se lo queda el iPhone a medias', asyn
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
-  const row = page.locator('[data-testid="calendar"] li[data-date]').nth(3)
+  const row = page.locator('[data-testid="calendar"] li[data-date]:not([data-kind="past"])').nth(3)
   const box = await row.boundingBox()
   if (!box) throw new Error('sin fila')
   const x = box.x + 200
