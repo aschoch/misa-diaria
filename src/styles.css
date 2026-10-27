@@ -1910,9 +1910,20 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
   background: var(--papel);
   border: 1px solid var(--linea);
 }
-.week-title { margin: 0 4px 10px; font-family: "Fraunces Variable", serif; font-weight: 560; font-size: 18px; color: var(--tinta); }
+.week-title { margin: 0 4px 10px; }
+.week-title button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: "Fraunces Variable", serif;
+  font-weight: 560;
+  font-size: 18px;
+  color: var(--tinta);
+  cursor: pointer;
+}
 .week-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .week-day {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: 4px;
@@ -1932,7 +1943,19 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
 .week-day .num { width: 34px; height: 34px; font-size: 16px; }
 .week-day .num.future { border-color: var(--linea); color: var(--tinta); }
 .week-day small { font-size: 12px; font-variant-numeric: tabular-nums; }
-.week-note { margin: 6px 4px 0; font-size: 12px; color: var(--suave); }
+.week-day:disabled { cursor: default; opacity: 0.6; }
+.week-note { margin: 6px 4px 0; font-size: 12px; line-height: 1.4; color: var(--suave); }
+.week-more {
+  margin: 6px 4px 2px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vela);
+  cursor: pointer;
+}
 
 .next-empty {
   display: flex;

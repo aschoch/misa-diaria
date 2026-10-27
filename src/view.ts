@@ -195,7 +195,7 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
     ${riskLine(state, locked)}
     <p class="hoy-date" data-testid="hoy-date">${esc(fullDate(state.today))}</p>
     ${hoyHero(state, gone, locked)}
-    ${unifiedCalendar() ? `${weekStrip(state)}${nextEmpty(state, locked)}` : ''}
+    ${unifiedCalendar() ? `${weekStrip(state, locked, ui.pulseDate)}${nextEmpty(state, locked)}` : ''}
     ${totalBlock(state)}
     ${unifiedCalendar() ? lastIntention(state) : ''}
     ${unifiedCalendar() ? '' : `<section class="past" data-testid="past" aria-label="${esc(copy.recentDays)}">
@@ -210,7 +210,7 @@ export function renderHoy(state: Estado, locked: boolean, ui: UiState = {}) {
 
 // Hoy con la prueba del calendario único: tres días antes y tres después de un vistazo, el próximo día
 // que nadie cubre y la última intención (sin nombre: los nombres solo en Intenciones).
-function weekStrip(state: Estado) {
+export function weekStrip(state: Estado, locked: boolean, pulse = '') {
   const copy = tx()
   const pack = dates()
   const offset = 3
@@ -226,17 +226,20 @@ function weekStrip(state: Estado) {
     const planned = future && Boolean(day?.mine_commitment)
     const count = future ? day?.covered ?? 0 : date === state.today ? day?.went ?? 0 : old?.went ?? 0
     const ring = went ? 'gone' : planned ? 'planned' : future ? 'future' : 'past'
-    const label = `${f.largo} ${f.d}: ${future ? copy.weekPlanned(count) : copy.of12(count)}`
-    return `<button type="button" class="week-day${date === state.today ? ' is-today' : ''}" data-act="week-day" data-date="${date}" aria-label="${esc(label)}">
+    const label = `${f.largo} ${f.d}: ${future ? copy.weekPlanned(count) : copy.of12(count)}. ${future ? copy.commit : copy.went}`
+    const on = future ? planned : went
+    return `<button type="button" class="week-day${date === state.today ? ' is-today' : ''}" data-act="week-day" data-date="${date}" aria-pressed="${on}" aria-label="${esc(label)}" ${locked ? 'disabled' : ''}>
         <span class="week-name">${pack.cortos[f.dow].slice(0, 1).toUpperCase()}</span>
-        <span class="num ${ring}">${f.d}</span>
+        <span class="num ${ring}${pulse === date ? ' pulse' : ''}">${f.d}</span>
         <small>${count}</small>
+        ${hapticOverlay()}
       </button>`
   }).join('')
   return `<section class="week" data-testid="week">
-      <h2 class="week-title">${copy.thisWeek}</h2>
+      <h2 class="week-title"><button type="button" data-act="open-calendar">${copy.thisWeek}</button></h2>
       <div class="week-days">${cells}</div>
       <p class="week-note">${copy.weekNote}</p>
+      <button type="button" class="week-more" data-act="open-calendar" data-testid="week-calendar">${copy.seeCalendar} →</button>
     </section>`
 }
 

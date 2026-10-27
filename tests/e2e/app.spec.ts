@@ -2129,9 +2129,23 @@ test('con la prueba del calendario único, los días pasados viven en el calenda
     await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-pantalla-hoy-abajo.png` })
     await page.evaluate(() => window.scrollTo(0, 0))
   }
-  // Un día de «Estos días» abre el calendario en ese día.
-  await page.getByTestId('week').locator('.week-day[data-date="2026-10-24"]').click()
-  await expect(page.getByTestId('calendar').locator('li[data-date="2026-10-24"]')).toBeInViewport()
+  // En «Estos días», tocar un día pasado marca «He ido» y uno que viene, «Voy a ir».
+  const week = page.getByTestId('week')
+  const pastDay = week.locator('.week-day[data-date="2026-10-24"]')
+  const pastWas = (await pastDay.getAttribute('aria-pressed')) === 'true'
+  await pastDay.click()
+  await expect(week.locator('.week-day[data-date="2026-10-24"]')).toHaveAttribute('aria-pressed', String(!pastWas))
+  await expect(week.locator('.week-day[data-date="2026-10-24"] .num')).toHaveClass(pastWas ? /past/ : /gone/)
+  const nextDay = week.locator('.week-day[data-date="2026-10-28"]')
+  const nextWas = (await nextDay.getAttribute('aria-pressed')) === 'true'
+  await nextDay.click()
+  await expect(week.locator('.week-day[data-date="2026-10-28"]')).toHaveAttribute('aria-pressed', String(!nextWas))
+  await page.waitForTimeout(800)
+  await expect(week.locator('.week-day[data-date="2026-10-24"]')).toHaveAttribute('aria-pressed', String(!pastWas))
+  await expect(week.locator('.week-day[data-date="2026-10-28"]')).toHaveAttribute('aria-pressed', String(!nextWas))
+  // El título y «Ver calendario» llevan al calendario, abierto en hoy.
+  await page.getByTestId('week-calendar').click()
+  await expect(page.getByTestId('calendar').locator('li[data-date="2026-10-26"]')).toBeInViewport()
   await page.getByRole('link', { name: 'Hoy' }).click()
 
   // El calendario se abre en hoy, con los días pasados encima.
