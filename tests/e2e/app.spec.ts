@@ -1995,6 +1995,39 @@ test('los días pasados viven en el calendario y Hoy enseña estos días', async
   expect(errors).toEqual([])
 })
 
+test('el scroll desde una fila sigue al dedo en la pantalla, no al clientY que mueve el propio scroll', async ({ page, viewport }) => {
+  test.skip((viewport?.width ?? 0) > 600)
+  await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  await expect(page.locator('[data-testid="calendar"] li input[data-row-switch]').first()).toBeAttached()
+  await page.waitForTimeout(400)
+  // En el iPhone el clientY llega mezclado con el scroll que la app acaba de pedir; aquí
+  // va con ruido de ±300 px. El dedo de verdad (screenY) sube 10 px por evento.
+  const moved = await page.evaluate(async () => {
+    const input = [...document.querySelectorAll<HTMLInputElement>('[data-testid="calendar"] li:not([data-kind="past"]) input[data-row-switch]')]
+      .find((node) => { const rect = node.getBoundingClientRect(); return rect.top > 150 && rect.bottom < innerHeight - 150 })!
+    const rect = input.getBoundingClientRect()
+    const x = rect.left + rect.width / 2
+    const y = rect.top + rect.height / 2
+    const fire = (type: string, clientY: number, screenY: number, timeStamp: number) => {
+      const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY, screenX: x, screenY })
+      Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+      input.dispatchEvent(event)
+    }
+    const start = window.scrollY
+    const t0 = performance.now()
+    fire('pointerdown', y, y + 1000, t0)
+    fire('pointermove', y - 20, y + 980, t0 + 16)
+    for (let i = 1; i <= 20; i++) fire('pointermove', y - 20 - i * 10 + (i % 2 ? 300 : -300), y + 980 - i * 10, t0 + 16 + i * 16)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    return window.scrollY - start
+  })
+  expect(moved).toBeGreaterThan(180)
+  expect(moved).toBeLessThan(240)
+})
+
 test('un scroll que empieza en una fila no se lo queda el iPhone a medias', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 0) > 600)
   await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
