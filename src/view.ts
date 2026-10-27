@@ -748,6 +748,7 @@ export function renderLogin(message: string, email: string, code: string, mode: 
     fields = `
       ${emailField}
       <button type="submit" data-act="send-code" ${sending ? 'disabled aria-busy="true"' : ''}>${sending ? `<span class="send-wait" aria-hidden="true"><i></i><i></i><i></i></span><span class="visually-hidden">${copy.sendCode}</span>` : copy.sendCode}</button>
+      <button type="button" class="secondary" data-act="have-code">${copy.haveCode}</button>
       <button type="button" class="secondary" data-act="login-back">${copy.back}</button>
       ${hint}`
   } else {

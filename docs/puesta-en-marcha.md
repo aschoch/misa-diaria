@@ -41,19 +41,23 @@ En **Authentication → URL Configuration**:
 
 En **Authentication → SMTP**, pon un correo tuyo (el de Supabase de prueba se queda corto en cuanto entráis varios). Host, usuario y contraseña se quedan en ese panel. No van al repositorio.
 
-La plantilla del enlace mágico no elige idioma sola. Pégala tú en **Authentication → Email Templates**, corta, en español primero y en portugués de Portugal después. El cliente manda el idioma en `options.data.locale` (`es` o `pt`). Si más adelante la plantilla puede ramificar, usa `{{ .Data.locale }}`, `{{ .Token }}` y `{{ .ConfirmationURL }}`. Hasta entonces, este texto vale para los dos:
+La plantilla del correo no elige idioma sola. Pégala tú en **Authentication → Email Templates → Magic Link**, corta, en español primero y en portugués de Portugal después. El cliente manda el idioma en `options.data.locale` (`es` o `pt`); si más adelante la plantilla puede ramificar, usa `{{ .Data.locale }}`.
+
+Solo el código, sin enlace. El enlace solo sirve en el mismo navegador donde se pidió el código. En el iPhone se abre en Safari, no en el icono, y ahí no entra. Además, abrirlo (o que lo abra el filtro del correo del trabajo) gasta el código y luego la app dice «Ese código no vale». La plantilla que trae Supabase por defecto solo lleva enlace: cámbiala.
 
 ```text
 Misa diaria
 
-Tu código: {{ .Token }}
-Enlace: {{ .ConfirmationURL }}
+Tu código para entrar: {{ .Token }}
+Escríbelo en la app. Si pides otro, vale solo el último.
 
 Missa diária
 
-O teu código: {{ .Token }}
-Ligação: {{ .ConfirmationURL }}
+O teu código para entrar: {{ .Token }}
+Escreve-o na app. Se pedires outro, só vale o último.
 ```
+
+En **Authentication → Providers → Email**, la longitud del código (Email OTP Length) tiene que ser 6: la casilla de la app no admite más. En **Authentication → Rate Limits**, sube los correos por hora si vais a entrar los doce la misma tarde.
 
 ## 4. Las doce personas
 
@@ -82,10 +86,11 @@ Quien no esté en esa lista no entra. La página le dice lo mismo que a los dem�
 
 No hace falta mandar invitaciones de Supabase ni enlaces mágicos. Con los doce correos ya en **Authentication → Users** (sin contraseña) y en `members`:
 
-1. Manda a cada matrimonio, por el canal de siempre, el enlace `https://aschoch.github.io/misa-diaria/` y una línea: «Escribe tu correo y pulsa *¿Primera vez u olvidaste la contraseña?*».
-2. La app le manda un código de 6 dígitos (la plantilla de arriba). Lo escribe y entra.
-3. Justo después la app le ofrece crear una contraseña. Si la crea, la próxima vez entra con correo y contraseña y el Llavero del iPhone la recuerda. Si pulsa *Ahora no*, puede seguir entrando con código siempre.
-4. Después, que la añada a la pantalla de inicio desde **Ajustes → Ver cómo instalar como app** y active el aviso de la tarde.
+1. Manda a cada matrimonio, por el canal de siempre, el enlace `https://aschoch.github.io/misa-diaria/` y el correo exacto con el que lo apuntaste. Con otro correo no llega nada y la app no dice por qué.
+2. En el iPhone, primero la instala (Safari → Compartir → **Añadir a pantalla de inicio**) y entra desde el icono. Safari y el icono no comparten la sesión: si entra en Safari, en el icono tiene que volver a entrar.
+3. Escribe su correo y pulsa *¿Primera vez u olvidaste la contraseña?* → **Enviar código**. Le llega un código de 6 dígitos (mira en spam). Si al volver del correo la app ha vuelto al principio, *¿Primera vez…?* → **Ya tengo un código**.
+4. Justo después la app le ofrece crear una contraseña. Si la crea, la próxima vez entra con correo y contraseña y el Llavero del iPhone la recuerda. Si pulsa *Ahora no*, sigue entrando con código siempre (y si quiere poner contraseña más tarde, entra otra vez con código y se la ofrece).
+5. En Ajustes, que active el aviso de la tarde.
 
 Así nadie recibe una contraseña por mensaje y quien la olvide usa el mismo botón.
 
@@ -129,8 +134,8 @@ El aviso al móvil solo llega si la aplicación está instalada, no si solo est�
 1. Abre Safari (no Chrome) en `https://aschoch.github.io/misa-diaria/`.
 2. Compartir → **Añadir a pantalla de inicio**.
 3. Ábrela desde el icono, no desde el correo.
-4. Escribe tu correo y pulsa **Enviar enlace**.
-5. El correo trae un enlace y un código de seis cifras. El enlace suele abrirse en Safari y ahí no entra. Escribe el código dentro del icono.
+4. Escribe tu correo y pulsa **¿Primera vez u olvidaste la contraseña?** → **Enviar código**.
+5. El correo trae un código de seis cifras. Escríbelo dentro del icono.
 6. En Ajustes, enciende el aviso que quieras. El iPhone pregunta entonces si puede enviar notificaciones. Si dices que no, la app sigue funcionando.
 
 **Android:**
