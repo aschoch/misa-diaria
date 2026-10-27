@@ -72,17 +72,17 @@ export function stopMomentum() {
 
 // Inercia como la de iOS. Solo si el dedo aún se movía al soltar: si se paró
 // antes de levantarse, la lista se queda donde está.
-export function startMomentum(samples: { t: number; y: number }[], releasedAt: number) {
+export function startMomentum(samples: { t: number; y: number }[], releasedAt: number): number {
   stopMomentum()
   const last = samples[samples.length - 1]
-  if (!last || releasedAt - last.t > 60) return
+  if (!last || releasedAt - last.t > 60) return 0
   const recent = samples.filter((sample) => last.t - sample.t <= 100)
   const first = recent[0]
-  if (!first || recent.length < 2 || last.t === first.t) return
+  if (!first || recent.length < 2 || last.t === first.t) return 0
   // iOS a veces junta dos movimientos casi en el mismo milisegundo: dividir por un
   // tramo tan corto daba velocidades enormes y la lista pegaba un salto al soltar.
   let velocity = -(last.y - first.y) / Math.max(last.t - first.t, 32)
-  if (Math.abs(velocity) < 0.15) return
+  if (Math.abs(velocity) < 0.15) return 0
   velocity = Math.max(-5, Math.min(5, velocity))
   let prev = performance.now()
   const step = (now: number) => {
@@ -99,4 +99,5 @@ export function startMomentum(samples: { t: number; y: number }[], releasedAt: n
     frame = requestAnimationFrame(step)
   }
   frame = requestAnimationFrame(step)
+  return velocity
 }

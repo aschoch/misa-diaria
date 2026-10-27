@@ -69,7 +69,7 @@ let gesture: {
   haptic: HTMLLabelElement | null
   hapticInput: HTMLInputElement | null
   rowSwitch: HTMLInputElement | null
-  scrolling: { lastY: number; samples: { t: number; y: number }[] } | null
+  scrolling: { lastY: number; samples: { t: number; y: number }[]; expect: number; at: number } | null
   ticks: number
   detents: number
   t0: number
@@ -92,6 +92,7 @@ function traceSwipe(step: string) {
 
 function sendSwipeTrace() {
   const trace = swipeTrace
+  if (trace) traceSwipe(`end:${Math.round(window.scrollY)}`)
   swipeTrace = null
   if (!trace || !current || demo || swipeTraceSent >= 40) return
   swipeTraceSent += 1
@@ -303,6 +304,7 @@ function visibleState(state: Estado): Estado {
 }
 
 function paint() {
+  traceSwipe('paint')
   stopScrollAnim()
   setLocale(locale)
   document.documentElement.lang = locale === 'pt' ? 'pt-PT' : 'es'
@@ -1317,8 +1319,21 @@ function driveSwitchScroll(event: PointerEvent) {
   if (gesture.lockedAxis === '' && !gesture.row && Math.abs(dy) >= 10 && Math.abs(dy) > Math.abs(dx)) gesture.lockedAxis = 'y'
   if (gesture.lockedAxis !== 'y') return false
   // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
-  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: event.clientY, samples: [] })
+  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: event.clientY, samples: [], expect: -1, at: event.timeStamp })
+  if (!scrolling.samples.length) traceSwipe(`ly:${Math.round(window.scrollY)}`)
+  // Diagnóstico: si la página se movió sin nosotros (scroll nativo u otra cosa) o el dedo
+  // llega a saltos (eventos que tardan), queda en el registro.
+  if (swipeTrace) {
+    const off = window.scrollY - scrolling.expect
+    if (scrolling.expect >= 0 && Math.abs(off) > 2) traceSwipe(`nat:${Math.round(off)}`)
+    const gap = event.timeStamp - scrolling.at
+    const step = scrolling.lastY - event.clientY
+    if (gap > 50) traceSwipe(`gap:${Math.round(gap)}`)
+    if (Math.abs(step) > 60) traceSwipe(`step:${Math.round(step)}`)
+  }
   window.scrollBy(0, scrolling.lastY - event.clientY)
+  scrolling.expect = window.scrollY
+  scrolling.at = event.timeStamp
   scrolling.lastY = event.clientY
   scrolling.samples.push({ t: event.timeStamp, y: event.clientY })
   if (scrolling.samples.length > 12) scrolling.samples.shift()
@@ -1459,6 +1474,13 @@ document.addEventListener('touchmove', (event) => {
   if (!touch) return
   const dy = touch.clientY - gesture.y
   const dx = touch.clientX - gesture.x
+  // Un toque que empieza en el switch de una fila lo mueve la app. Hasta que WebKit
+  // empieza a seguir el dedo (200 ms) el iPhone podía quedarse el gesto para su propio
+  // scroll (pointercancel): se sumaban los dos y la lista pegaba un salto. En vertical
+  // tampoco hace falta el seguimiento del switch.
+  if (gesture.rowSwitch && (event.timeStamp - gesture.t0 < 220 || gesture.lockedAxis === 'y' || (gesture.lockedAxis === '' && Math.abs(dy) > Math.abs(dx)))) {
+    event.preventDefault()
+  }
   if (gesture.month && !gesture.pop && dy > 0 && dy > Math.abs(dx)) armPopupDismiss(gesture.id)
   if (gesture.pop && dy > 0) event.preventDefault()
 }, { passive: false })
@@ -1501,7 +1523,8 @@ app.addEventListener('pointerup', (event) => {
     }
     releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
     if (start.scrolling) {
-      startMomentum(start.scrolling.samples, event.timeStamp)
+      const velocity = startMomentum(start.scrolling.samples, event.timeStamp)
+      traceSwipe(`ry:${Math.round(window.scrollY)}:v${velocity.toFixed(2)}`)
       if (start.scroll <= 4 && dy > 80 && dy > Math.abs(dx) * 1.5) void pullRefresh()
       return
     }
