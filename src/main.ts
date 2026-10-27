@@ -706,13 +706,18 @@ function scrollPageTop(to = 0) {
     apply(to)
     return
   }
+  // De lejos, salta hasta una pantalla antes y anima solo ese último tramo:
+  // animar miles de píxeles deja huecos en blanco en el iPhone.
+  const span = window.innerHeight
+  const from = Math.abs(to - start) > span * 1.5 ? to - Math.sign(to - start) * span : start
+  if (from !== start) apply(from)
   const duration = 280
   const t0 = performance.now()
   const step = (now: number) => {
     if (gen !== scrollGen) return
     const t = Math.min(1, (now - t0) / duration)
     const eased = 1 - (1 - t) ** 3
-    apply(t >= 1 ? to : Math.round(start + (to - start) * eased))
+    apply(t >= 1 ? to : Math.round(from + (to - from) * eased))
     if (t < 1) scrollFrame = requestAnimationFrame(step)
     else {
       scrollFrame = 0
@@ -1398,6 +1403,16 @@ app.addEventListener('touchend', (event) => {
     if (!pending) window.setTimeout(() => input.setAttribute('switch', ''), 0)
     return
   }
+}, true)
+
+// Con la lista aún en movimiento, iOS usa el primer toque para frenarla y no manda
+// el clic: el botón «Hoy» responde ya en el touchend.
+app.addEventListener('touchend', (event) => {
+  const target = event.target
+  if (!(target instanceof Element) || !target.closest('[data-act="to-today"]')) return
+  event.preventDefault()
+  stopMomentum()
+  scrollPageTop(calendarHomeY())
 }, true)
 
 app.addEventListener('touchend', (event) => {

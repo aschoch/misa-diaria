@@ -1872,12 +1872,12 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
 }
 .cal-stream .days li.is-today .when b { color: var(--olivo); }
 
+/* A la derecha, sobre «x de 12»: así un toque que se queda corto no cae en «He ido» o «Voy a ir». */
 .to-today {
   position: fixed;
   z-index: 39;
-  left: 50%;
-  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
+  right: max(18px, calc((100vw - 440px) / 2 + 18px));
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1894,7 +1894,10 @@ button[data-needs-text]:disabled { opacity: 0.45; cursor: default; }
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   animation: to-today-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  touch-action: manipulation;
 }
+/* Zona de toque más grande que el botón. */
+.to-today::before { content: ""; position: absolute; inset: -12px; }
 .to-today[hidden] { display: none; }
-@keyframes to-today-in { from { opacity: 0; transform: translate(-50%, 8px) scale(0.96); } }
+@keyframes to-today-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
 @media (prefers-reduced-motion: reduce) { .to-today { animation: none; } }

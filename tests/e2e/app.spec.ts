@@ -2116,6 +2116,7 @@ test('con la prueba del calendario único, los días pasados viven en el calenda
   await page.getByRole('link', { name: 'Hoy' }).click()
   await expect(page.getByTestId('hoy-date')).toBeVisible()
   await expect(page.getByTestId('past')).toHaveCount(0)
+  if (process.env.MISA_UNIFIED_SHOTS) await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-pantalla-hoy.png` })
 
   // El calendario se abre en hoy, con los días pasados encima.
   await page.getByRole('link', { name: 'Calendario' }).click()
@@ -2188,6 +2189,15 @@ test('con la prueba del calendario único, los días pasados viven en el calenda
   await back.click()
   await expect(today).toBeInViewport()
   await expect(today).toHaveClass(/is-today/)
+  // Con la lista aún moviéndose iOS no manda el clic: el botón responde al touchend.
+  // Y queda a la derecha, sin tapar «He ido» ni «Voy a ir».
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await expect(back).toBeVisible()
+  const pill = await calendar.locator('li[data-kind="past"] .row-commit').first().boundingBox()
+  const button = await back.boundingBox()
+  expect((button?.x ?? 0) - 12).toBeGreaterThan((pill?.x ?? 0) + (pill?.width ?? 0))
+  await back.evaluate((node) => node.dispatchEvent(new Event('touchend', { bubbles: true, cancelable: true })))
+  await expect(today).toBeInViewport()
   // Los días pasados no llevan puntos (no hay leyenda): lo dicen con palabras.
   await expect(calendar.locator('li[data-kind="past"] .dots')).toHaveCount(0)
   expect(errors).toEqual([])
