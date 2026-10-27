@@ -66,7 +66,9 @@ let gesture: {
   haptic: HTMLLabelElement | null
   hapticInput: HTMLInputElement | null
   rowSwitch: HTMLInputElement | null
-  scrolling: { lastY: number; samples: { t: number; y: number }[]; expect: number; at: number } | null
+  scrolling: SwitchDrag | null
+  // Gesto vertical que se deja al scroll del iPhone (no lo bloquea ni lo mueve la app).
+  nativeY: boolean
   ticks: number
   detents: number
   t0: number
@@ -75,6 +77,19 @@ let gesture: {
 const SWIPE_CONFIRM_PX = 88
 // Dos topes suaves antes del umbral: el dedo nota que la fila avanza.
 const SWIPE_DETENTS = [32, 60]
+// Scroll que hace la app cuando el iPhone no se queda un gesto vertical que empieza en
+// una fila. La página no se mueve mientras dura: se desplaza la lista con transform y
+// las cabeceras de mes se recolocan a mano. Si se moviera la página, el iPhone mezcla
+// ese scroll (con retraso) en la posición del dedo y la lista tiembla o salta.
+type SwitchDrag = {
+  y0: number
+  base: number
+  max: number
+  offset: number
+  list: HTMLElement
+  heads: { node: HTMLElement; top: number; bottom: number; stick: number }[]
+  samples: { t: number; y: number }[]
+}
 type SwitchRelease = { input: HTMLInputElement; kind: 'commit' | 'silent' | 'tap'; x: number; y: number; run?: () => void; done: boolean }
 let switchRelease: SwitchRelease | null = null
 // Diagnóstico del swipe con vibración (solo con la opción encendida): un registro por gesto
@@ -296,6 +311,11 @@ function visibleState(state: Estado): Estado {
 
 function paint() {
   traceSwipe('paint')
+  // Un repintado a mitad de scroll de la app: la lista nueva no lleva el transform.
+  if (gesture?.scrolling) {
+    settleSwitchDrag(gesture.scrolling)
+    gesture.scrolling = null
+  }
   stopScrollAnim()
   setLocale(locale)
   document.documentElement.lang = locale === 'pt' ? 'pt-PT' : 'es'
@@ -1121,6 +1141,7 @@ app.addEventListener('pointerdown', (event) => {
     })(),
     rowSwitch,
     scrolling: null,
+    nativeY: false,
     ticks: 0,
     detents: 0,
     t0: event.timeStamp,
@@ -1179,39 +1200,80 @@ function routeRowTap(input: HTMLInputElement, x: number, y: number) {
   void actOn(node.dataset.act ?? '', node)
 }
 
-// El scroll de un toque que empieza en el switch de una fila lo hace la app.
+// Dónde va cada cabecera de mes con la página en «scroll»: pegada arriba dentro de su mes.
+function placeDragHeads(drag: SwitchDrag) {
+  const virtual = drag.base + drag.offset
+  for (const head of drag.heads) {
+    const real = Math.min(Math.max(drag.base + head.stick, head.top), head.bottom)
+    const want = Math.min(Math.max(virtual + head.stick, head.top), head.bottom)
+    const shift = want - real
+    head.node.style.transform = Math.abs(shift) > 0.5 ? `translate3d(0, ${shift}px, 0)` : ''
+  }
+}
+
+function startSwitchDrag(rowSwitch: HTMLInputElement, y: number): SwitchDrag | null {
+  const list = rowSwitch.closest<HTMLElement>('[data-testid="calendar"]')
+  if (!list) return null
+  const base = window.scrollY
+  const heads = [...list.querySelectorAll<HTMLElement>('.cal-month-head')].map((node) => {
+    const month = node.parentElement ?? node
+    const box = month.getBoundingClientRect()
+    const height = node.getBoundingClientRect().height
+    return { node, top: box.top + base, bottom: box.bottom + base - height, stick: parseFloat(getComputedStyle(node).top) || 0 }
+  })
+  traceSwipe(`ly:${Math.round(base)}`)
+  return { y0: y, base, max: Math.max(0, document.documentElement.scrollHeight - window.innerHeight), offset: 0, list, heads, samples: [] }
+}
+
+// Pasa lo desplazado a la página de verdad: mismo sitio, sin transform.
+function settleSwitchDrag(drag: SwitchDrag | null | undefined) {
+  if (!drag) return
+  drag.list.style.transform = ''
+  for (const head of drag.heads) head.node.style.transform = ''
+  if (drag.offset) window.scrollTo(0, drag.base + drag.offset)
+  drag.offset = 0
+}
+
+// Un gesto de dedo que empieza en vertical sobre una fila es scroll: lo hace el iPhone,
+// igual que fuera de las filas (ligero, con su inercia). Se decide con el primer
+// movimiento claro, antes de bloquear nada. Si WebKit ya seguía el dedo en el switch
+// (toque largo), se corta ese seguimiento para que no se quede el gesto.
+function chooseNativeY(dx: number, dy: number, at: number) {
+  if (!gesture?.rowSwitch || gesture.nativeY || gesture.scrolling || gesture.lockedAxis !== '') return
+  if (Math.abs(dy) < 3 || Math.abs(dy) <= Math.abs(dx)) return
+  gesture.nativeY = true
+  traceSwipe('naty')
+  if (at - gesture.t0 >= 200) {
+    gesture.rowSwitch.disabled = true
+    gesture.rowSwitch.disabled = false
+  }
+}
+
+// El scroll de un toque que empieza en el switch de una fila: lo hace el iPhone si
+// puede y, si no, la app.
 function driveSwitchScroll(event: PointerEvent) {
   if (!gesture?.rowSwitch) return false
   const dx = event.clientX - gesture.x
   const dy = event.clientY - gesture.y
   if (gesture.lockedAxis === '' && !gesture.row && Math.abs(dy) >= 10 && Math.abs(dy) > Math.abs(dx)) gesture.lockedAxis = 'y'
   if (gesture.lockedAxis !== 'y') return false
-  // El dedo se mide en la pantalla (screenY), no en la página: en el iPhone clientY ya
-  // incluye el scroll que acabamos de pedir, que llega con retraso, y cada paso
-  // alimentaba al siguiente hasta que la página saltaba miles de píxeles.
-  const fingerY = event.screenY || event.clientY
-  // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
-  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: fingerY, samples: [], expect: -1, at: event.timeStamp })
-  if (!scrolling.samples.length) traceSwipe(`ly:${Math.round(window.scrollY)}`)
-  // Un evento nunca mueve la página más que un dedo muy rápido.
-  const step = Math.max(-160, Math.min(160, scrolling.lastY - fingerY))
-  // Diagnóstico: si la página no está donde la dejamos (scroll nativo u otra cosa) o el dedo
-  // llega a saltos (eventos que tardan), queda en el registro.
-  if (swipeTrace) {
-    const off = window.scrollY - scrolling.expect
-    if (scrolling.expect >= 0 && Math.abs(off) > 2) traceSwipe(`nat:${Math.round(off)}`)
-    const gap = event.timeStamp - scrolling.at
-    if (gap > 50) traceSwipe(`gap:${Math.round(gap)}`)
-    if (Math.abs(scrolling.lastY - fingerY) > 60) traceSwipe(`step:${Math.round(scrolling.lastY - fingerY)}`)
+  if (gesture.nativeY) {
+    // El iPhone se queda el gesto (llega pointercancel). Si a los 24 px la página
+    // sigue quieta, no lo va a hacer: lo mueve la app desde aquí.
+    if (Math.abs(dy) < 24 || Math.abs(window.scrollY - gesture.scroll) > 1) return true
+    gesture.nativeY = false
+    traceSwipe('jsy')
   }
-  const maxY = document.documentElement.scrollHeight - window.innerHeight
-  const before = scrolling.expect >= 0 ? scrolling.expect : window.scrollY
-  window.scrollBy(0, step)
-  scrolling.expect = Math.max(0, Math.min(maxY, before + step))
-  scrolling.at = event.timeStamp
-  scrolling.lastY = fingerY
-  scrolling.samples.push({ t: event.timeStamp, y: fingerY })
-  if (scrolling.samples.length > 12) scrolling.samples.shift()
+  // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
+  const drag = gesture.scrolling ?? (gesture.scrolling = startSwitchDrag(gesture.rowSwitch, event.clientY))
+  if (!drag) return false
+  if (swipeTrace && Math.abs(window.scrollY - drag.base) > 1) traceSwipe(`nat:${Math.round(window.scrollY - drag.base)}`)
+  const want = Math.max(0, Math.min(drag.max, drag.base + drag.y0 - event.clientY))
+  drag.offset = want - drag.base
+  drag.list.style.transform = drag.offset ? `translate3d(0, ${-drag.offset}px, 0)` : ''
+  placeDragHeads(drag)
+  drag.samples.push({ t: event.timeStamp, y: event.clientY })
+  if (drag.samples.length > 12) drag.samples.shift()
   return true
 }
 
@@ -1331,6 +1393,7 @@ app.addEventListener('pointermove', (event) => {
   const dx = event.clientX - gesture.x
   const dy = event.clientY - gesture.y
   if (swipeTrace && gesture.rowSwitch) swipeTrace.pm += 1
+  if (event.pointerType === 'touch') chooseNativeY(dx, dy, event.timeStamp)
   trackRow(event)
   driveSwitchScroll(event)
 })
@@ -1341,13 +1404,17 @@ document.addEventListener('touchmove', (event) => {
   if (!touch) return
   const dy = touch.clientY - gesture.y
   const dx = touch.clientX - gesture.x
-  // Un toque que empieza en el switch de una fila lo mueve la app. Hasta que WebKit
-  // empieza a seguir el dedo (200 ms) el iPhone podía quedarse el gesto para su propio
-  // scroll (pointercancel): se sumaban los dos y la lista pegaba un salto. En vertical
-  // tampoco hace falta el seguimiento del switch.
-  if (gesture.rowSwitch && (event.timeStamp - gesture.t0 < 220 || gesture.lockedAxis === 'y' || (gesture.lockedAxis === '' && Math.abs(dy) > Math.abs(dx)))) {
+  if (!gesture.rowSwitch) return
+  chooseNativeY(dx, dy, event.timeStamp)
+  if (gesture.nativeY) return
+  // Si la app ya mueve la lista, el iPhone no puede sumar su scroll: saltaría.
+  if (gesture.scrolling || gesture.lockedAxis === 'y') {
     event.preventDefault()
+    return
   }
+  // En horizontal, hasta que WebKit empieza a seguir el dedo (200 ms) el iPhone podía
+  // quedarse el gesto para su scroll (pointercancel) y el swipe perdía la vibración.
+  if (event.timeStamp - gesture.t0 < 220 && Math.abs(dx) >= 3 && Math.abs(dx) >= Math.abs(dy)) event.preventDefault()
 }, { passive: false })
 
 app.addEventListener('pointerup', (event) => {
@@ -1378,6 +1445,7 @@ app.addEventListener('pointerup', (event) => {
     }
     releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
     if (start.scrolling) {
+      settleSwitchDrag(start.scrolling)
       const velocity = startMomentum(start.scrolling.samples, event.timeStamp)
       traceSwipe(`ry:${Math.round(window.scrollY)}:v${velocity.toFixed(2)}`)
       if (start.scroll <= 4 && dy > 80 && dy > Math.abs(dx) * 1.5) void pullRefresh()
@@ -1439,9 +1507,10 @@ app.addEventListener('pointercancel', (event) => {
   if (gesture?.id !== event.pointerId) return
   if (gesture.rowSwitch) {
     traceSwipe('pcancel')
+    settleSwitchDrag(gesture.scrolling)
     // iOS cancela a veces un deslizamiento corto: el clic que el switch manda al
     // levantar el dedo no es un toque y no debe apuntarte ni abrir el día.
-    if (gesture.lockedAxis !== '' || gesture.scrolling) {
+    if (gesture.lockedAxis !== '' || gesture.scrolling || gesture.nativeY) {
       const cancelled = { input: gesture.rowSwitch, row: gesture.lockedAxis === 'x' ? gesture.row : null, x: gesture.x }
       cancelledSwitch = cancelled
       window.setTimeout(() => { if (cancelledSwitch === cancelled) cancelledSwitch = null }, 600)
