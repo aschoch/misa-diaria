@@ -1,6 +1,6 @@
 import type { Day, Estado, HistoryDay, Intention, PastDay, Reaction } from './types'
 import { emojiChoices } from './emoji'
-import { esc, fecha, formatTimestamp, fullDate } from './format'
+import { esc, eveningTime, fecha, formatTimestamp, fullDate } from './format'
 import { swipeSwitchOn } from './haptics'
 import { dates, locale, monthTitle, tx, type Locale } from './i18n'
 
@@ -688,7 +688,7 @@ export function renderAjustes(state: Estado, locale: Locale, ui: UiState = {}) {
       </section>
       <section class="settings-card">
         <h2>${copy.alerts}</h2>
-        <p class="notify-note">${copy.notifyNote}</p>
+        <p class="notify-note">${copy.notifyNote(eveningTime())}</p>
         ${ui.notifyNote ? `<p class="hint notify-warn" data-testid="notify-warn" role="status">${esc(ui.notifyNote)}</p>` : ''}
         <div class="switches">
           <button type="button" class="switch" role="switch" aria-checked="${state.prefs.empty_day}" data-act="pref" data-key="empty_day">

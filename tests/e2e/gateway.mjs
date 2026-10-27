@@ -294,8 +294,11 @@ async function handleRest(req, res, url) {
   const header = req.headers.authorization
   try {
     if (url.pathname === '/rest/v1/rpc/estado' && req.method === 'POST') {
+      const body = await readBody(req)
       const data = await asRole(header, async (client) => {
-        const row = await client.query('select public.estado() as e')
+        const row = body?.p_tz
+          ? await client.query('select public.estado($1) as e', [body.p_tz])
+          : await client.query('select public.estado() as e')
         return row.rows[0].e
       })
       json(res, 200, data)

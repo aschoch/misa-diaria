@@ -1696,6 +1696,29 @@ test('al día siguiente la app se pone al día sola', async ({ page }) => {
   await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
 })
 
+test.describe('en Portugal', () => {
+  test.use({ timezoneId: 'Europe/Lisbon' })
+
+  test('a las 23:30 de Lisboa «Hoy» sigue siendo hoy y el aviso llega a las 19:05', async ({ page }) => {
+    // En Madrid ya es sábado 24 a las 0:30; en Lisboa sigue siendo viernes 23.
+    await page.clock.install({ time: new Date('2026-10-23T22:30:00Z') })
+    await reset('2026-10-23T22:30:00Z')
+    await login(page, 'persona12@example.com')
+    await expect(page.getByTestId('hoy-date')).toHaveText('Viernes, 23 de octubre de 2026')
+    await page.getByTestId('go').click()
+    const skip = page.getByRole('button', { name: 'Saltar la celebración' })
+    if (await skip.isVisible()) await skip.click()
+    await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+    await page.reload()
+    await expect(page.getByTestId('hoy-date')).toHaveText('Viernes, 23 de octubre de 2026')
+    await expect(page.getByTestId('hoy-status')).toHaveText('✓ Has ido a Misa hoy')
+    const marked = page.getByTestId('week').locator('.week-day[data-date="2026-10-23"]')
+    await expect(marked).toHaveAttribute('aria-pressed', 'true')
+    await page.getByRole('link', { name: 'Ajustes' }).click()
+    await expect(page.locator('.notify-note')).toContainText('a las 19:05')
+  })
+})
+
 test('el lunes no sale el resumen de la semana', async ({ page }) => {
   await reset('2026-10-26T10:00:00Z')
   await login(page, 'persona1@example.com')
