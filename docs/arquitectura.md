@@ -10,7 +10,7 @@ El proyecto de Supabase ya existe. La guía de clics está en `docs/puesta-en-ma
 
 Los avisos al móvil nacen apagados. Hay uno, y cada persona lo enciende si quiere: si mañana no hay nadie. Como mucho sale uno, la tarde de antes, cualquier día de la semana (también el sábado para el domingo y el domingo para el lunes). No nombra a un matrimonio ni a una persona. Hoy lo dice cuando el día está vacío, sin nombres y sin intenciones en la pantalla de bloqueo.
 
-Las rachas van en hora de Madrid. En Hoy la cifra del curso es grande, con «Misas del curso» o «Missas do curso», y debajo van las cinco bajo el título «Rachas» o «Sequências»: la tuya (con tu nombre), la de tu matrimonio, la del curso, la de cada matrimonio y la de días con al menos diez personas. El domingo cuenta. Si ese día la racha falla, se rompe. Lo que no hacemos el domingo es avisar.
+Las rachas van en hora de Madrid. En Hoy la cifra del curso es grande, con «Misas del curso» o «Missas do curso», y debajo van las cinco bajo el título «Rachas» o «Sequências»: la tuya (con tu nombre), la de tu matrimonio, la del curso, la de cada matrimonio y la de días con al menos diez personas. El domingo cuenta. Si ese día la racha falla, se rompe. Lo que el domingo no tiene es estado de riesgo en la aplicación.
 
 Las celebraciones las dibuja Diseño: un tiro de papel de 1,2 segundos y una línea corta que dice el motivo. Se guardan, así que recargar la página no las repite. El día en que se apunta la décima misa se celebra una vez; si ese día habéis ido los doce, es el mismo papel y la misma línea, no otro. Si el móvil pide poco movimiento, se queda la cresta quieta con esa línea.
 
