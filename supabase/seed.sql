@@ -24,7 +24,8 @@ begin
       ) values (
         '00000000-0000-0000-0000-000000000000',
         uid, 'authenticated', 'authenticated', mail,
-        extensions.crypt('no-se-usa', extensions.gen_salt('bf')),
+        -- Sin contraseña que se pueda saber: se entra con el código del correo.
+        extensions.crypt(gen_random_uuid()::text, extensions.gen_salt('bf')),
         now(),
         '{"provider":"email","providers":["email"]}'::jsonb,
         '{}'::jsonb,

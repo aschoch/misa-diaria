@@ -33,9 +33,10 @@ export function swipeSwitchOn() {
 
 // El registro técnico de cada gesto (swipe_debug, tap_debug) solo sale en los
 // móviles que encendieron la antigua opción de prueba.
+// El registro técnico de los gestos ya no sale en ningún móvil (la antigua opción
+// de prueba, 'on', queda apagada). Solo lo enciende 'force', que ponen los tests.
 export function swipeDiagnostics() {
-  const value = flag()
-  return value === 'on' || value === 'force'
+  return flag() === 'force'
 }
 
 // Posición del switch para que el dedo quede en el lado "apagado" (on = false)

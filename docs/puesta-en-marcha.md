@@ -82,13 +82,17 @@ La semilla del repositorio crea `persona1@example.com` … `persona12@example.co
 
 Quien no esté en esa lista no entra. La página le dice lo mismo que a los demás: si el correo está en la lista, llegará un mensaje. No dice si el correo existe.
 
+### Antes de invitar
+
+Si en producción se cargó alguna vez la semilla antigua, sus doce cuentas tenían la contraseña `no-se-usa`, que está en este repositorio público. Pega en **SQL Editor**, por partes, `supabase/snippets/produccion-2026-10-27-antes-de-invitar.sql`: dice qué cuentas la tienen todavía, se la cambia por una que nadie sabe, busca datos de prueba que hayan quedado y enseña los doce con su matrimonio para que lo revises.
+
 ### Invitar al curso
 
 No hace falta mandar invitaciones de Supabase ni enlaces mágicos. Con los doce correos ya en **Authentication → Users** (sin contraseña) y en `members`:
 
 1. Manda a cada matrimonio, por el canal de siempre, el enlace `https://aschoch.github.io/misa-diaria/` y el correo exacto con el que lo apuntaste. Con otro correo no llega nada y la app no dice por qué.
 2. En el iPhone, primero la instala (Safari → Compartir → **Añadir a pantalla de inicio**) y entra desde el icono. Safari y el icono no comparten la sesión: si entra en Safari, en el icono tiene que volver a entrar.
-3. Escribe su correo y pulsa *¿Primera vez u olvidaste la contraseña?* → **Enviar código**. Le llega un código de 6 dígitos (mira en spam). Si al volver del correo la app ha vuelto al principio, *¿Primera vez…?* → **Ya tengo un código**.
+3. Escribe su correo y pulsa *¿Primera vez u olvidaste la contraseña?* → **Enviar código**. Le llega un código de 6 dígitos (mira en spam). Si al volver del correo la app ha vuelto al principio, *¿Primera vez…?* → **Enviar código** otra vez: si no ha pasado un minuto, no manda otro y le deja escribir el que tiene.
 4. Justo después la app le ofrece crear una contraseña. Si la crea, la próxima vez entra con correo y contraseña y el Llavero del iPhone la recuerda. Si pulsa *Ahora no*, sigue entrando con código siempre (y si quiere poner contraseña más tarde, entra otra vez con código y se la ofrece).
 5. En Ajustes, que active el aviso de la tarde.
 

@@ -885,7 +885,8 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
     const names = rows.map((row) => row.event_name)
     const attend = rows.find((row) => row.event_name === 'attendance_toggle')
     const tab = rows.find((row) => row.event_name === 'tab_view' && row.props?.to === 'calendario')
-    return names.includes('app_open') && Boolean(tab) && attend?.props?.on === true && attend.props.source === 'hoy_main'
+    // Sin día ni si se marcó: el registro de uso no dice quién fue cuándo.
+    return names.includes('app_open') && Boolean(tab) && attend?.props?.source === 'hoy_main' && !('date' in attend.props) && !('on' in attend.props)
   }).toBe(true)
 
   await page.goto('/misa-diaria/ajustes?plataforma=ios')
@@ -918,6 +919,41 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
   await expect(android).toContainText('Añadir a pantalla de inicio')
   await expect(android).toContainText('Instalar')
   expect(errors).toEqual([])
+})
+
+test('sin cobertura, cada «He ido» que no se guarda vuelve atrás aunque se toque otro día', async ({ page }) => {
+  await login(page, 'persona12@example.com')
+  let seen = 0
+  await page.route('**/rest/v1/attendance**', async (route) => {
+    const method = route.request().method()
+    if (method !== 'POST' && method !== 'DELETE') {
+      await route.continue()
+      return
+    }
+    seen += 1
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await route.abort()
+  })
+  try {
+    const week = page.getByTestId('week')
+    const first = week.locator('.week-day[data-date="2026-10-21"]')
+    const second = week.locator('.week-day[data-date="2026-10-22"]')
+    await expect(first.locator('small')).toHaveText('11')
+    await expect(second.locator('small')).toHaveText('11')
+    await first.click()
+    await second.click()
+    await expect(first).toHaveAttribute('aria-pressed', 'true')
+    await expect(second).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(() => seen).toBe(2)
+    // Los dos fallan: los dos vuelven a como estaban, con su cuenta.
+    await expect(week.locator('.week-day[data-date="2026-10-21"]')).toHaveAttribute('aria-pressed', 'false')
+    await expect(week.locator('.week-day[data-date="2026-10-22"]')).toHaveAttribute('aria-pressed', 'false')
+    await expect(week.locator('.week-day[data-date="2026-10-21"] small')).toHaveText('11')
+    await expect(week.locator('.week-day[data-date="2026-10-22"] small')).toHaveText('11')
+    await expect(page.getByText('No se ha guardado. Prueba otra vez.')).toBeVisible()
+  } finally {
+    await page.unroute('**/rest/v1/attendance**').catch(() => undefined)
+  }
 })
 
 test('marcar es inmediato y el resorte queda', async ({ page }) => {

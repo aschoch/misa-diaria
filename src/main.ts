@@ -1815,7 +1815,7 @@ async function setCommitment(date: string, on: boolean, source: 'button' | 'swip
   if (on) pulseDate = date
   const epoch = ++commitEpoch
   paint()
-  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', routeFromPath(location.pathname), { date, on, source })
+  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', routeFromPath(location.pathname), { source })
   if (demo) return
   const member = current.me.id
   const run = commitChain.then(async () => {
@@ -1860,19 +1860,11 @@ function attendanceRows(date: string) {
   return rows
 }
 
-type AttendanceSnap = { rows: { mine_attendance: boolean; went: number }[]; total: number; covered: number | null; risk: Estado['risk'] }
-
 function flipAttendance(date: string) {
   if (!current) return null
   const rows = attendanceRows(date)
   if (!rows.length) return null
   const today = date === current.today ? current.calendar[0] : null
-  const snaps: AttendanceSnap = {
-    rows: rows.map((row) => ({ mine_attendance: row.mine_attendance, went: row.went })),
-    total: current.streaks.total,
-    covered: today ? today.covered : null,
-    risk: current.risk,
-  }
   const on = !rows[0].mine_attendance
   const delta = on ? 1 : -1
   for (const row of rows) {
@@ -1884,20 +1876,7 @@ function flipAttendance(date: string) {
     today.covered = Math.max(0, today.covered + delta)
     current.risk = today.covered > 0 || today.sunday ? null : 'empty'
   }
-  return { on, snaps }
-}
-
-function restoreAttendance(date: string, snaps: AttendanceSnap) {
-  if (!current) return
-  attendanceRows(date).forEach((row, index) => {
-    const snap = snaps.rows[index]
-    if (!snap) return
-    row.mine_attendance = snap.mine_attendance
-    row.went = snap.went
-  })
-  current.streaks.total = snaps.total
-  if (snaps.covered != null && current.calendar[0]?.date === date) current.calendar[0].covered = snaps.covered
-  current.risk = snaps.risk
+  return { on }
 }
 
 function patchHoyAttendance(state: Estado, isLocked: boolean) {
@@ -1991,22 +1970,21 @@ function queueAttendance(node: HTMLElement) {
   attendPulse = ''
   if (date === current.today) celebrateMark(flipped.on)
   const source = attendanceSource(node)
-  if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { date, on: flipped.on, source })
+  if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { source })
   if (demo) return
   const member = current.me.id
   const on = flipped.on
-  const snaps = flipped.snaps
   const run = attendChain.then(async () => {
     try {
       await marcarAsistencia(member, date, on)
-      await refresh(true)
+      // Solo el último toque refresca: los anteriores no pisan lo que aún está en cola.
+      if (epoch === attendanceEpoch) await refresh(true)
     } catch {
-      if (epoch !== attendanceEpoch) return
-      const riskBefore = current?.risk
-      restoreAttendance(date, snaps)
+      // Se deshace este día (aunque después se haya tocado otro): sin cobertura en la
+      // iglesia, cada toque que no se guardó vuelve atrás. Al volver la red se refresca.
+      if (attendanceRows(date)[0]?.mine_attendance === on) flipAttendance(date)
       offline = tx().saveFail
       if (current) paint()
-      void riskBefore
     }
   })
   attendChain = run.then(() => undefined, () => undefined)
