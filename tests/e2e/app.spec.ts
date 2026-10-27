@@ -1995,7 +1995,7 @@ test('los días pasados viven en el calendario y Hoy enseña estos días', async
   expect(errors).toEqual([])
 })
 
-test('el scroll desde una fila sigue al dedo en la pantalla, no al clientY que mueve el propio scroll', async ({ page, viewport }) => {
+test('el scroll de la app desde una fila no mueve la página hasta soltar: el dedo no se mezcla con el scroll', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 0) > 600)
   await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
   await login(page, 'persona1@example.com')
@@ -2003,32 +2003,43 @@ test('el scroll desde una fila sigue al dedo en la pantalla, no al clientY que m
   await page.getByTestId('calendar').waitFor()
   await expect(page.locator('[data-testid="calendar"] li input[data-row-switch]').first()).toBeAttached()
   await page.waitForTimeout(400)
-  // En el iPhone el clientY llega mezclado con el scroll que la app acaba de pedir; aquí
-  // va con ruido de ±300 px. El dedo de verdad (screenY) sube 10 px por evento.
-  const moved = await page.evaluate(async () => {
+  // En el iPhone la posición del dedo llega mezclada con el scroll de la página. Aquí se
+  // imita: el clientY lleva sumado lo que se haya movido la página desde el principio.
+  const result = await page.evaluate(() => {
     const input = [...document.querySelectorAll<HTMLInputElement>('[data-testid="calendar"] li:not([data-kind="past"]) input[data-row-switch]')]
       .find((node) => { const rect = node.getBoundingClientRect(); return rect.top > 150 && rect.bottom < innerHeight - 150 })!
     const rect = input.getBoundingClientRect()
     const x = rect.left + rect.width / 2
     const y = rect.top + rect.height / 2
-    const fire = (type: string, clientY: number, screenY: number, timeStamp: number) => {
-      const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY, screenX: x, screenY })
+    const start = window.scrollY
+    const fire = (type: string, finger: number, timeStamp: number) => {
+      const clientY = finger + (window.scrollY - start)
+      const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY, screenX: x, screenY: clientY + 1000 })
       Object.defineProperty(event, 'timeStamp', { value: timeStamp })
       input.dispatchEvent(event)
     }
-    const start = window.scrollY
     const t0 = performance.now()
-    fire('pointerdown', y, y + 1000, t0)
-    fire('pointermove', y - 20, y + 980, t0 + 16)
-    for (let i = 1; i <= 20; i++) fire('pointermove', y - 20 - i * 10 + (i % 2 ? 300 : -300), y + 980 - i * 10, t0 + 16 + i * 16)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    return window.scrollY - start
+    fire('pointerdown', y, t0)
+    let moving = 0
+    for (let i = 1; i <= 22; i++) {
+      fire('pointermove', y - i * 10, t0 + i * 16)
+      moving = Math.max(moving, Math.abs(window.scrollY - start))
+    }
+    const list = document.querySelector<HTMLElement>('[data-testid="calendar"]')!.style.transform
+    fire('pointerup', y - 220, t0 + 23 * 16)
+    return { moving, list, moved: window.scrollY - start, after: document.querySelector<HTMLElement>('[data-testid="calendar"]')!.style.transform }
   })
-  expect(moved).toBeGreaterThan(180)
-  expect(moved).toBeLessThan(240)
+  // Mientras dura, la página no se mueve: se desplaza la lista.
+  expect(result.moving).toBe(0)
+  expect(result.list).toContain('translate3d')
+  // Al soltar, la página queda donde llevó el dedo (sin los primeros 24 px, que eran
+  // del iPhone si se quedaba el gesto) y la lista sin transform.
+  expect(result.moved).toBeGreaterThan(180)
+  expect(result.moved).toBeLessThan(210)
+  expect(result.after).toBe('')
 })
 
-test('un scroll que empieza en una fila no se lo queda el iPhone a medias', async ({ page, viewport }) => {
+test('un scroll que empieza en una fila lo hace el iPhone; si lo hace la app, el iPhone no se suma', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 0) > 600)
   await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
   await login(page, 'persona1@example.com')
@@ -2039,16 +2050,23 @@ test('un scroll que empieza en una fila no se lo queda el iPhone a medias', asyn
   if (!box) throw new Error('sin fila')
   const x = box.x + 200
   const y = box.y + box.height / 2
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  // El touchmove vertical sale bloqueado: el scroll nativo no puede empezar y sumarse al de la app.
-  const blocked = await page.evaluate(({ x, y }) => {
+  const touchMove = (dx: number, dy: number) => page.evaluate(({ x, y, dx, dy }) => {
     const input = document.elementFromPoint(x, y) as HTMLInputElement
     const move = new Event('touchmove', { bubbles: true, cancelable: true })
-    Object.defineProperty(move, 'touches', { value: [{ clientX: x, clientY: y - 30 }] })
+    Object.defineProperty(move, 'touches', { value: [{ clientX: x + dx, clientY: y + dy }] })
     input.dispatchEvent(move)
     return move.defaultPrevented
-  }, { x, y })
+  }, { x, y, dx, dy })
+  // Empieza en vertical: el touchmove no se bloquea y el scroll es el del iPhone.
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  expect(await touchMove(0, -30)).toBe(false)
   await page.mouse.up()
-  expect(blocked).toBe(true)
+  await page.waitForTimeout(500)
+  // Si la app ya mueve la lista (aquí, con ratón), el touchmove sale bloqueado.
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y - 40, { steps: 4 })
+  expect(await touchMove(0, -50)).toBe(true)
+  await page.mouse.up()
 })
