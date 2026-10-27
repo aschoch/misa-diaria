@@ -468,6 +468,29 @@ async function main() {
       )
     })
 
+    // «Hoy» en la zona del teléfono: a las 22:30 UTC, en Lisboa aún es día 23 y en Madrid ya es 24.
+    await asUser(P(1), async () => {
+      await q(`select set_config('app.now', '2026-10-23T22:30:00Z', true)`)
+      const madrid = await one(`select public.estado() as e`)
+      assert(madrid.e.today === '2026-10-24', 'sin zona, hoy es Madrid')
+      const lisboa = await one(`select public.estado('Europe/Lisbon') as e`)
+      assert(lisboa.e.today === '2026-10-23', 'en Lisboa hoy sigue siendo el 23')
+      assert(lisboa.e.clock === '23:30', 'la hora es la de Lisboa')
+      const rara = await one(`select public.estado('No/Existe') as e`)
+      assert(rara.e.today === '2026-10-24', 'una zona que no existe se queda en Madrid')
+      // «Voy a ir» para el hoy de Lisboa, aunque en Madrid ya sea mañana.
+      await q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-23')`, [P(1)])
+      await q(`delete from public.commitments where member_id = $1 and mass_date = '2026-10-23'`, [P(1)])
+      await expectFail(() => q(`select public.estado_en('2020-01-01', 'Europe/Madrid')`))
+    })
+    await asUser(P(1), async () => {
+      // Una zona más de un día por delante de Madrid no adelanta el día.
+      await q(`select set_config('app.now', '2026-10-23T10:00:00Z', true)`)
+      const lejos = await one(`select public.estado('Pacific/Kiritimati') as e`)
+      assert(lejos.e.today === '2026-10-23', 'una zona por delante de Madrid se queda en Madrid')
+      await expectFail(() => q(`insert into public.commitments (member_id, mass_date) values ($1, '2026-10-22')`, [P(1)]))
+    })
+
     const ajena = await one(
       `insert into public.intentions (member_id, body) values ($1, 'Ajena.') returning id`,
       [P(4)],

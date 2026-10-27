@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Estado } from './types'
+import { phoneZone } from './format'
 
 const PRODUCTION_URL = 'https://kryarzipdpvceocidgyw.supabase.co'
 const PRODUCTION_KEY = 'sb_publishable_C-xlRIF09NLWIi9Sf-7kdA__ZTp6f_z'
@@ -26,7 +27,10 @@ export const supabase: SupabaseClient | null = configured
   : null
 
 export async function estado(): Promise<Estado> {
-  const { data, error } = await supabase!.rpc('estado')
+  // «Hoy» es el día donde está el teléfono (Madrid o Lisboa).
+  let { data, error } = await supabase!.rpc('estado', { p_tz: phoneZone() })
+  // Una base aún sin estado(p_tz): el de siempre, con el día de Madrid.
+  if (error?.code === 'PGRST202') ({ data, error } = await supabase!.rpc('estado'))
   if (error) throw error
   return data as Estado
 }

@@ -6,7 +6,7 @@ import { borrarComentario, borrarIntencion, configured, editarComentario, editar
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { loadEmojis } from './emoji'
 import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeDiagnostics, swipeSwitchOn } from './haptics'
-import { esc } from './format'
+import { esc, phoneDay } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
 import { appendCalendarDays, blankDay, weekStrip, emojiGrid, href, intentionFromPath, renderApp, renderDenied, renderLogin, renderResetPassword, renderSetup, renderSplash, routeFromPath, type LoginMode, type Route } from './view'
@@ -158,13 +158,9 @@ let pendingDelete: { kind: 'intention' | 'comment'; id: string; timer: number } 
 const SNAPSHOT_KEY = 'misa-estado'
 let authRetry = false
 
-function madridDay() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
-}
-
-// El día del teléfono en Madrid cambió desde la última carga: lo que se ve es de ayer.
+// El día del teléfono cambió desde la última carga: lo que se ve es de ayer.
 function staleDay() {
-  return Boolean(loadedDay) && loadedDay !== madridDay()
+  return Boolean(loadedDay) && loadedDay !== phoneDay()
 }
 
 function readSnapshot(): { at: string; day: string; data: Estado } | null {
@@ -181,7 +177,7 @@ function readSnapshot(): { at: string; day: string; data: Estado } | null {
 
 function writeSnapshot(state: Estado) {
   try {
-    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ at: state.clock, day: madridDay(), data: state }))
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ at: state.clock, day: phoneDay(), data: state }))
   } catch { /* sin espacio: la próxima apertura irá a la red */ }
 }
 
@@ -414,7 +410,7 @@ async function refresh(celebrate = false) {
     locked = false
     booting = false
     loadedOnce = true
-    loadedDay = madridDay()
+    loadedDay = phoneDay()
     lastLoad = Date.now()
     if (epoch === localeEpoch) {
       const saved = current.prefs.locale
