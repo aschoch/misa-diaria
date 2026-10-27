@@ -2054,6 +2054,43 @@ test('los días pasados viven en el calendario y Hoy enseña estos días', async
   expect(errors).toEqual([])
 })
 
+test('un scroll justo al acabar el viaje de «Hoy» se queda donde lo deja el dedo', async ({ page }) => {
+  const errors = watchConsole(page)
+  await reset('2026-10-26T10:00:00Z')
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  const today = page.getByTestId('calendar').locator('li[data-date="2026-10-26"]')
+  await expect(today).toBeInViewport()
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const back = page.getByTestId('to-today')
+  await expect(back).toBeVisible()
+  // Se baja del todo en el fotograma en que acaba la animación (dura 280 ms):
+  // el repaso del fotograma siguiente no puede devolver la página a hoy.
+  const bottom = await page.evaluate(() => new Promise<number>((resolve) => {
+    const row = document.querySelector('[data-testid="calendar"] li[data-date="2026-10-26"]')
+    if (!row) throw new Error('sin hoy')
+    const to = Math.round(row.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.3)
+    document.querySelector<HTMLElement>('[data-testid="to-today"]')?.click()
+    const clicked = performance.now()
+    const watch = (now: number) => {
+      if (now - clicked >= 280 && Math.abs(window.scrollY - to) <= 1) {
+        window.scrollTo(0, document.documentElement.scrollHeight)
+        resolve(window.scrollY)
+        return
+      }
+      requestAnimationFrame(watch)
+    }
+    requestAnimationFrame(watch)
+  }))
+  await page.waitForTimeout(400)
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(bottom - 400)
+  await expect(back).toBeVisible()
+  await expect(back).toHaveAttribute('data-dir', 'up')
+  await back.click()
+  await expect(today).toBeInViewport()
+  expect(errors).toEqual([])
+})
+
 test('el scroll de la app desde una fila no mueve la página hasta soltar: el dedo no se mezcla con el scroll', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 0) > 600)
   await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))

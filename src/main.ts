@@ -698,8 +698,10 @@ function scrollPageTop(to = 0) {
     apply(t >= 1 ? to : Math.round(from + (to - from) * eased))
     if (t < 1) scrollFrame = requestAnimationFrame(step)
     else {
-      scrollFrame = 0
-      requestAnimationFrame(() => {
+      // El último repaso también cuenta como animación: si el dedo ya se ha
+      // llevado la página, el scroll lo cancela y no la devuelve a hoy.
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0
         if (gen !== scrollGen || Math.abs(window.scrollY - to) <= 1) return
         apply(to)
       })
