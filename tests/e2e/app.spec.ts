@@ -2116,7 +2116,23 @@ test('con la prueba del calendario único, los días pasados viven en el calenda
   await page.getByRole('link', { name: 'Hoy' }).click()
   await expect(page.getByTestId('hoy-date')).toBeVisible()
   await expect(page.getByTestId('past')).toHaveCount(0)
-  if (process.env.MISA_UNIFIED_SHOTS) await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-pantalla-hoy.png` })
+  // Hoy se rellena con la semana, el próximo día sin nadie y la última intención.
+  await expect(page.getByTestId('week').locator('.week-day')).toHaveCount(7)
+  await expect(page.getByTestId('week').locator('.week-day.is-today')).toHaveAttribute('data-date', '2026-10-26')
+  await expect(page.getByTestId('hoy-intention')).toBeVisible()
+  await expect(page.getByTestId('week').locator('.week-day').first()).toHaveAttribute('data-date', '2026-10-23')
+  await page.waitForTimeout(600)
+  if (process.env.MISA_UNIFIED_SHOTS) {
+    await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-pantalla-hoy.png` })
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${process.env.MISA_UNIFIED_SHOTS}/unico-pantalla-hoy-abajo.png` })
+    await page.evaluate(() => window.scrollTo(0, 0))
+  }
+  // Un día de «Estos días» abre el calendario en ese día.
+  await page.getByTestId('week').locator('.week-day[data-date="2026-10-24"]').click()
+  await expect(page.getByTestId('calendar').locator('li[data-date="2026-10-24"]')).toBeInViewport()
+  await page.getByRole('link', { name: 'Hoy' }).click()
 
   // El calendario se abre en hoy, con los días pasados encima.
   await page.getByRole('link', { name: 'Calendario' }).click()

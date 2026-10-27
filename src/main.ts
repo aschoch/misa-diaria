@@ -2218,6 +2218,16 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     paint()
     return
   }
+  if (act === 'week-day') {
+    // Un día de «Esta semana» abre el calendario en ese día.
+    const date = node.dataset.date ?? ''
+    resetCalendarScroll = true
+    go('calendario')
+    const row = document.querySelector<HTMLElement>(`[data-testid="calendar"] li[data-date="${date}"]`)
+    if (row) jumpPageTop(Math.max(0, Math.round(row.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.3)))
+    syncTodayButton()
+    return
+  }
   if (act === 'to-today') {
     scrollPageTop(calendarHomeY())
     return
