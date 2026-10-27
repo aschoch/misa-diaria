@@ -1186,24 +1186,31 @@ function driveSwitchScroll(event: PointerEvent) {
   const dy = event.clientY - gesture.y
   if (gesture.lockedAxis === '' && !gesture.row && Math.abs(dy) >= 10 && Math.abs(dy) > Math.abs(dx)) gesture.lockedAxis = 'y'
   if (gesture.lockedAxis !== 'y') return false
+  // El dedo se mide en la pantalla (screenY), no en la página: en el iPhone clientY ya
+  // incluye el scroll que acabamos de pedir, que llega con retraso, y cada paso
+  // alimentaba al siguiente hasta que la página saltaba miles de píxeles.
+  const fingerY = event.screenY || event.clientY
   // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
-  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: event.clientY, samples: [], expect: -1, at: event.timeStamp })
+  const scrolling = gesture.scrolling ?? (gesture.scrolling = { lastY: fingerY, samples: [], expect: -1, at: event.timeStamp })
   if (!scrolling.samples.length) traceSwipe(`ly:${Math.round(window.scrollY)}`)
-  // Diagnóstico: si la página se movió sin nosotros (scroll nativo u otra cosa) o el dedo
+  // Un evento nunca mueve la página más que un dedo muy rápido.
+  const step = Math.max(-160, Math.min(160, scrolling.lastY - fingerY))
+  // Diagnóstico: si la página no está donde la dejamos (scroll nativo u otra cosa) o el dedo
   // llega a saltos (eventos que tardan), queda en el registro.
   if (swipeTrace) {
     const off = window.scrollY - scrolling.expect
     if (scrolling.expect >= 0 && Math.abs(off) > 2) traceSwipe(`nat:${Math.round(off)}`)
     const gap = event.timeStamp - scrolling.at
-    const step = scrolling.lastY - event.clientY
     if (gap > 50) traceSwipe(`gap:${Math.round(gap)}`)
-    if (Math.abs(step) > 60) traceSwipe(`step:${Math.round(step)}`)
+    if (Math.abs(scrolling.lastY - fingerY) > 60) traceSwipe(`step:${Math.round(scrolling.lastY - fingerY)}`)
   }
-  window.scrollBy(0, scrolling.lastY - event.clientY)
-  scrolling.expect = window.scrollY
+  const maxY = document.documentElement.scrollHeight - window.innerHeight
+  const before = scrolling.expect >= 0 ? scrolling.expect : window.scrollY
+  window.scrollBy(0, step)
+  scrolling.expect = Math.max(0, Math.min(maxY, before + step))
   scrolling.at = event.timeStamp
-  scrolling.lastY = event.clientY
-  scrolling.samples.push({ t: event.timeStamp, y: event.clientY })
+  scrolling.lastY = fingerY
+  scrolling.samples.push({ t: event.timeStamp, y: fingerY })
   if (scrolling.samples.length > 12) scrolling.samples.shift()
   return true
 }
