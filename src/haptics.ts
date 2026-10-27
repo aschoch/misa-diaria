@@ -79,9 +79,11 @@ export function startMomentum(samples: { t: number; y: number }[], releasedAt: n
   const recent = samples.filter((sample) => last.t - sample.t <= 100)
   const first = recent[0]
   if (!first || recent.length < 2 || last.t === first.t) return
-  let velocity = -(last.y - first.y) / (last.t - first.t)
+  // iOS a veces junta dos movimientos casi en el mismo milisegundo: dividir por un
+  // tramo tan corto daba velocidades enormes y la lista pegaba un salto al soltar.
+  let velocity = -(last.y - first.y) / Math.max(last.t - first.t, 32)
   if (Math.abs(velocity) < 0.15) return
-  velocity = Math.max(-6, Math.min(6, velocity))
+  velocity = Math.max(-5, Math.min(5, velocity))
   let prev = performance.now()
   const step = (now: number) => {
     const dt = Math.min(32, Math.max(1, now - prev))
