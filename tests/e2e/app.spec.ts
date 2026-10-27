@@ -2202,3 +2202,28 @@ test('con la prueba del calendario único, los días pasados viven en el calenda
   await expect(calendar.locator('li[data-kind="past"] .dots')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('un scroll que empieza en una fila no se lo queda el iPhone a medias', async ({ page, viewport }) => {
+  test.skip((viewport?.width ?? 0) > 600)
+  await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  const row = page.locator('[data-testid="calendar"] li[data-date]').nth(3)
+  const box = await row.boundingBox()
+  if (!box) throw new Error('sin fila')
+  const x = box.x + 200
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  // El touchmove vertical sale bloqueado: el scroll nativo no puede empezar y sumarse al de la app.
+  const blocked = await page.evaluate(({ x, y }) => {
+    const input = document.elementFromPoint(x, y) as HTMLInputElement
+    const move = new Event('touchmove', { bubbles: true, cancelable: true })
+    Object.defineProperty(move, 'touches', { value: [{ clientX: x, clientY: y - 30 }] })
+    input.dispatchEvent(move)
+    return move.defaultPrevented
+  }, { x, y })
+  await page.mouse.up()
+  expect(blocked).toBe(true)
+})
