@@ -1,6 +1,6 @@
 // Red primero. Solo se guarda el armazón (la página y los assets con hash) para abrir sin conexión.
 // Supabase va a otro origen y nunca pasa por aquí.
-const CACHE = 'misa-v33'
+const CACHE = 'misa-v34'
 const SHELL = './'
 
 self.addEventListener('install', (event) => {

@@ -1941,6 +1941,11 @@ test('los días pasados viven en el calendario y Hoy enseña estos días', async
   await expect(page.getByTestId('week').locator('.week-day')).toHaveCount(7)
   await expect(page.getByTestId('week').locator('.week-day.is-today')).toHaveAttribute('data-date', '2026-10-26')
   await expect(page.getByTestId('hoy-intention')).toBeVisible()
+  // «Rezamos por» lleva al muro (con el cuadro para escribir una intención), no a una intención.
+  await page.getByTestId('hoy-intention').click()
+  await expect(page).toHaveURL(/\/muro$/)
+  await expect(page.getByTestId('muro')).toBeVisible()
+  await page.getByRole('link', { name: 'Hoy', exact: true }).click()
   await expect(page.getByTestId('week').locator('.week-day').first()).toHaveAttribute('data-date', '2026-10-23')
   await page.waitForTimeout(600)
   if (process.env.MISA_UNIFIED_SHOTS) {
@@ -2096,6 +2101,37 @@ test('el scroll de la app desde una fila no mueve la página hasta soltar: el de
   expect(result.moved).toBeGreaterThan(180)
   expect(result.moved).toBeLessThan(210)
   expect(result.after).toBe('')
+})
+
+test('tras tocar «Hoy», el scroll del dedo no se deshace', async ({ page }) => {
+  // Muchos fotogramas seguidos: Safari sin pantalla va más lento.
+  test.setTimeout(60_000)
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  await page.waitForTimeout(400)
+  // Se mueve la página en los fotogramas del final de la animación (unos 17 a 60 fps)
+  // y justo después: ese scroll se queda, la animación no lo devuelve a hoy.
+  const undone = await page.evaluate(async () => {
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const wait = async (n: number) => { for (let i = 0; i < n; i++) await frame() }
+    const button = document.querySelector<HTMLButtonElement>('[data-testid="to-today"]')!
+    const bad: number[] = []
+    for (let k = 8; k <= 26; k++) {
+      window.scrollTo(0, 0)
+      await wait(3)
+      button.hidden = false
+      button.click()
+      await wait(k)
+      const bottom = document.documentElement.scrollHeight - window.innerHeight
+      window.scrollTo(0, bottom)
+      const landed = window.scrollY
+      await wait(6)
+      if (Math.abs(window.scrollY - landed) > 2) bad.push(k)
+    }
+    return bad
+  })
+  expect(undone).toEqual([])
 })
 
 test('un scroll que empieza en una fila lo hace el iPhone; si lo hace la app, el iPhone no se suma', async ({ page, viewport }) => {

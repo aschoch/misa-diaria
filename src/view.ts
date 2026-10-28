@@ -225,7 +225,9 @@ function lastIntention(state: Estado) {
   const copy = tx()
   const item = state.intentions[0]
   if (!item) return ''
-  return `<a class="hoy-intention" href="${hrefIntention(item.id)}" data-testid="hoy-intention" aria-label="${esc(`${copy.prayFor}: ${item.body}`)}">
+  // Lleva al muro, no a la intención: desde la intención abierta se comentaba creyendo
+  // que se añadía una intención nueva.
+  return `<a class="hoy-intention" href="${href('muro')}" data-nav="intenciones" data-testid="hoy-intention" aria-label="${esc(`${copy.prayFor}: ${item.body}`)}">
       <span class="hoy-intention-label">${copy.prayFor}</span>
       <span class="hoy-intention-body">${esc(item.body)}</span>
       <span class="hoy-intention-more">${copy.seeIntentions} →</span>
