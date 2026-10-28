@@ -672,6 +672,10 @@ function scrollPageTop(to = 0) {
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const start = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop
   scrollSeen = start
+  // Dónde quedó de verdad la página tras el último paso: si ya no está ahí, la movió el
+  // dedo y la animación se retira (no lo devuelve a hoy).
+  let landed = start
+  const moved = () => Math.abs(window.scrollY - landed) > 1
   const apply = (y: number) => {
     lastProgrammaticY = y
     applyingScroll = true
@@ -679,6 +683,7 @@ function scrollPageTop(to = 0) {
     document.documentElement.scrollTop = y
     document.body.scrollTop = y
     applyingScroll = false
+    landed = window.scrollY
   }
   if (reduce || start === to) {
     apply(to)
@@ -693,6 +698,10 @@ function scrollPageTop(to = 0) {
   const t0 = performance.now()
   const step = (now: number) => {
     if (gen !== scrollGen) return
+    if (moved()) {
+      scrollFrame = 0
+      return
+    }
     const t = Math.min(1, (now - t0) / duration)
     const eased = 1 - (1 - t) ** 3
     apply(t >= 1 ? to : Math.round(from + (to - from) * eased))
@@ -700,7 +709,7 @@ function scrollPageTop(to = 0) {
     else {
       scrollFrame = 0
       requestAnimationFrame(() => {
-        if (gen !== scrollGen || Math.abs(window.scrollY - to) <= 1) return
+        if (gen !== scrollGen || moved() || Math.abs(window.scrollY - to) <= 1) return
         apply(to)
       })
     }

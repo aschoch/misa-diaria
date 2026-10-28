@@ -2103,6 +2103,35 @@ test('el scroll de la app desde una fila no mueve la página hasta soltar: el de
   expect(result.after).toBe('')
 })
 
+test('tras tocar «Hoy», el scroll del dedo no se deshace', async ({ page }) => {
+  await login(page, 'persona1@example.com')
+  await page.getByRole('link', { name: 'Calendario' }).click()
+  await page.getByTestId('calendar').waitFor()
+  await page.waitForTimeout(400)
+  // En cada fotograma de la animación (y justo después de acabar) se mueve la página:
+  // ese scroll se queda, la animación no lo devuelve a hoy.
+  const undone = await page.evaluate(async () => {
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const wait = async (n: number) => { for (let i = 0; i < n; i++) await frame() }
+    const button = document.querySelector<HTMLButtonElement>('[data-testid="to-today"]')!
+    const bad: number[] = []
+    for (let k = 0; k <= 30; k++) {
+      window.scrollTo(0, 0)
+      await wait(3)
+      button.hidden = false
+      button.click()
+      await wait(k)
+      const bottom = document.documentElement.scrollHeight - window.innerHeight
+      window.scrollTo(0, bottom)
+      const landed = window.scrollY
+      await wait(30)
+      if (Math.abs(window.scrollY - landed) > 2) bad.push(k)
+    }
+    return bad
+  })
+  expect(undone).toEqual([])
+})
+
 test('un scroll que empieza en una fila lo hace el iPhone; si lo hace la app, el iPhone no se suma', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 0) > 600)
   await page.addInitScript(() => localStorage.setItem('misa-vibrar-deslizar', 'force'))
