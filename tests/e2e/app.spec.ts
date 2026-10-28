@@ -1941,6 +1941,11 @@ test('los días pasados viven en el calendario y Hoy enseña estos días', async
   await expect(page.getByTestId('week').locator('.week-day')).toHaveCount(7)
   await expect(page.getByTestId('week').locator('.week-day.is-today')).toHaveAttribute('data-date', '2026-10-26')
   await expect(page.getByTestId('hoy-intention')).toBeVisible()
+  // «Rezamos por» lleva al muro (con el cuadro para escribir una intención), no a una intención.
+  await page.getByTestId('hoy-intention').click()
+  await expect(page).toHaveURL(/\/muro$/)
+  await expect(page.getByTestId('muro')).toBeVisible()
+  await page.getByRole('link', { name: 'Hoy', exact: true }).click()
   await expect(page.getByTestId('week').locator('.week-day').first()).toHaveAttribute('data-date', '2026-10-23')
   await page.waitForTimeout(600)
   if (process.env.MISA_UNIFIED_SHOTS) {
