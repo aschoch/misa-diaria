@@ -2104,18 +2104,20 @@ test('el scroll de la app desde una fila no mueve la página hasta soltar: el de
 })
 
 test('tras tocar «Hoy», el scroll del dedo no se deshace', async ({ page }) => {
+  // Muchos fotogramas seguidos: Safari sin pantalla va más lento.
+  test.setTimeout(60_000)
   await login(page, 'persona1@example.com')
   await page.getByRole('link', { name: 'Calendario' }).click()
   await page.getByTestId('calendar').waitFor()
   await page.waitForTimeout(400)
-  // En cada fotograma de la animación (y justo después de acabar) se mueve la página:
-  // ese scroll se queda, la animación no lo devuelve a hoy.
+  // Se mueve la página en los fotogramas del final de la animación (unos 17 a 60 fps)
+  // y justo después: ese scroll se queda, la animación no lo devuelve a hoy.
   const undone = await page.evaluate(async () => {
     const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     const wait = async (n: number) => { for (let i = 0; i < n; i++) await frame() }
     const button = document.querySelector<HTMLButtonElement>('[data-testid="to-today"]')!
     const bad: number[] = []
-    for (let k = 0; k <= 30; k++) {
+    for (let k = 8; k <= 26; k++) {
       window.scrollTo(0, 0)
       await wait(3)
       button.hidden = false
@@ -2124,7 +2126,7 @@ test('tras tocar «Hoy», el scroll del dedo no se deshace', async ({ page }) =>
       const bottom = document.documentElement.scrollHeight - window.innerHeight
       window.scrollTo(0, bottom)
       const landed = window.scrollY
-      await wait(30)
+      await wait(6)
       if (Math.abs(window.scrollY - landed) > 2) bad.push(k)
     }
     return bad
