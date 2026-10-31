@@ -57,7 +57,8 @@ Las intenciones se guardan y se pintan como texto, con un máximo de 280 caracte
 | `intention_reactions` | Un emoji no vacío, hasta 16 caracteres, por persona e intención | La propia persona enciende y apaga la suya |
 | `push_subscriptions` | Endpoint y claves del dispositivo | Solo las suyas |
 | `notification_prefs` | El aviso del día vacío, en no, la columna antigua del matrimonio, y el idioma `es` o `pt` | Solo las suyas |
-| `notification_log` | Persona, fecha y franja ya enviada | Solo la función del aviso |
+| `notification_log` | Persona, fecha y franja ya enviada (el candado) | Solo la función del aviso |
+| `notification_sends` | Persona, fecha, si el envío salió o falló, y el código | Solo la función del aviso |
 | `celebrations` | Persona y clave del evento | La propia persona, solo insertar |
 
 Una persona y un día son una asistencia. «Cualquier Misa» quiere decir que no pedimos hora ni parroquia. Un segundo toque no suma otra misa. Así «diez» significa diez personas, y el contador del curso es el número de filas.
@@ -119,23 +120,23 @@ Dentro de la aplicación hay una línea en Hoy y en el día del calendario, de l
 
 Al móvil, una sola Edge Function, `send-evening-reminder`, llamada por `pg_cron` y `pg_net` cada hora en el minuto 5. La función mira la hora de Madrid y solo envía entre las 20:00 y las 21:59, para que el cambio de hora no desplace el aviso y un fallo de una hora no lo borre. La URL es pública: rechaza la clave publicable y los tokens de usuario, y solo acepta un secreto propio del reloj (`CRON_SECRET`), distinto de la clave de servicio. Esa clave de servicio la inyecta Supabase en la función y no se copia al repositorio ni al SQL del reloj.
 
-Como mucho un envío por persona y fecha, anotado en `notification_log` antes de enviar. Si el envío falla, no hay reintentos en ráfaga: a las doce personas les basta el siguiente paso de la hora, y a la noche siguiente ya es otro día. Un 404 o un 410 del servicio push borra esa suscripción.
+Como mucho un envío por persona y fecha, anotado en `notification_log` antes de enviar. Si el envío falla, no hay reintentos en ráfaga: a las doce personas les basta el siguiente paso de la hora, y a la noche siguiente ya es otro día. Un 404 o un 410 del servicio push borra esa suscripción. El resultado de cada envío (persona, si salió o falló, y el código) queda en `notification_sends`. Esa tabla no se borra cuando el candado se suelta para reintentar.
 
 A quién, cualquier día, solo si mañana no hay nadie cubierto, y solo quien tenga encendido el aviso. Nace apagado. Como mucho sale uno por persona: «Mañana nadie ha dicho que va a Misa.» En pt-PT: «Amanhã ninguém disse que vai à Missa.» El título es «Misa diaria» o «Missa diária». No se nombra a un matrimonio ni a una persona. La columna `notification_prefs.couple` se queda en la base y la aplicación ya no la enseña ni la usa para enviar.
 
 El texto no lleva nombres, rachas ni intenciones. Caduca a las cuatro horas, para que no aparezca a la mañana siguiente como si fuera nuevo. iPhone: PWA instalada en la pantalla de inicio, iOS 16.4 o posterior. Android: PWA instalada. El permiso del sistema se pide al encender un interruptor en Ajustes, nunca al abrir la aplicación. Sin permiso, la preferencia se guarda y no se envía nada. La aplicación se usa igual con los avisos apagados.
 
-VAPID: la clave pública puede ir en el build; la privada y el `mailto:` del subject, solo en los secretos de la función. Los registros de la función anotan el id de la persona y la franja. No anotan correos, endpoints ni intenciones.
+VAPID: la clave pública puede ir en el build; la privada y el `mailto:` del subject, solo en los secretos de la función. Los registros de la función anotan el id de la persona y la franja, y `notification_sends` el código del envío. No anotan correos, endpoints ni intenciones.
 
 ### Resumen de la semana, y no el aviso de la mañana
 
-Quedó acordado. El lunes, una línea en Hoy, debajo del contador y encima de los seis días, con tres cifras de la semana de lunes a domingo que acaba de terminar: personas con los siete días (de 12), matrimonios que cubrieron los siete días (de 6), y días de lunes a sábado que quedaron en cero (de 6). El domingo entra en las dos primeras y no entra en la tercera. No hay correo, ni función programada, ni pantalla nueva. La cuenta vive en `resumen_semana(fecha)`. No medimos aperturas ni tiempo dentro. Si la línea pide una pantalla, un correo o un cron, se quita.
+Quedó acordado. El lunes, una línea en Hoy, debajo del contador y encima de los seis días, con tres cifras de la semana de lunes a domingo que acaba de terminar: personas con los siete días (de 12), matrimonios que cubrieron los siete días (de 6), y días de lunes a sábado que quedaron en cero (de 6). El domingo entra en las dos primeras y no entra en la tercera. No hay correo, ni función programada, ni pantalla nueva. La cuenta vive en `resumen_semana(fecha)`. La línea del lunes no mide aperturas. El uso de la aplicación se anota en `usage_events`; el catálogo está en `docs/analytics.md`. Si la línea pide una pantalla, un correo o un cron, se quita.
 
 El aviso de la mañana no entra. En eso coincido con el breve. Repetiría, a las ocho, el mismo hueco que la tarde anterior ya puede haber dicho. La tarde de antes es el momento en que todavía se puede apuntar. Quien abre por la mañana ve la línea de Hoy.
 
 ### Peso, offline y sesión
 
-Un año de asistencia son unos pocos miles de filas. No hay caché de pagos, ni realtime, ni analítica, ni fuentes de terceros, ni fotos. La fuente es la del sistema. Una sola llamada, `estado`, al abrir y al volver a la pestaña.
+Un año de asistencia son unos pocos miles de filas. No hay caché de pagos, ni realtime, ni analítica de terceros, ni fuentes de terceros, ni fotos. El uso propio está en `usage_events` (`docs/analytics.md`). La fuente es la del sistema. Una sola llamada, `estado`, al abrir y al volver a la pestaña.
 
 La PWA guarda el cascarón (HTML, CSS, JS) para que el icono abra sin red. Los datos enseñan la última respuesta con la hora de esa respuesta, y los botones quedan desactivados. No hay cola de cambios sin conexión: un «he ido» a medias duplicaría rachas y celebraciones. Al volver la red, se carga de nuevo.
 

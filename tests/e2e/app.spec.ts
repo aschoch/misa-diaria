@@ -106,7 +106,21 @@ async function usageRows(page: Page) {
     headers: { apikey: 'sb_test_anon_misa', Authorization: `Bearer ${token}` },
   })
   if (!response.ok) throw new Error(await response.text())
-  return response.json() as Promise<Array<{ event_name: string; route: string; props: { on?: boolean; source?: string; to?: string } }>>
+  return response.json() as Promise<Array<{ event_name: string; route: string; props: {
+    on?: boolean
+    source?: string
+    surface?: string
+    mass_date?: string
+    to?: string
+    dev?: boolean
+    kind?: string
+    where?: string
+    seconds?: number
+    via?: string
+    ok?: boolean
+    result?: string
+    at?: string
+  } }>>
 }
 
 test.beforeEach(async ({ page }) => {
@@ -877,16 +891,20 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
     return Boolean(node && held && node.isSameNode(held))
   })
   expect(still).toBe(true)
+  await go.click()
+  await expect(page.getByTestId('hoy-status')).toHaveText('Hoy · Pendiente de marcar')
 
   await page.getByRole('link', { name: 'Calendario' }).click()
   await expect(page.getByTestId('calendar')).toBeVisible()
+
   await expect.poll(async () => {
     const rows = await usageRows(page)
     const names = rows.map((row) => row.event_name)
-    const attend = rows.find((row) => row.event_name === 'attendance_toggle')
+    const marks = rows.filter((row) => row.event_name === 'attendance_toggle')
     const tab = rows.find((row) => row.event_name === 'tab_view' && row.props?.to === 'calendario')
-    // Sin día ni si se marcó: el registro de uso no dice quién fue cuándo.
-    return names.includes('app_open') && Boolean(tab) && attend?.props?.source === 'hoy_main' && !('date' in attend.props) && !('on' in attend.props)
+    const marked = marks.some((row) => row.props?.surface === 'hoy' && row.props?.on === true && row.props?.mass_date === '2026-10-23' && row.props?.dev === true)
+    const unmarked = marks.some((row) => row.props?.surface === 'hoy' && row.props?.on === false && row.props?.mass_date === '2026-10-23')
+    return names.includes('app_open') && Boolean(tab) && marked && unmarked && !names.includes('swipe_debug') && !names.includes('tap_debug')
   }).toBe(true)
 
   await page.goto('/misa-diaria/ajustes?plataforma=ios')
@@ -899,6 +917,7 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
   await expect(shots.first()).toBeHidden()
   await ios.getByText('Ver cómo instalar como app').click()
   await expect(ios.locator('details.install-details')).toHaveJSProperty('open', true)
+  await expect.poll(async () => (await usageRows(page)).some((row) => row.event_name === 'install_viewed' && row.props?.dev === true)).toBe(true)
   await expect(ios).toContainText('Añadir a pantalla de inicio')
   await expect(ios).toContainText('Añadir')
   await expect(ios).not.toContainText('Instalar aplicación')
@@ -918,6 +937,14 @@ test('el toque no vuelve atrás, el botón es olivo y el uso queda escrito', asy
   await expect(android).toContainText('Instalar aplicación')
   await expect(android).toContainText('Añadir a pantalla de inicio')
   await expect(android).toContainText('Instalar')
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+  await expect.poll(async () => (await usageRows(page)).some((row) => row.event_name === 'session_end' && typeof row.props?.seconds === 'number')).toBe(true)
+  await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')))
+  await expect.poll(async () => (await usageRows(page)).some((row) => row.event_name === 'app_installed' && row.props?.via === 'appinstalled')).toBe(true)
+  await page.goto('/misa-diaria/calendario?from=push')
+  await expect(page.getByTestId('calendar')).toBeVisible()
+  await expect(page).not.toHaveURL(/from=push/)
+  await expect.poll(async () => (await usageRows(page)).some((row) => row.event_name === 'push_open')).toBe(true)
   expect(errors).toEqual([])
 })
 
@@ -951,6 +978,18 @@ test('sin cobertura, cada «He ido» que no se guarda vuelve atrás aunque se to
     await expect(week.locator('.week-day[data-date="2026-10-21"] small')).toHaveText('11')
     await expect(week.locator('.week-day[data-date="2026-10-22"] small')).toHaveText('11')
     await expect(page.getByText('No se ha guardado. Prueba otra vez.')).toBeVisible()
+    await page.evaluate(() => {
+      window.dispatchEvent(new ErrorEvent('error', { message: 'persona9@example.com no se guarda' }))
+    })
+    await expect.poll(async () => {
+      const rows = await usageRows(page)
+      const errors = rows.filter((row) => row.event_name === 'client_error')
+      const saved = errors.filter((row) => row.props?.where === 'attendance' && row.props?.kind === 'save')
+      const days = rows.filter((row) => row.event_name === 'attendance_toggle' && row.props?.surface === 'estos_dias' && row.props?.on === true)
+      const crashed = errors.some((row) => row.props?.where === 'window' && row.props?.kind === 'uncaught')
+      const leaked = JSON.stringify(errors).includes('@')
+      return saved.length >= 1 && crashed && days.some((row) => row.props?.mass_date === '2026-10-21') && days.some((row) => row.props?.mass_date === '2026-10-22') && !leaked
+    }).toBe(true)
   } finally {
     await page.unroute('**/rest/v1/attendance**').catch(() => undefined)
   }
@@ -1603,18 +1642,66 @@ test('una contraseña mal escrita lo dice claro', async ({ page }) => {
   expect(errors.filter((error) => !/failed to load resource|400/i.test(error))).toEqual([])
 })
 
+test('encender el aviso anota el permiso pedido y denegado', async ({ page }) => {
+  await login(page, 'persona12@example.com')
+  await page.getByRole('link', { name: 'Ajustes' }).click()
+  await page.evaluate(() => {
+    let permission = 'default'
+    const stub = {
+      get permission() { return permission },
+      requestPermission() {
+        permission = 'denied'
+        return Promise.resolve('denied')
+      },
+    }
+    Object.defineProperty(window, 'Notification', { configurable: true, value: stub })
+    if (!('PushManager' in window)) {
+      class PushManager {}
+      Object.defineProperty(window, 'PushManager', { configurable: true, value: PushManager })
+    }
+  })
+  await page.getByRole('switch', { name: 'Si mañana nadie se ha comprometido' }).click()
+  await expect(page.getByTestId('notify-warn')).toHaveText('Las notificaciones están bloqueadas en los ajustes del teléfono.')
+  await expect.poll(async () => {
+    const results = (await usageRows(page))
+      .filter((row) => row.event_name === 'notify_permission')
+      .map((row) => row.props?.result)
+    return results.includes('requested') && results.includes('denied')
+  }).toBe(true)
+})
+
 test('entrar con código ofrece crear contraseña y deja seguir sin ella', async ({ page }) => {
   await page.goto('/misa-diaria/')
   await page.getByLabel('Tu correo').fill('persona3@example.com')
   await page.getByRole('button', { name: /olvidaste la contraseña/ }).click()
   await page.getByRole('button', { name: 'Enviar código' }).click()
   const code = await codeFor('persona3@example.com')
+  await page.getByLabel('Código').fill('000000')
+  await page.getByLabel('Código').press('Enter')
+  await expect(page.getByText('Ese código no vale. Pide otro.')).toBeVisible()
   await page.getByLabel('Código').fill(code)
   await page.getByLabel('Código').press('Enter')
   await expect(page.getByRole('heading', { name: 'Crea tu contraseña' })).toBeVisible()
   await page.getByRole('button', { name: 'Ahora no' }).click()
   await expect(page.getByRole('heading', { name: 'Hoy' })).toBeVisible()
   await expect(page.getByTestId('go')).toBeVisible()
+  await expect.poll(async () => {
+    const rows = await usageRows(page)
+    const funnel = rows.filter((row) => row.event_name.startsWith('login_'))
+    const names = funnel.map((row) => row.event_name)
+    const error = funnel.find((row) => row.event_name === 'login_verify_error')
+    const asked = funnel.find((row) => row.event_name === 'login_code_requested')
+    const blob = JSON.stringify(funnel.map((row) => row.props))
+    return names.includes('login_code_requested')
+      && names.includes('login_code_submitted')
+      && names.includes('login_verify_ok')
+      && error?.props?.kind === 'invalid'
+      && asked?.props?.ok === true
+      && Boolean(asked?.props?.at)
+      && !blob.includes('@')
+      && !blob.includes(code)
+      && !blob.includes('000000')
+  }).toBe(true)
 })
 
 test('marcar hoy sube el total del curso al momento y se queda al volver', async ({ page }) => {
@@ -1868,8 +1955,12 @@ test('con la vibración al deslizar, el switch marca los topes, el toque llega a
   expect(held).toBeGreaterThan(80)
   await page.waitForTimeout(400)
   expect(await page.evaluate(() => window.scrollY)).toBe(held)
-  // Cada gesto deja su rastro técnico para diagnosticar en el iPhone real.
-  await expect.poll(async () => (await usageRows(page)).filter((row) => row.event_name === 'swipe_debug').length, { timeout: 5000 }).toBeGreaterThanOrEqual(2)
+  await expect.poll(async () => {
+    const rows = await usageRows(page)
+    const debug = rows.some((row) => row.event_name === 'swipe_debug' || row.event_name === 'tap_debug')
+    const swipe = rows.find((row) => row.event_name === 'commitment_toggle' && row.props?.surface === 'swipe' && row.props?.mass_date === dates[1])
+    return !debug && swipe?.props?.on === true
+  }, { timeout: 5000 }).toBe(true)
 })
 
 test('si iOS cancela un deslizamiento corto, el clic del switch no apunta ni abre el día', async ({ page, viewport }) => {

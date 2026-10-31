@@ -13,23 +13,38 @@ export async function handleReminder(request, deps) {
   const due = await deps.due()
   const massDate = await deps.tomorrow()
   let sent = 0
+
+  async function note(memberId, outcome, statusCode) {
+    const code = Number(statusCode)
+    const status = Number.isInteger(code) && code >= 0 && code <= 599 ? code : 500
+    try {
+      await deps.record?.(memberId, massDate, outcome, status)
+    } catch { /* el aviso no depende de que el registro se guarde */ }
+  }
+
   for (const row of due) {
     const claimed = await deps.claim(row.member_id, massDate)
     if (!claimed) continue
     deps.log?.({ member_id: row.member_id, slot: 'evening' })
     try {
       const subs = await deps.subscriptions(row.member_id)
-      if (!subs.length) continue
+      if (!subs.length) {
+        await note(row.member_id, 'failed', 0)
+        continue
+      }
       let failures = 0
       for (const sub of subs) {
         const result = await deps.send(sub, row.body, row.title)
+        const failed = result.status >= 400
+        await note(row.member_id, failed ? 'failed' : 'sent', result.status)
         if (result.status === 404 || result.status === 410) await deps.dropSubscription(sub.endpoint)
-        if (result.status >= 400) failures += 1
+        if (failed) failures += 1
         else sent += 1
       }
       if (failures === subs.length) await deps.release(row.member_id, massDate)
     } catch {
       // Si algo falla tras reclamar, se suelta para que el intento de las 21:05 lo repita.
+      await note(row.member_id, 'failed', 500)
       await deps.release(row.member_id, massDate).catch(() => undefined)
     }
   }
@@ -101,5 +116,18 @@ export function liveDeps(env, send) {
       await rest(`push_subscriptions?${query}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
     },
     send,
+    record: async (memberId, massDate, outcome, statusCode) => {
+      await rest('notification_sends', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          member_id: memberId,
+          mass_date: massDate,
+          slot: 'evening',
+          outcome,
+          status_code: statusCode,
+        }),
+      })
+    },
   }
 }

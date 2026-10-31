@@ -1,6 +1,6 @@
 // Red primero. Solo se guarda el armazón (la página y los assets con hash) para abrir sin conexión.
 // Supabase va a otro origen y nunca pasa por aquí.
-const CACHE = 'misa-v34'
+const CACHE = 'misa-v35'
 const SHELL = './'
 
 self.addEventListener('install', (event) => {
@@ -73,21 +73,28 @@ self.addEventListener('push', (event) => {
   let body = ''
   let title = 'Misa diaria'
   let lang = 'es'
+  // La función manda from: 'push'. Si una función antigua no lo trae, este aviso
+  // sigue siendo el único de la app y se marca igual.
+  let fromPush = true
   try {
     const data = event.data?.json()
     body = typeof data?.body === 'string' ? data.body : ''
     if (typeof data?.title === 'string' && data.title) title = data.title
     if (typeof data?.lang === 'string' && data.lang) lang = data.lang
+    if (data && Object.prototype.hasOwnProperty.call(data, 'from')) fromPush = data.from === 'push'
   } catch {
     body = event.data?.text() ?? ''
   }
+  const url = fromPush
+    ? `${self.registration.scope}calendario?from=push`
+    : `${self.registration.scope}calendario`
   event.waitUntil(self.registration.showNotification(title, {
     body,
     icon: './icon-192.png',
     badge: './icon-192.png',
     tag: 'aviso-tarde',
     lang,
-    data: { url: `${self.registration.scope}calendario` },
+    data: { url, from: fromPush ? 'push' : '' },
   }))
 })
 
@@ -95,12 +102,14 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const target = event.notification.data?.url || self.registration.scope
+  const fromPush = event.notification.data?.from === 'push'
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const open = windows.find((client) => client.url.startsWith(self.registration.scope))
     // Si ya estaba abierta solo se enfoca: navegar recargaría y perdería lo que hubiera a medias.
     if (open) {
       await open.focus()
+      if (fromPush) open.postMessage({ type: 'push-open' })
       return
     }
     await self.clients.openWindow(target)

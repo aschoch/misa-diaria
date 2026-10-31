@@ -2,10 +2,10 @@ import '@fontsource-variable/fraunces/wght.css'
 import '@fontsource/atkinson-hyperlegible/400.css'
 import '@fontsource/atkinson-hyperlegible/700.css'
 import './styles.css'
-import { borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, registrarEvento, salir, supabase, suscribirPush, updatePassword } from './api'
+import { anotarAntesDeEntrar, borrarComentario, borrarIntencion, configured, editarComentario, editarIntencion, enPantallaInicio, enviarFeedback, estado, guardarCelebraciones, guardarNombre, guardarPreferencias, marcarAsistencia, marcarCompromiso, ponerReaccion, publicarComentario, publicarIntencion, quitarReaccion, recordarToken, registrarAlOcultar, registrarEvento, registrarFallo, salir, supabase, suscribirPush, updatePassword, vaciarAntesDeEntrar } from './api'
 import { elegir, hideCelebration, showCelebration } from './celebrate'
 import { loadEmojis } from './emoji'
-import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeDiagnostics, swipeSwitchOn } from './haptics'
+import { placeSwitch, resetSwitch, startMomentum, stopMomentum, swipeSwitchOn } from './haptics'
 import { esc, phoneDay } from './format'
 import { celebrationLine, deviceLocale, rememberLocale, savedLocale, setLocale, tx, type Locale } from './i18n'
 import type { Estado } from './types'
@@ -28,6 +28,10 @@ let attendanceEpoch = 0
 let attendChain: Promise<void> = Promise.resolve()
 let appOpened = false
 let installOpen = false
+let sawPush = false
+let visibleSince = document.visibilityState === 'visible' ? Date.now() : 0
+const INSTALLED_KEY = 'misa-instalada'
+const INSTALLED_VIA = 'misa-instalada-via'
 let suppressNavClick = false
 let tabScrub: {
   id: number
@@ -92,30 +96,6 @@ type SwitchDrag = {
 }
 type SwitchRelease = { input: HTMLInputElement; kind: 'commit' | 'silent' | 'tap'; x: number; y: number; run?: () => void; done: boolean }
 let switchRelease: SwitchRelease | null = null
-// Diagnóstico del swipe con vibración (solo con la opción encendida): un registro por gesto
-// en usage_events para ver en el iPhone real qué eventos llegan y en qué orden.
-let swipeTrace: { t0: number; log: string[]; pm: number; tm: number; ticks: number; data: Record<string, unknown> } | null = null
-let swipeTraceSent = 0
-
-function traceSwipe(step: string) {
-  if (!swipeTrace || swipeTrace.log.length > 40) return
-  swipeTrace.log.push(`${step}@${Math.round(performance.now() - swipeTrace.t0)}`)
-}
-
-function sendSwipeTrace() {
-  const trace = swipeTrace
-  if (trace) traceSwipe(`end:${Math.round(window.scrollY)}`)
-  swipeTrace = null
-  if (!trace || !current || demo || swipeTraceSent >= 40) return
-  swipeTraceSent += 1
-  registrarEvento(current.me.id, 'swipe_debug', 'calendario', {
-    ...trace.data,
-    pm: trace.pm,
-    tm: trace.tm,
-    ticks: trace.ticks,
-    log: trace.log.join(' ').slice(0, 900),
-  })
-}
 let suppressRowClick = false
 let rowCommitClick = false
 let passwordScreen = false
@@ -249,6 +229,20 @@ function rateLimited(error: unknown) {
   return item.status === 429 || text.includes('rate limit') || text.includes('rate_limit') || text.includes('too many')
 }
 
+// El texto del error no se guarda: a veces trae el correo.
+function coarseAuthKind(error: unknown): 'network' | 'rate_limit' | 'invalid' | 'other' {
+  if (networkError(error)) return 'network'
+  if (rateLimited(error)) return 'rate_limit'
+  if (!error || typeof error !== 'object') return 'other'
+  const item = error as { status?: number; code?: string; message?: string }
+  const text = `${item.code ?? ''} ${item.message ?? ''}`.toLowerCase()
+  if (
+    item.status === 400 || item.status === 401 || item.status === 403
+    || text.includes('invalid') || text.includes('otp') || text.includes('expired')
+  ) return 'invalid'
+  return 'other'
+}
+
 function captureDrafts() {
   const active = document.activeElement
   const focused = active instanceof HTMLElement ? active.dataset.draft ?? '' : ''
@@ -306,7 +300,6 @@ function visibleState(state: Estado): Estado {
 }
 
 function paint() {
-  traceSwipe('paint')
   // Un repintado a mitad de scroll de la app: la lista nueva no lleva el transform.
   if (gesture?.scrolling) {
     settleSwitchDrag(gesture.scrolling)
@@ -428,6 +421,8 @@ async function refresh(celebrate = false) {
     if (!appOpened && !demo) {
       appOpened = true
       registrarEvento(current.me.id, 'app_open', routeFromPath(location.pathname), {})
+      flushInstalled()
+      if (sawPush) recordPushOpen()
     }
     renewPush(current)
     const idle = (window as Window & { requestIdleCallback?: (fn: () => void) => void }).requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 1500))
@@ -475,6 +470,7 @@ async function refresh(celebrate = false) {
       offline = tx().offline(saved?.at || current?.clock || '')
       locked = true
       booting = false
+      noteFailure('refresh', networkError(error) ? 'network' : 'save')
       paint()
       return
     }
@@ -494,6 +490,62 @@ function renewPush(state: Estado) {
   void suscribirPush(state.me.id).catch(() => { pushRenewed = false })
 }
 
+function noteFailure(where: string, kind: 'save' | 'network' | 'uncaught', memberId = current?.me.id) {
+  if (demo || !memberId) return
+  registrarFallo(memberId, where, kind, routeFromPath(location.pathname))
+}
+
+function recordPushOpen() {
+  const memberId = current?.me.id
+  if (!memberId || demo) {
+    sawPush = true
+    return
+  }
+  sawPush = false
+  registrarEvento(memberId, 'push_open', routeFromPath(location.pathname), {})
+}
+
+function noteInstalled(via: 'appinstalled' | 'standalone') {
+  try {
+    if (localStorage.getItem(INSTALLED_KEY) === '1') return
+  } catch { return }
+  const memberId = current?.me.id
+  if (!memberId || demo) {
+    try { localStorage.setItem(INSTALLED_VIA, via) } catch { /* se anota al entrar */ }
+    return
+  }
+  registrarEvento(memberId, 'app_installed', routeFromPath(location.pathname), { via })
+  try {
+    localStorage.setItem(INSTALLED_KEY, '1')
+    localStorage.removeItem(INSTALLED_VIA)
+  } catch { /* la próxima apertura puede repetir el evento */ }
+}
+
+function flushInstalled() {
+  let via = ''
+  try { via = localStorage.getItem(INSTALLED_VIA) ?? '' } catch { /* sigue el modo de pantalla */ }
+  if (via === 'appinstalled' || via === 'standalone') noteInstalled(via)
+  else if (enPantallaInicio()) noteInstalled('standalone')
+}
+
+function takePushMarker() {
+  const params = new URLSearchParams(location.search)
+  if (params.get('from') !== 'push') return
+  sawPush = true
+  params.delete('from')
+  const qs = params.toString()
+  history.replaceState(history.state, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`)
+}
+
+function endSession() {
+  if (!visibleSince) return
+  const seconds = Math.min(12 * 60 * 60, Math.max(0, Math.round((Date.now() - visibleSince) / 1000)))
+  visibleSince = 0
+  const memberId = current?.me.id
+  if (!memberId || demo) return
+  registrarAlOcultar(memberId, 'session_end', routeFromPath(location.pathname), { seconds })
+}
+
 function maybeRefresh(force = false) {
   if (!current || demo || !configured || !loadedOnce) return
   if (busy || pulling || gesture || tabScrub || mustResetPassword) return
@@ -509,6 +561,7 @@ async function celebratePending(state: Estado) {
 }
 
 async function boot() {
+  takePushMarker()
   if (import.meta.env.DEV && new URLSearchParams(location.search).has('muestra')) {
     const { sampleEstado } = await import('./sample')
     demo = true
@@ -538,6 +591,12 @@ async function boot() {
   paint()
   if (!configured || !supabase) return
   supabase.auth.onAuthStateChange((event, session) => {
+    recordarToken(session?.access_token ?? '')
+    // Fuera del callback: desde aquí un insert de Supabase se queda esperando el candado de la sesión.
+    if (session?.user.id && !demo) {
+      const memberId = session.user.id
+      window.setTimeout(() => vaciarAntesDeEntrar(memberId, 'entrar'), 0)
+    }
     if (!session) {
       if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
         const hadSomething = Boolean(current) || booting
@@ -753,7 +812,7 @@ function switchHaptic() {
 function applySwipe(row: HTMLElement, on: boolean) {
   if (row.dataset.kind === 'past') {
     const node = row.querySelector<HTMLElement>('[data-act="attend"]')
-    if (node && (node.getAttribute('aria-pressed') === 'true') !== on) queueAttendance(node)
+    if (node && (node.getAttribute('aria-pressed') === 'true') !== on) queueAttendance(node, 'swipe')
     return
   }
   void setCommitment(row.dataset.date ?? '', on, 'swipe')
@@ -1005,7 +1064,6 @@ function trackRow(event: PointerEvent) {
   if (gesture.lockedAxis !== 'x') {
     if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       gesture.lockedAxis = 'x'
-      if (gesture.rowSwitch) traceSwipe('lockx')
       const cap = gesture.rowSwitch ?? gesture.hapticInput ?? gesture.haptic
       if (cap) {
         try { cap.setPointerCapture(event.pointerId) } catch { /* el dedo sigue sobre la etiqueta */ }
@@ -1070,10 +1128,6 @@ function trackRow(event: PointerEvent) {
     ticks += 1
   }
   gesture.ticks += ticks
-  if (swipeTrace && gesture.rowSwitch) {
-    swipeTrace.ticks = gesture.ticks
-    if (ticks) traceSwipe(`tick${gesture.ticks}:${Math.round(progress)}`)
-  }
   // Cada tope cambia de lado el switch bajo el dedo: WebKit vibra en ese cruce.
   if (gesture.rowSwitch) placeSwitch(gesture.rowSwitch, row, event.clientX, gesture.ticks % 2 === 1)
   for (const cue of row.querySelectorAll<HTMLElement>('.swipe-cue')) {
@@ -1101,27 +1155,6 @@ app.addEventListener('pointerdown', (event) => {
   stopMomentum()
   if (target.closest('input:not([data-haptic-switch]):not([data-row-haptic]):not([data-row-switch]), textarea, select, [contenteditable="true"]')) return
   const rowSwitch = target instanceof HTMLInputElement && target.hasAttribute('data-row-switch') ? target : null
-  if (rowSwitch && swipeDiagnostics()) {
-    if (swipeTrace) sendSwipeTrace()
-    const style = getComputedStyle(rowSwitch)
-    swipeTrace = {
-      t0: performance.now(),
-      log: [],
-      pm: 0,
-      tm: 0,
-      ticks: 0,
-      data: {
-        ios: /OS (\d+[_\d]*)/.exec(navigator.userAgent)?.[1] ?? '',
-        standalone: Boolean((navigator as Navigator & { standalone?: boolean }).standalone),
-        attr: rowSwitch.hasAttribute('switch'),
-        prop: (rowSwitch as HTMLInputElement & { switch?: boolean }).switch ?? null,
-        appearance: style.appearance || style.getPropertyValue('-webkit-appearance'),
-        w: Math.round(rowSwitch.getBoundingClientRect().width),
-        type: event.pointerType,
-      },
-    }
-    traceSwipe('pd')
-  }
   const rowNode = target.closest('.days li.swipeable')
   const row = rowNode instanceof HTMLElement && event.clientX > 36 ? rowNode : null
   gesture = {
@@ -1226,7 +1259,6 @@ function startSwitchDrag(rowSwitch: HTMLInputElement, y: number): SwitchDrag | n
     const height = node.getBoundingClientRect().height
     return { node, top: box.top + base, bottom: box.bottom + base - height, stick: parseFloat(getComputedStyle(node).top) || 0 }
   })
-  traceSwipe(`ly:${Math.round(base)}`)
   return { y0: y, base, max: Math.max(0, document.documentElement.scrollHeight - window.innerHeight), offset: 0, list, heads, samples: [] }
 }
 
@@ -1247,7 +1279,6 @@ function chooseNativeY(dx: number, dy: number, at: number) {
   if (!gesture?.rowSwitch || gesture.nativeY || gesture.scrolling || gesture.lockedAxis !== '') return
   if (Math.abs(dy) < 3 || Math.abs(dy) <= Math.abs(dx)) return
   gesture.nativeY = true
-  traceSwipe('naty')
   if (at - gesture.t0 >= 200) {
     gesture.rowSwitch.disabled = true
     gesture.rowSwitch.disabled = false
@@ -1267,12 +1298,10 @@ function driveSwitchScroll(event: PointerEvent) {
     // sigue quieta, no lo va a hacer: lo mueve la app desde aquí.
     if (Math.abs(dy) < 24 || Math.abs(window.scrollY - gesture.scroll) > 1) return true
     gesture.nativeY = false
-    traceSwipe('jsy')
   }
   // Empieza desde donde está el dedo al decidir el eje: sin el salto de los 14 px de holgura.
   const drag = gesture.scrolling ?? (gesture.scrolling = startSwitchDrag(gesture.rowSwitch, event.clientY))
   if (!drag) return false
-  if (swipeTrace && Math.abs(window.scrollY - drag.base) > 1) traceSwipe(`nat:${Math.round(window.scrollY - drag.base)}`)
   const want = Math.max(0, Math.min(drag.max, drag.base + drag.y0 - event.clientY))
   drag.offset = want - drag.base
   drag.list.style.transform = drag.offset ? `translate3d(0, ${-drag.offset}px, 0)` : ''
@@ -1284,16 +1313,6 @@ function driveSwitchScroll(event: PointerEvent) {
 
 let rowTouch: { x: number; y: number } | null = null
 let swipeHaptic = false
-document.addEventListener('touchstart', (event) => {
-  const target = event.target
-  if (swipeTrace && target instanceof HTMLInputElement && target.hasAttribute('data-row-switch')) {
-    traceSwipe(`ts${event.targetTouches.length}${target.hasAttribute('switch') ? 's' : ''}`)
-  }
-}, { capture: true, passive: true })
-document.addEventListener('touchmove', () => {
-  if (swipeTrace) swipeTrace.tm += 1
-}, { capture: true, passive: true })
-
 app.addEventListener('touchstart', (event) => {
   const touch = event.changedTouches?.[0]
   rowTouch = touch ? { x: touch.clientX, y: touch.clientY } : null
@@ -1316,7 +1335,6 @@ app.addEventListener('touchend', (event) => {
     const dx = touch ? touch.clientX - x : 0
     const armed = dx >= SWIPE_CONFIRM_PX ? 'right' : dx <= -SWIPE_CONFIRM_PX ? 'left' : ''
     if (row && swipeCommits(row, armed)) {
-      traceSwipe(`te:cancel:commit:${Math.round(dx)}`)
       input.disabled = true
       input.disabled = false
       suppressRowClick = true
@@ -1324,7 +1342,6 @@ app.addEventListener('touchend', (event) => {
       window.setTimeout(() => applySwipe(row, armed === 'right'), 0)
       return
     }
-    traceSwipe('te:cancel')
     input.removeAttribute('switch')
     window.setTimeout(() => input.setAttribute('switch', ''), 0)
     return
@@ -1337,7 +1354,6 @@ app.addEventListener('touchend', (event) => {
     const x = pending?.x ?? touch?.clientX ?? 0
     const y = pending?.y ?? touch?.clientY ?? 0
     if (kind === 'tap' && !rowTapTarget(input, x, y)?.closest('.row-commit')) {
-      traceSwipe('te:tap:quiet')
       if (pending) switchRelease = null
       ignoreSwitchClickUntil = performance.now() + 400
       input.removeAttribute('switch')
@@ -1347,7 +1363,6 @@ app.addEventListener('touchend', (event) => {
       }, 0)
       return
     }
-    traceSwipe(`te:${kind}${pending ? '' : ':first'}`)
     if (kind !== 'tap') ignoreSwitchClickUntil = performance.now() + 400
     if (kind === 'silent') input.removeAttribute('switch')
     // WebKit no vibra en el clic final si ya vibró al cruzar mientras seguía el dedo.
@@ -1397,7 +1412,6 @@ app.addEventListener('pointermove', (event) => {
   if (!gesture || gesture.id !== event.pointerId) return
   const dx = event.clientX - gesture.x
   const dy = event.clientY - gesture.y
-  if (swipeTrace && gesture.rowSwitch) swipeTrace.pm += 1
   if (event.pointerType === 'touch') chooseNativeY(dx, dy, event.timeStamp)
   trackRow(event)
   driveSwitchScroll(event)
@@ -1436,9 +1450,6 @@ app.addEventListener('pointerup', (event) => {
   const touch = event.pointerType === 'touch'
   if (start.rowSwitch) {
     const kind = classifySwitch(start, event.clientX, event.clientY)
-    traceSwipe(`pu:${kind}:${Math.round(dx)}:${start.lockedAxis || '-'}`)
-    const ownTrace = swipeTrace
-    window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
     if (start.row && start.lockedAxis === 'x') {
       const row = start.row
       suppressRowClick = true
@@ -1451,8 +1462,7 @@ app.addEventListener('pointerup', (event) => {
     releaseSwitch({ input: start.rowSwitch, kind, x: event.clientX, y: event.clientY }, touch)
     if (start.scrolling) {
       settleSwitchDrag(start.scrolling)
-      const velocity = startMomentum(start.scrolling.samples, event.timeStamp)
-      traceSwipe(`ry:${Math.round(window.scrollY)}:v${velocity.toFixed(2)}`)
+      startMomentum(start.scrolling.samples, event.timeStamp)
       if (start.scroll <= 4 && dy > 80 && dy > Math.abs(dx) * 1.5) void pullRefresh()
       return
     }
@@ -1511,7 +1521,6 @@ app.addEventListener('pointercancel', (event) => {
   }
   if (gesture?.id !== event.pointerId) return
   if (gesture.rowSwitch) {
-    traceSwipe('pcancel')
     settleSwitchDrag(gesture.scrolling)
     // iOS cancela a veces un deslizamiento corto: el clic que el switch manda al
     // levantar el dedo no es un toque y no debe apuntarte ni abrir el día.
@@ -1520,8 +1529,6 @@ app.addEventListener('pointercancel', (event) => {
       cancelledSwitch = cancelled
       window.setTimeout(() => { if (cancelledSwitch === cancelled) cancelledSwitch = null }, 600)
     }
-    const ownTrace = swipeTrace
-    window.setTimeout(() => { if (swipeTrace === ownTrace) sendSwipeTrace() }, 900)
   }
   const row = gesture.row
   gesture = null
@@ -1563,11 +1570,6 @@ window.addEventListener('scroll', () => {
   })
 }, { passive: true })
 
-app.addEventListener('change', (event) => {
-  const node = event.target
-  if (node instanceof HTMLInputElement && node.hasAttribute('data-row-switch')) traceSwipe(`change:${node.checked ? 'on' : 'off'}`)
-})
-
 app.addEventListener('input', (event) => {
   const node = event.target
   if (node instanceof HTMLTextAreaElement) {
@@ -1604,6 +1606,8 @@ app.addEventListener('toggle', (event) => {
   const node = event.target
   if (!(node instanceof HTMLDetailsElement) || !node.classList.contains('install-details')) return
   installOpen = node.open
+  if (!node.open || !current || demo) return
+  registrarEvento(current.me.id, 'install_viewed', 'ajustes', {})
 }, true)
 
 app.addEventListener('click', (event) => {
@@ -1612,7 +1616,6 @@ app.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
     const input = event.target
-    traceSwipe(`click:${input.checked ? 'on' : 'off'}:${event.isTrusted ? 't' : 'u'}`)
     const release = switchRelease
     if (release?.kind === 'tap' && release.input === input) {
       switchRelease = null
@@ -1625,17 +1628,6 @@ app.addEventListener('click', (event) => {
   }
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-haptic-switch')) {
     event.stopPropagation()
-    // Con el diagnóstico encendido, cada toque deja si el switch cambió de verdad (isTrusted).
-    if (swipeDiagnostics() && current && !demo && swipeTraceSent < 40) {
-      swipeTraceSent += 1
-      const owner = event.target.closest<HTMLElement>('[data-act]')
-      registrarEvento(current.me.id, 'tap_debug', routeFromPath(location.pathname), {
-        act: owner?.dataset.act ?? '',
-        trusted: event.isTrusted,
-        checked: event.target.checked,
-        ios: /OS (\d+[_\d]*)/.exec(navigator.userAgent)?.[1] ?? '',
-      })
-    }
     return
   }
   if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-row-haptic')) {
@@ -1803,7 +1795,7 @@ function ensureCommitmentDay(date: string) {
   return day
 }
 
-async function setCommitment(date: string, on: boolean, source: 'button' | 'swipe' = 'button') {
+async function setCommitment(date: string, on: boolean, surface: string) {
   if (!current || locked || !date || date < current.today) return
   if (!demo && staleDay()) {
     void refresh(false)
@@ -1820,7 +1812,7 @@ async function setCommitment(date: string, on: boolean, source: 'button' | 'swip
   if (on) pulseDate = date
   const epoch = ++commitEpoch
   paint()
-  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', routeFromPath(location.pathname), { source })
+  if (!demo) registrarEvento(current.me.id, 'commitment_toggle', routeFromPath(location.pathname), { surface, on, mass_date: date })
   if (demo) return
   const member = current.me.id
   const run = commitChain.then(async () => {
@@ -1837,6 +1829,7 @@ async function setCommitment(date: string, on: boolean, source: 'button' | 'swip
         if (date === current.today) current.risk = before.risk
       }
       offline = tx().saveFail
+      noteFailure('commitment', 'save', member)
       paint()
     }
   })
@@ -1951,14 +1944,22 @@ function celebrateMark(on: boolean) {
   window.setTimeout(() => hero.classList.remove('just-on'), 900)
 }
 
-function attendanceSource(node: HTMLElement) {
-  if (node.dataset.testid === 'go') return 'hoy_main'
-  if (node.closest('[data-kind="past"]')) return 'calendar_past'
-  if (node.closest('[data-testid="week"]')) return 'hoy_week'
-  return 'calendar_detail'
+function attendanceSurface(node: HTMLElement) {
+  if (node.dataset.testid === 'go' || node.closest('[data-testid="go"]')) return 'hoy'
+  if (node.closest('[data-testid="week"]')) return 'estos_dias'
+  if (node.closest('aside.day')) return 'dia'
+  return 'calendario_fila'
 }
 
-function queueAttendance(node: HTMLElement) {
+function commitmentSurface(node: HTMLElement) {
+  if (node.closest('[data-testid="week"]')) return 'estos_dias'
+  if (node.closest('[data-testid="next-empty"]')) return 'proximo_vacio'
+  if (node.closest('[data-testid="risk"]')) return 'riesgo'
+  if (node.closest('aside.day')) return 'dia'
+  return 'calendario_fila'
+}
+
+function queueAttendance(node: HTMLElement, surface = attendanceSurface(node)) {
   if (!current || locked) return
   if (!demo && staleDay()) {
     // Lo que se ve es de ayer: primero se pone al día y no se marca el día equivocado.
@@ -1974,11 +1975,10 @@ function queueAttendance(node: HTMLElement) {
   if (riskBefore !== current.risk || !patchHoyAttendance(current, locked)) paint()
   attendPulse = ''
   if (date === current.today) celebrateMark(flipped.on)
-  const source = attendanceSource(node)
-  if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { source })
+  const on = flipped.on
+  if (!demo) registrarEvento(current.me.id, 'attendance_toggle', routeFromPath(location.pathname), { surface, on, mass_date: date })
   if (demo) return
   const member = current.me.id
-  const on = flipped.on
   const run = attendChain.then(async () => {
     try {
       await marcarAsistencia(member, date, on)
@@ -1989,6 +1989,7 @@ function queueAttendance(node: HTMLElement) {
       // iglesia, cada toque que no se guardó vuelve atrás. Al volver la red se refresca.
       if (attendanceRows(date)[0]?.mine_attendance === on) flipAttendance(date)
       offline = tx().saveFail
+      noteFailure('attendance', 'save', member)
       if (current) paint()
     }
   })
@@ -2006,7 +2007,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     const date = node.dataset.date ?? ''
     if (date > current.today) {
       const day = current.calendar.find((item) => item.date === date)
-      await setCommitment(date, day ? !day.mine_commitment : true)
+      await setCommitment(date, day ? !day.mine_commitment : true, 'estos_dias')
       return
     }
     queueAttendance(node)
@@ -2048,6 +2049,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       await guardarPreferencias(current.me.id, { ...current.prefs, locale: next })
     } catch {
       offline = tx().saveFail
+      noteFailure('locale', 'save')
       paint()
     }
     return
@@ -2098,7 +2100,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     if (!current || locked) return
     const date = node.dataset.date ?? ''
     const day = current.calendar.find((item) => item.date === date)
-    await setCommitment(date, day ? !day.mine_commitment : true)
+    await setCommitment(date, day ? !day.mine_commitment : true, commitmentSurface(node))
     return
   }
   if (act === 'undo-delete') {
@@ -2178,6 +2180,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     paint()
     try {
       const error = await requestEmailCode(next)
+      anotarAntesDeEntrar('login_code_requested', error ? { ok: false, kind: coarseAuthKind(error) } : { ok: true })
       loginMessage = error ? (rateLimited(error) ? tx().rateLimit : tx().sendFail) : tx().loginHint
       if (!error || rateLimited(error)) loginMode = 'code'
     } finally {
@@ -2239,6 +2242,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
       return
     }
     if (!supabase || token.length < 6) return
+    anotarAntesDeEntrar('login_code_submitted', {})
     recoverySignIn = true
     signingIn = true
     busy = true
@@ -2250,10 +2254,14 @@ async function actOn(act: string, node: HTMLElement, body = '') {
         error = thrown
       }
       if (error) {
+        anotarAntesDeEntrar('login_verify_error', { kind: coarseAuthKind(error) })
         loginMessage = networkError(error) ? tx().netFail : tx().badCode
         paint()
         return
       }
+      anotarAntesDeEntrar('login_verify_ok', {})
+      const session = (await supabase.auth.getSession()).data.session
+      if (session?.user.id) vaciarAntesDeEntrar(session.user.id, 'entrar')
       pendingCode = ''
       resetMessage = ''
       mustResetPassword = true
@@ -2499,8 +2507,17 @@ async function actOn(act: string, node: HTMLElement, body = '') {
           paint()
           return
         }
-        if (Notification.permission === 'default') await Notification.requestPermission()
-        if (Notification.permission !== 'granted') {
+        const before = Notification.permission
+        if (before === 'default') {
+          registrarEvento(current.me.id, 'notify_permission', 'ajustes', { result: 'requested' })
+          await Notification.requestPermission()
+        }
+        const after = Notification.permission
+        if (before !== 'granted') {
+          const result = after === 'granted' ? 'granted' : after === 'denied' ? 'denied' : 'dismissed'
+          registrarEvento(current.me.id, 'notify_permission', 'ajustes', { result })
+        }
+        if (after !== 'granted') {
           notifyNote = tx().pushBlocked
           paint()
           return
@@ -2519,6 +2536,7 @@ async function actOn(act: string, node: HTMLElement, body = '') {
     }
   } catch {
     offline = tx().saveFail
+    noteFailure(/^[a-z-]{1,24}$/.test(act) ? act : 'action', 'save')
     paint()
   } finally {
     busy = false
@@ -2536,17 +2554,30 @@ window.visualViewport?.addEventListener('scroll', syncViewport)
 syncViewport()
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
+    if (!visibleSince) visibleSince = Date.now()
     reloadIfUpdated()
     refreshServiceWorker()
     maybeRefresh()
   } else {
+    endSession()
     void flushDelete()
   }
 })
 window.addEventListener('pageshow', (event) => {
+  if (document.visibilityState === 'visible' && !visibleSince) visibleSince = Date.now()
   if (event.persisted) maybeRefresh()
 })
-window.addEventListener('pagehide', () => { void flushDelete() })
+window.addEventListener('pagehide', () => {
+  endSession()
+  void flushDelete()
+})
+window.addEventListener('appinstalled', () => noteInstalled('appinstalled'))
+navigator.serviceWorker?.addEventListener('message', (event) => {
+  if (event.data?.type !== 'push-open') return
+  recordPushOpen()
+})
+window.addEventListener('error', () => noteFailure('window', 'uncaught'))
+window.addEventListener('unhandledrejection', () => noteFailure('promise', 'uncaught'))
 window.addEventListener('online', () => maybeRefresh(true))
 // Si la app sigue abierta a medianoche, el día cambia sin esperar a un toque.
 window.setInterval(() => {

@@ -533,6 +533,25 @@ async function main() {
       assert((await one(`select count(*)::int as n from public.usage_events`)).n === 0, 'no lee el evento de otra persona')
     })
 
+    await q(
+      `insert into public.notification_sends (member_id, mass_date, outcome, status_code)
+       values ($1, '2026-10-23', 'sent', 201)`,
+      [P(1)],
+    )
+    await expectFail(() => q(
+      `insert into public.notification_sends (member_id, mass_date, outcome, status_code)
+       values ($1, '2026-10-23', 'maybe', 201)`,
+      [P(1)],
+    ))
+    await asUser(P(1), async () => {
+      await expectFail(() => q(`select * from public.notification_sends`))
+      await expectFail(() => q(
+        `insert into public.notification_sends (member_id, mass_date, outcome, status_code)
+         values ($1, '2026-10-23', 'failed', 500)`,
+        [P(1)],
+      ))
+    })
+
     const monday = await one(`select public.resumen_semana('2026-10-26') as r`)
     assert(monday.r && 'people' in monday.r && 'empty_days' in monday.r, 'el lunes tiene tres cifras')
     const tuesday = await one(`select public.resumen_semana('2026-10-27') as r`)
