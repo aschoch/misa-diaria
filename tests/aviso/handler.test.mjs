@@ -17,6 +17,7 @@ function deps(over = {}) {
     dropSubscription: async (endpoint) => { calls.push(['drop', endpoint]) },
     send: async (item, body) => { calls.push(['send', item.endpoint, body]); return { status: 201 } },
     log: (entry) => { calls.push(['log', entry]) },
+    record: async (memberId, massDate, outcome, status) => { calls.push(['record', memberId, massDate, outcome, status]) },
     calls,
   }
   return { ...base, ...over, calls }
@@ -56,6 +57,7 @@ test('anota antes de enviar y no llama a un servicio push de verdad', async () =
   assert.deepEqual(await response.json(), { sent: 1 })
   assert.deepEqual(box.calls[0], ['log', { member_id: 'm1', slot: 'evening' }])
   assert.deepEqual(box.calls[1], ['send', sub.endpoint, 'Mañana nadie ha dicho que va a Misa.'])
+  assert.deepEqual(box.calls[2], ['record', 'm1', '2026-10-24', 'sent', 201])
   assert.equal(box.calls.filter((call) => call[0] === 'send').length, 1)
 })
 
@@ -70,6 +72,7 @@ test('404 y 410 borran la suscripción', async () => {
     const box = deps({ send: async () => ({ status }) })
     await handleReminder(post(), box)
     assert.deepEqual(box.calls.find((call) => call[0] === 'drop')[1], sub.endpoint)
+    assert.deepEqual(box.calls.find((call) => call[0] === 'record'), ['record', 'm1', '2026-10-24', 'failed', status])
     assert.ok(box.calls.includes('release'))
   }
 })
@@ -81,6 +84,7 @@ test('un fallo se deja para la hora siguiente, sin ráfaga', async () => {
   })
   await handleReminder(post(), box)
   assert.equal(sends, 1)
+  assert.deepEqual(box.calls.find((call) => call[0] === 'record'), ['record', 'm1', '2026-10-24', 'failed', 500])
   assert.ok(box.calls.includes('release'))
 })
 
@@ -92,6 +96,9 @@ test('si un dispositivo recibió el aviso, no se suelta la anotación', async ()
   const response = await handleReminder(post(), box)
   assert.equal((await response.json()).sent, 1)
   assert.equal(box.calls.includes('release'), false)
+  const recorded = box.calls.filter((call) => call[0] === 'record')
+  assert.deepEqual(recorded.map((call) => call[3]), ['sent', 'failed'])
+  assert.equal(JSON.stringify(recorded).includes('push.example'), false)
 })
 
 test('el registro no lleva correo, endpoint ni intención', async () => {
@@ -138,6 +145,14 @@ test('la función publicada no trae secretos', () => {
   assert.match(source, /Deno\.env\.get\('CRON_SECRET'\)/)
   assert.match(source, /Deno\.env\.get\('VAPID_PRIVATE_KEY'\)/)
   assert.match(source, /TTL: 60 \* 60 \* 4/)
+  assert.match(source, /from: 'push'/)
+})
+
+test('el service worker abre el aviso con la marca from=push', () => {
+  const sw = readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8')
+  assert.match(sw, /from=push/)
+  assert.match(sw, /push-open/)
+  assert.match(sw, /misa-v35/)
 })
 
 test('el cliente vivo solo habla con la base, no con un push real', async () => {
@@ -159,10 +174,30 @@ test('el cliente vivo solo habla con la base, no con un push real', async () => 
     assert.equal(live.cronSecret, 'reloj-de-prueba')
     assert.deepEqual(await live.due(), [])
     assert.equal(await live.tomorrow(), '2026-10-24')
+    await live.record('m1', '2026-10-24', 'sent', 201)
+    assert.ok(seen.some(([url, method]) => String(url).includes('/rest/v1/notification_sends') && method === 'POST'))
     assert.ok(seen.every(([url]) => String(url).startsWith('http://127.0.0.1:54321/rest/v1/')))
   } finally {
     globalThis.fetch = original
   }
+})
+
+test('sin dispositivo anota el fallo y no suelta el candado', async () => {
+  const box = deps({ subscriptions: async () => [] })
+  const response = await handleReminder(post(), box)
+  assert.equal((await response.json()).sent, 0)
+  assert.equal(box.calls.includes('release'), false)
+  assert.deepEqual(box.calls.find((call) => call[0] === 'record'), ['record', 'm1', '2026-10-24', 'failed', 0])
+  assert.equal(JSON.stringify(box.calls).includes('@'), false)
+})
+
+test('un registro que falla no deshace un aviso ya enviado', async () => {
+  const box = deps({
+    record: async () => { throw new Error('la tabla no está') },
+  })
+  const response = await handleReminder(post(), box)
+  assert.equal((await response.json()).sent, 1)
+  assert.equal(box.calls.includes('release'), false)
 })
 
 test('si falla tras reclamar, suelta el registro para reintentar', async () => {

@@ -192,16 +192,146 @@ function standaloneApp() {
   return window.matchMedia('(display-mode: standalone)').matches || Boolean(nav.standalone)
 }
 
-export function registrarEvento(memberId: string, eventName: string, route: string, props: Record<string, unknown> = {}) {
-  if (!supabase || !memberId || !eventName) return
-  void supabase.from('usage_events').insert({
+const DEV_FLAG = 'misa-dev'
+const LOGIN_QUEUE = 'misa-login-pendiente'
+const LOGIN_EVENTS = new Set([
+  'login_code_requested',
+  'login_code_submitted',
+  'login_verify_ok',
+  'login_verify_error',
+])
+
+let accessToken = ''
+const errorSeen = new Map<string, number>()
+let errorBudget = 12
+
+export function recordarToken(token: string) {
+  accessToken = token
+}
+
+export function enPantallaInicio() {
+  return standaloneApp()
+}
+
+function devSession() {
+  try {
+    const host = location.hostname
+    if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') return true
+    return localStorage.getItem(DEV_FLAG) === '1'
+  } catch {
+    return false
+  }
+}
+
+// Solo booleanos, números y fichas cortas. Un correo o una frase no entran.
+function cleanProps(input: Record<string, unknown>) {
+  const props: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (!/^[a-z_]{1,24}$/.test(key) || key === 'dev') continue
+    if (typeof value === 'boolean') props[key] = value
+    else if (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) < 1_000_000) props[key] = Math.round(value)
+    else if (typeof value === 'string') {
+      const text = value.trim()
+      if (!text || text.length > 64 || /@|\s/.test(text)) continue
+      props[key] = text
+    }
+  }
+  if (devSession()) props.dev = true
+  return props
+}
+
+function usageRow(memberId: string, eventName: string, route: string, props: Record<string, unknown>) {
+  return {
     member_id: memberId,
     event_name: eventName.slice(0, 80),
     route: route.slice(0, 40),
     platform: usagePlatform(),
     standalone: standaloneApp(),
-    props,
-  }).then(() => undefined, () => undefined)
+    props: cleanProps(props),
+  }
+}
+
+function readStoredToken() {
+  if (accessToken) return accessToken
+  try {
+    for (const [name, value] of Object.entries(localStorage)) {
+      if (!name.startsWith('sb-') || !name.endsWith('-auth-token')) continue
+      const parsed = JSON.parse(value) as { access_token?: string }
+      if (parsed.access_token) return parsed.access_token
+    }
+  } catch { /* sin sesión guardada */ }
+  return ''
+}
+
+export function registrarEvento(memberId: string, eventName: string, route: string, props: Record<string, unknown> = {}) {
+  if (!supabase || !memberId || !eventName) return
+  void supabase.from('usage_events').insert(usageRow(memberId, eventName, route, props)).then(() => undefined, () => undefined)
+}
+
+// Al ocultar la página el insert normal puede no salir. keepalive sí manda la
+// cabecera de sesión; sendBeacon no puede.
+export function registrarAlOcultar(memberId: string, eventName: string, route: string, props: Record<string, unknown> = {}) {
+  if (!memberId || !eventName || !url || !key) return
+  const token = readStoredToken()
+  if (!token) return
+  try {
+    void fetch(`${url}/rest/v1/usage_events`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(usageRow(memberId, eventName, route, props)),
+    }).then(() => undefined, () => undefined)
+  } catch { /* el cierre no puede esperar */ }
+}
+
+// El insert exige sesión. Lo pedido antes de entrar se guarda aquí y se vacía
+// al tener usuario. Si nadie entra, no sale del teléfono.
+export function anotarAntesDeEntrar(eventName: string, props: Record<string, unknown> = {}) {
+  if (!LOGIN_EVENTS.has(eventName)) return
+  try {
+    const raw = localStorage.getItem(LOGIN_QUEUE)
+    const parsed = raw ? JSON.parse(raw) as unknown : []
+    const next = Array.isArray(parsed) ? parsed.slice(-11) : []
+    next.push({ name: eventName, props: cleanProps(props), at: new Date().toISOString() })
+    localStorage.setItem(LOGIN_QUEUE, JSON.stringify(next))
+  } catch { /* sin espacio: este paso del embudo no se guarda */ }
+}
+
+export function vaciarAntesDeEntrar(memberId: string, route: string) {
+  if (!memberId) return
+  let list: { name?: string; props?: Record<string, unknown>; at?: string }[] = []
+  try {
+    const raw = localStorage.getItem(LOGIN_QUEUE)
+    if (!raw) return
+    localStorage.removeItem(LOGIN_QUEUE)
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return
+    list = parsed
+  } catch {
+    try { localStorage.removeItem(LOGIN_QUEUE) } catch { /* nada que vaciar */ }
+    return
+  }
+  for (const item of list) {
+    if (!item || typeof item.name !== 'string' || !LOGIN_EVENTS.has(item.name)) continue
+    const props = item.props && typeof item.props === 'object' ? { ...item.props } : {}
+    if (typeof item.at === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(item.at)) props.at = item.at
+    registrarEvento(memberId, item.name, route, props)
+  }
+}
+
+export function registrarFallo(memberId: string, where: string, kind: 'save' | 'network' | 'uncaught', route: string) {
+  if (!memberId || errorBudget <= 0 || !/^[a-z-]{1,24}$/.test(where)) return
+  const bucket = `${kind}:${where}`
+  const now = Date.now()
+  if (now - (errorSeen.get(bucket) ?? 0) < 30_000) return
+  errorSeen.set(bucket, now)
+  errorBudget -= 1
+  registrarEvento(memberId, 'client_error', route, { kind, where })
 }
 
 export async function salir() {

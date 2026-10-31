@@ -129,6 +129,8 @@ Tú despliegas la función `send-evening-reminder`. El reloj está en `supabase/
 
 Los avisos nacen apagados. Cada persona los enciende en Ajustes.
 
+El resultado de cada aviso se guarda en `notification_sends`. Pega `supabase/snippets/produccion-2026-10-31-envios-aviso.sql` en el SQL Editor y vuelve a desplegar `send-evening-reminder`. Sin esa tabla la función sigue enviando: si el registro falla, no deshace el aviso. Los eventos de diagnóstico antiguos (`swipe_debug`, `tap_debug`) se pueden borrar con `supabase/snippets/borrar-eventos-debug-uso.sql`. No hace falta para que la aplicación funcione. El catálogo de eventos está en `docs/analytics.md`.
+
 ## 7. Instalarla en el móvil
 
 El aviso al móvil solo llega si la aplicación está instalada, no si solo está abierta una pestaña.
